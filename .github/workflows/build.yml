@@ -23,14 +23,17 @@ jobs:
             os: 'windows-latest'
             build_name: 'Mixko-Windows-x64'
             artifact_path: 'build/bin/*'
+            wails_flags: ''
           - platform: 'darwin/universal'
             os: 'macos-latest'
             build_name: 'Mixko-macOS-Universal'
             artifact_path: 'build/bin/*'
+            wails_flags: ''
           - platform: 'linux/amd64'
             os: 'ubuntu-latest'
             build_name: 'Mixko-Linux-x64'
             artifact_path: 'build/bin/*'
+            wails_flags: '-tags webkit2_41'
 
     steps:
       - name: Checkout code
@@ -65,7 +68,7 @@ jobs:
       - name: Build Wails App
         shell: bash
         run: |
-          wails build -platform ${{ matrix.platform }} -clean
+          wails build -platform ${{ matrix.platform }} ${{ matrix.wails_flags }} -clean
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
