@@ -10,3 +10,5 @@ frontend/node_modules/
 # Local data & Keys
 .secret.key
 *.sqlite
+nppBackup/
+
