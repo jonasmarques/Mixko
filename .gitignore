@@ -1,0 +1,12 @@
+# Build & Binary artifacts
+build/bin/
+*.exe
+jsky
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+
+# Local data & Keys
+.secret.key
+*.sqlite
