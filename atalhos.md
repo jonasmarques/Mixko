@@ -4,7 +4,7 @@ O **Mixko** foi projetado com foco total em acessibilidade e produtividade por m
 
 ---
 
-##  Navegação Principal (Abas e Feeds)
+## Navegação Principal (Abas e Feeds)
 
 | Atalho | Ação |
 | :--- | :--- |
@@ -35,7 +35,7 @@ O **Mixko** foi projetado com foco total em acessibilidade e produtividade por m
 
 ---
 
-##  Navegação em Listas de Posts e Perfis
+## Navegação em Listas de Posts e Perfis
 
 | Atalho | Ação |
 | :--- | :--- |
@@ -48,7 +48,7 @@ O **Mixko** foi projetado com foco total em acessibilidade e produtividade por m
 
 ---
 
-##  Interação com Publicações (Post em foco)
+## Interação com Publicações (Post em foco)
 
 | Atalho | Ação |
 | :--- | :--- |
@@ -76,15 +76,15 @@ O **Mixko** foi projetado com foco total em acessibilidade e produtividade por m
 
 ---
 
-##  Perfis, DMs e Moderação
+## Perfis, DMs e Moderação
 
 | Atalho | Ação |
 | :--- | :--- |
-| `Ctrl` + `Shift` + `D` | Iniciar chat/DM diretamente com o autor do post em foco ou perfil em exibição (O perfil  deverá  ter mensagens habilitadas) |
+| `Ctrl` + `Shift` + `D` | Iniciar chat/DM diretamente com o autor do post em foco ou perfil em exibição (O perfil deverá ter mensagens habilitadas) |
 | `S` | Seguir o perfil (quando na aba Perfil) |
 | `U` | Deixar de seguir o perfil (quando na aba Perfil) |
-| `M` | Silenciar o autor do post em foco (or o perfil em exibição) |
-| `B` | Bloquear o autor do post em foco (or o perfil em exibição) |
+| `M` | Silenciar o autor do post em foco (ou o perfil em exibição) |
+| `B` | Bloquear o autor do post em foco (ou o perfil em exibição) |
 | `Ctrl` + `Shift` + `R` | *(Na aba Notificações)* Alternar entre exibir todas as notificações ou apenas menções |
 | `Ctrl` + `Enter` | Publicar post ou enviar mensagem (no modal de composição ou formulários) |
 | `Setas` / `Enter` | Navegar e selecionar itens em listas, menus e modais |
