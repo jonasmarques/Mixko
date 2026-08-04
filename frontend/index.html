@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mixko</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <!-- Live Regions para Leitores de Tela -->
+    <div id="a11y-announcer" aria-live="polite" class="sr-only"></div>
+    <div id="a11y-assertive" aria-live="assertive" class="sr-only"></div>
+
+    <header role="banner" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <h1 style="margin: 0;">Mixko</h1>
+        <button id="btn-new-post-visual" class="hidden" style="background-color: var(--primary-bg); color: var(--primary-text); border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer;" aria-label="Nova Publicação (N)">+ Novo Post</button>
+      </div>
+      <nav aria-label="Navegação Principal" id="main-nav" class="hidden">
+        <ul role="tablist">
+          <li role="presentation">
+            <button role="tab" id="tab-timeline" aria-selected="true" aria-controls="panel-timeline" tabindex="0">Timeline (Alt+1)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-notifications" aria-selected="false" aria-controls="panel-notifications" tabindex="-1">Notificações (Alt+2)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-profile" aria-selected="false" aria-controls="panel-profile" tabindex="-1">Perfil (Alt+3)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-chat" aria-selected="false" aria-controls="panel-chat" tabindex="-1">DMs (Alt+4)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-feeds" aria-selected="false" aria-controls="panel-feeds" tabindex="-1">Feeds (Alt+5)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-saved" aria-selected="false" aria-controls="panel-saved" tabindex="-1">Salvos (Alt+6)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-lists" aria-selected="false" aria-controls="panel-lists" tabindex="-1">Listas (Alt+9)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-search" aria-selected="false" aria-controls="panel-search" tabindex="-1">Busca (Ctrl+F)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-settings" aria-selected="false" aria-controls="panel-settings" tabindex="-1">Configurações (Alt+S)</button>
+          </li>
+          <li role="presentation">
+            <button role="tab" id="tab-help" aria-selected="false" aria-controls="help-modal" tabindex="-1">Ajuda (Alt+F1)</button>
+          </li>
+        </ul>
+      </nav>
+    </header>
+
+    <main role="main" id="main-content">
+      
+      <!-- Login Section -->
+      <section id="login-section" aria-labelledby="login-title">
+        <h2 id="login-title">Autenticação</h2>
+        <form id="login-form">
+          <div id="login-error" class="hidden" style="color: var(--danger-text); background-color: var(--danger-bg); border: 1px solid var(--danger-border); padding: 10px; border-radius: 6px; margin-bottom: 15px; font-weight: bold;" aria-live="assertive"></div>
+          <div>
+            <label for="identifier">Identificador (Handle ou Email):</label>
+            <input type="text" id="identifier" required aria-required="true" />
+          </div>
+          <div>
+            <label for="appPassword">Senha de Aplicativo:</label>
+            <input type="password" id="appPassword" required aria-required="true" />
+          </div>
+          <div>
+            <input type="checkbox" id="remember-me" />
+            <label for="remember-me">Lembrar meus dados</label>
+          </div>
+          <button type="submit">Entrar</button>
+        </form>
+      </section>
+
+      <!-- Composer Modal -->
+      <dialog id="compose-modal" aria-labelledby="post-form-title">
+        <h2 id="post-form-title">Criar Nova Publicação</h2>
+        <form id="compose-form" method="dialog">
+          <label for="post-text">Texto da publicação:</label>
+          <textarea id="post-text" rows="4" required aria-required="true" placeholder="O que está acontecendo?"></textarea>
+          <div id="char-counter" style="font-size: 0.85em; color: #555; margin-bottom: 10px;">300 caracteres restantes</div>
+          
+          <div id="compose-link-preview" class="hidden" style="margin: 10px 0; border: 1px solid #ccc; padding: 10px; border-radius: 6px; position: relative;"></div>
+
+          <div id="thread-additional-posts"></div>
+          <button type="button" id="btn-add-thread-post" style="margin-bottom: 15px;">+ Adicionar Post</button>
+          
+          <fieldset>
+            <legend>Mídia (Opcional, apenas no primeiro post)</legend>
+            <label for="post-image">Anexar Imagens (máx 4):</label>
+            <input type="file" id="post-image" accept="image/jpeg, image/png" multiple />
+            
+            <br/><br/>
+            <label for="post-video">Ou Anexar Vídeo:</label>
+            <input type="file" id="post-video" accept="video/mp4, video/webm, video/quicktime" />
+            
+            <div id="image-alts-container" aria-live="polite"></div>
+            <div id="video-alt-container" aria-live="polite" class="hidden" style="margin-top: 10px;">
+              <label for="video-alt">Texto Alternativo do Vídeo (Obrigatório):</label>
+              <input type="text" id="video-alt" class="video-alt-input" />
+            </div>
+            <span id="alt-desc" class="sr-only">Descreva as mídias detalhadamente para pessoas com deficiência visual.</span>
+          </fieldset>
+
+          <div style="margin-top: 15px; margin-bottom: 15px;">
+            <label for="post-language">Idioma da publicação:</label>
+            <select id="post-language" aria-label="Idioma da publicação" tabindex="0">
+              <option value="">Não especificar</option>
+              <option value="pt">Português</option>
+              <option value="en">Inglês</option>
+              <option value="es">Espanhol</option>
+            </select>
+            
+            <label for="post-threadgate" style="margin-left: 15px;">Quem pode responder:</label>
+            <select id="post-threadgate" aria-label="Quem pode responder" tabindex="0">
+              <option value="everyone">Todos (Padrão)</option>
+              <option value="nobody">Ninguém</option>
+              <option value="mentioned">Apenas Mencionados</option>
+              <option value="following">Quem eu sigo</option>
+            </select>
+          </div>
+
+          <div class="actions">
+            <button type="button" id="btn-close-modal">Cancelar (Esc)</button>
+            <button type="submit" id="btn-submit-post">Publicar (Ctrl+Enter)</button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Profile Picker Modal -->
+      <dialog id="profile-picker-modal" aria-labelledby="profile-picker-title">
+        <h2 id="profile-picker-title">Ir para o perfil de...</h2>
+        <div id="profile-picker-list" role="menu"></div>
+        <button id="btn-close-profile-picker">Cancelar (Esc)</button>
+      </dialog>
+
+      <!-- Direct Profile Modal -->
+      <dialog id="direct-profile-modal" aria-labelledby="direct-profile-title">
+        <h2 id="direct-profile-title">Ir para Perfil</h2>
+        <form id="direct-profile-form" method="dialog">
+          <label for="direct-profile-input">Digite o handle (ex: alice.bsky.social):</label>
+          <input type="text" id="direct-profile-input" aria-required="true" tabindex="0" />
+          <div class="actions" style="margin-top: 15px;">
+            <button type="button" id="btn-close-direct-profile">Cancelar (Esc)</button>
+            <button type="submit">Ir (Enter)</button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- Edit Profile Modal -->
+      <dialog id="edit-profile-modal" aria-labelledby="edit-profile-title">
+        <h2 id="edit-profile-title">Editar Perfil</h2>
+        <form id="edit-profile-form">
+          <label for="edit-profile-name">Nome de Exibição:</label>
+          <input type="text" id="edit-profile-name" aria-required="true" tabindex="0" />
+          
+          <label for="edit-profile-desc" style="margin-top: 10px; display: block;">Descrição (Bio):</label>
+          <textarea id="edit-profile-desc" rows="4" tabindex="0" style="width: 100%;"></textarea>
+          
+          <label for="edit-profile-avatar" style="margin-top: 10px; display: block;">Foto de Perfil (Avatar):</label>
+          <input type="file" id="edit-profile-avatar" accept="image/*" tabindex="0" />
+
+          <label for="edit-profile-banner" style="margin-top: 10px; display: block;">Imagem de Capa (Banner):</label>
+          <input type="file" id="edit-profile-banner" accept="image/*" tabindex="0" />
+
+          <fieldset style="margin-top: 15px;">
+            <legend>Rótulos de Conteúdo da Conta (Self Labels)</legend>
+            <small style="display: block; margin-bottom: 10px;">Aplique avisos de conteúdo se a sua conta publicar mídias adultas ou sensíveis.</small>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <label><input type="checkbox" class="edit-self-label" value="sexual" /> Conteúdo sexualmente sugestivo</label>
+              <label><input type="checkbox" class="edit-self-label" value="nudity" /> Nudez artística ou não sexual</label>
+              <label><input type="checkbox" class="edit-self-label" value="porn" /> Pornografia / Conteúdo adulto explícito</label>
+              <label><input type="checkbox" class="edit-self-label" value="graphic-media" /> Violência ou mídia gráfica forte</label>
+            </div>
+          </fieldset>
+
+          <div class="actions" style="margin-top: 15px;">
+            <button type="button" id="btn-close-edit-profile">Cancelar (Esc)</button>
+            <button type="button" id="btn-save-profile">Salvar Perfil</button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- App Sections -->
+      <div id="app-sections" class="hidden">
+        
+        <!-- Timeline -->
+        <section id="panel-timeline" role="tabpanel" aria-labelledby="tab-timeline" tabindex="0">
+          <h2 class="sr-only">Timeline</h2>
+          <div id="feed-items" role="feed" aria-busy="false"></div>
+        </section>
+
+        <!-- Notifications -->
+        <section id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications" tabindex="0" class="hidden">
+          <h2>Notificações</h2>
+          <div id="notif-items" aria-busy="false"></div>
+        </section>
+
+        <!-- Profile -->
+        <section id="panel-profile" role="tabpanel" aria-labelledby="tab-profile" tabindex="0" class="hidden">
+          <h2>Seu Perfil</h2>
+          <nav aria-label="Abas do Perfil">
+              <ul role="tablist" class="profile-tabs">
+                  <li role="presentation"><button role="tab" id="ptab-posts" aria-selected="true" tabindex="0">Posts</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-replies" aria-selected="false" tabindex="-1">Respostas</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-media" aria-selected="false" tabindex="-1">Mídia</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-likes" aria-selected="false" tabindex="-1">Curtidas</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-lists" aria-selected="false" tabindex="-1">Listas</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-packs" aria-selected="false" tabindex="-1">Pacotes Iniciais</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-followers" aria-selected="false" tabindex="-1">Seguidores</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-following" aria-selected="false" tabindex="-1">Seguindo</button></li>
+              </ul>
+          </nav>
+          <div id="profile-card" aria-busy="false">Carregando...</div>
+        </section>
+
+        <!-- DMs / Chat -->
+        <section id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" tabindex="0" class="hidden">
+          <h2>Mensagens Diretas</h2>
+          <div id="chat-list" aria-busy="false"></div>
+        </section>
+
+        <!-- Feeds -->
+        <section id="panel-feeds" role="tabpanel" aria-labelledby="tab-feeds" tabindex="0" class="hidden">
+          <h2>Feeds e Listas</h2>
+          <nav aria-label="Abas de Feeds">
+              <ul role="tablist" class="profile-tabs">
+                  <li role="presentation"><button role="tab" id="ftab-saved" aria-selected="true" tabindex="0">Salvos</button></li>
+                  <li role="presentation"><button role="tab" id="ftab-lists" aria-selected="false" tabindex="-1">Minhas Listas</button></li>
+                  <li role="presentation"><button role="tab" id="ftab-discover" aria-selected="false" tabindex="-1">Descobrir</button></li>
+              </ul>
+          </nav>
+          <div id="feed-list" aria-busy="false" style="margin-top: 15px;">Carregando...</div>
+        </section>
+
+        <!-- Saved Posts -->
+        <section id="panel-saved" role="tabpanel" aria-labelledby="tab-saved" tabindex="0" class="hidden">
+          <h2>Posts Salvos</h2>
+          <div id="saved-posts-list" aria-live="polite" aria-busy="false">Carregando...</div>
+        </section>
+
+        <!-- Lists -->
+        <section id="panel-lists" role="tabpanel" aria-labelledby="tab-lists" tabindex="0" class="hidden">
+          <h2>Listas</h2>
+          <div id="lists-items-container" aria-busy="false">Carregando listas...</div>
+        </section>
+
+        <!-- Search -->
+        <section id="panel-search" role="tabpanel" aria-labelledby="tab-search" tabindex="0" class="hidden">
+          <h2>Busca</h2>
+          <div class="search-controls">
+              <label for="search-input">Pesquisar por posts ou usuários:</label>
+              <input type="search" id="search-input" placeholder="Digite para buscar..." />
+              <div role="radiogroup" aria-labelledby="search-type-label">
+                  <span id="search-type-label" class="sr-only">Tipo de busca</span>
+                  <label><input type="radio" name="search-type" value="posts" checked> Posts</label>
+                  <label><input type="radio" name="search-type" value="profiles"> Perfis</label>
+              </div>
+              <div id="search-lang-filter" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
+                  <div>
+                    <label for="search-lang">Idioma (posts):</label>
+                     <select id="search-lang">
+                         <option value="">Todos os idiomas</option>
+                         <option value="pt">Português</option>
+                         <option value="en">Inglês</option>
+                         <option value="es">Espanhol</option>
+                         <option value="fr">Francês</option>
+                         <option value="de">Alemão</option>
+                         <option value="it">Italiano</option>
+                         <option value="ja">Japonês</option>
+                         <option value="ko">Coreano</option>
+                         <option value="zh">Chinês</option>
+                         <option value="ru">Russo</option>
+                         <option value="ar">Árabe</option>
+                         <option value="hi">Hindi</option>
+                         <option value="bn">Bengali</option>
+                         <option value="tr">Turco</option>
+                         <option value="pl">Polonês</option>
+                         <option value="nl">Holandês</option>
+                         <option value="sv">Sueco</option>
+                         <option value="da">Dinamarquês</option>
+                         <option value="no">Norueguês</option>
+                         <option value="fi">Finlandês</option>
+                         <option value="el">Grego</option>
+                         <option value="cs">Tcheco</option>
+                         <option value="ro">Romeno</option>
+                         <option value="hu">Húngaro</option>
+                         <option value="uk">Ucraniano</option>
+                         <option value="th">Tailandês</option>
+                         <option value="vi">Vietnamita</option>
+                         <option value="id">Indonésio</option>
+                         <option value="ms">Malaio</option>
+                         <option value="tl">Filipino / Tagalog</option>
+                         <option value="he">Hebraico</option>
+                         <option value="fa">Persa</option>
+                         <option value="sw">Suaíli</option>
+                         <option value="ca">Catalão</option>
+                         <option value="hr">Croata</option>
+                         <option value="sk">Eslovaco</option>
+                         <option value="bg">Búlgaro</option>
+                         <option value="sr">Sérvio</option>
+                         <option value="lt">Lituano</option>
+                         <option value="lv">Letão</option>
+                     </select>
+                  </div>
+                  <div>
+                    <label for="search-sort">Ordenação:</label>
+                    <select id="search-sort">
+                        <option value="latest">Mais Recentes</option>
+                        <option value="top">Populares (Top)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="search-author">Autor (opcional):</label>
+                    <input type="text" id="search-author" placeholder="@handle" style="padding:4px;" />
+                  </div>
+              </div>
+              <button id="btn-search" style="margin-top: 10px;">Buscar</button>
+          </div>
+          <div id="search-results" aria-live="polite" aria-busy="false"></div>
+        </section>
+
+        <!-- Settings -->
+        <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" tabindex="0" class="hidden">
+          <h2>Configurações</h2>
+          <div id="settings-content">
+            <form id="settings-form">
+              <fieldset>
+                <legend>Aparência e Timeline</legend>
+                <div style="margin-bottom: 10px;">
+                  <label for="theme-select">Tema:</label>
+                  <select id="theme-select">
+                    <option value="system">Padrão do Sistema</option>
+                    <option value="light">Claro</option>
+                    <option value="dark">Escuro</option>
+                  </select>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label for="name-display-format-select">Formato de exibição de nome:</label>
+                  <select id="name-display-format-select">
+                    <option value="name">Nome de perfil</option>
+                    <option value="nameAndHandle">Nome de perfil + handle</option>
+                    <option value="handle">Só o handle</option>
+                  </select>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label for="date-format-select">Formato de Data:</label>
+                  <select id="date-format-select">
+                    <option value="relative">Data Relativa (ex: há 5 minutos)</option>
+                    <option value="exact">Data Exata (ex: 27 de julho de 2026 às 22:41)</option>
+                  </select>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label for="notification-format-select">Formato de notificação:</label>
+                  <select id="notification-format-select">
+                    <option value="combined">COMBINADO</option>
+                    <option value="individual">individual</option>
+                  </select>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label for="thread-sort-select">Ordenação de Threads:</label>
+                  <select id="thread-sort-select">
+                    <option value="oldest">Mais antigas primeiro</option>
+                    <option value="newest">Mais recentes primeiro</option>
+                    <option value="most-likes">Mais curtidas primeiro</option>
+                    <option value="random">Aleatório</option>
+                  </select>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label for="font-size-select">Tamanho da Fonte (Acessibilidade):</label>
+                  <select id="font-size-select">
+                    <option value="normal">Normal (100%)</option>
+                    <option value="large">Grande (120%)</option>
+                    <option value="x-large">Muito Grande (140%)</option>
+                    <option value="huge">Máximo (160%)</option>
+                  </select>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <input type="checkbox" id="setting-hide-replies" />
+                  <label for="setting-hide-replies">Ocultar respostas na Timeline (Alt+R)</label>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <input type="checkbox" id="setting-prioritize-followed" />
+                  <label for="setting-prioritize-followed">Priorizar contas que sigo nas respostas</label>
+                </div>
+              </fieldset>
+
+              <fieldset style="margin-top: 15px;">
+                <legend>Moderação e Filtros</legend>
+                <div style="margin-bottom: 15px;">
+                  <input type="checkbox" id="setting-adult-content" />
+                  <label for="setting-adult-content">Mostrar Conteúdo Adulto</label>
+                </div>
+                
+                <label for="muted-word-input"><strong>Palavras e Hashtags Silenciadas:</strong></label>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                  <input type="text" id="muted-word-input" placeholder="Ex: #bbb, política" />
+                  <button type="button" id="btn-add-muted-word">Adicionar</button>
+                </div>
+                <ul id="muted-words-list" aria-live="polite" style="list-style: none; padding-left: 0; margin-bottom: 15px;">
+                  <!-- Items will be injected here -->
+                </ul>
+
+                <label><strong>Filtros de Conteúdo:</strong></label>
+                <div id="content-filters-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;">
+                    Carregando...
+                </div>
+              </fieldset>
+
+              <fieldset style="margin-top: 15px;">
+                <legend>Privacidade</legend>
+                
+                <h3 style="margin-top: 0; font-size: 1rem;">Usuários Silenciados</h3>
+                <div id="muted-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc; padding: 5px;">
+                    Carregando...
+                </div>
+
+                <h3 style="font-size: 1rem;">Usuários Bloqueados</h3>
+                <div id="blocked-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #ccc; padding: 5px;">
+                    Carregando...
+                </div>
+              </fieldset>
+
+              <div class="actions" style="margin-top: 15px;">
+                <fieldset style="margin-top: 15px;">
+                <legend>Auto-Rotulagem da Conta (Self Labels)</legend>
+                <p><small>Aplique avisos de conteúdo à sua conta caso publique conteúdo sensível:</small></p>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                  <button type="button" class="btn-self-label" data-label="sexually-suggestive">Conteúdo Sexualmente Sugestivo</button>
+                  <button type="button" class="btn-self-label" data-label="nudity">Nudez</button>
+                  <button type="button" class="btn-self-label" data-label="graphic-media">Mídia Chocante/Violenta</button>
+                </div>
+              </fieldset>
+
+              <button type="submit" style="margin-top: 20px;">Salvar Configurações</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Generic Profiles List Modal -->
+      <dialog id="profiles-list-modal" aria-labelledby="profiles-list-title">
+        <h2 id="profiles-list-title">Lista de Perfis</h2>
+        <div id="profiles-list-container" role="list" aria-label="Lista de perfis" tabindex="0" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
+        <div class="actions" style="margin-top: 15px;">
+          <button type="button" id="btn-close-profiles-list">Fechar</button>
+        </div>
+      </dialog>
+
+      <!-- Generic Posts List Modal -->
+      <dialog id="posts-list-modal" aria-labelledby="posts-list-title">
+        <h2 id="posts-list-title">Lista de Posts</h2>
+        <div id="posts-list-container" role="feed" aria-label="Lista de posts" tabindex="0" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;"></div>
+        <div class="actions" style="margin-top: 15px;">
+          <button type="button" id="btn-close-posts-list">Fechar</button>
+        </div>
+      </dialog>
+
+      <!-- Help / Shortcuts Modal -->
+      <dialog id="help-modal" aria-labelledby="help-modal-title">
+        <h2 id="help-modal-title">Atalhos de Teclado e Ajuda</h2>
+        <div id="help-shortcuts-list" role="region" aria-label="Lista de atalhos de teclado" tabindex="0">
+          
+          <div class="shortcuts-section">
+            <h3>Navegação Principal (Abas e Feeds)</h3>
+            <table class="shortcuts-table">
+              <tr><td><kbd>Alt</kbd> + <kbd>1</kbd></td><td>Ir para a aba <strong>Timeline</strong></td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>2</kbd></td><td>Ir para a aba <strong>Notificações</strong></td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>3</kbd></td><td>Ir para a aba <strong>Perfil</strong> (seu próprio perfil)</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>4</kbd></td><td>Ir para a aba <strong>DMs</strong> (Mensagens Diretas)</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>5</kbd></td><td>Ir para a aba <strong>Feeds e Listas</strong></td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>6</kbd></td><td>Ir para a aba <strong>Posts Salvos</strong> (Bookmarks)</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd> / <kbd>Alt</kbd> + <kbd>7</kbd></td><td>Ir para a aba <strong>Busca</strong> e focar no campo de pesquisa</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>S</kbd> / <kbd>Alt</kbd> + <kbd>8</kbd></td><td>Ir para a aba <strong>Configurações</strong></td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>9</kbd></td><td>Ir para a aba <strong>Listas</strong></td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>1</kbd> a <kbd>8</kbd></td><td>(Na aba Perfil) Alternar entre sub-abas (Posts, Respostas, Mídia, Curtidas, Listas, Pacotes, Seguidores, Seguindo)</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>0</kbd></td><td>Selecionar o Feed principal (<strong>Seguindo</strong>) na Timeline</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>1</kbd> a <kbd>9</kbd></td><td>Selecionar Feeds salvos (do 1º ao 9º) na Timeline</td></tr>
+            </table>
+          </div>
+
+          <div class="shortcuts-section">
+            <h3>Ações Globais e do Sistema</h3>
+            <table class="shortcuts-table">
+              <tr><td><kbd>Alt</kbd> + <kbd>F1</kbd></td><td>Abrir ou fechar este <strong>Menu de Ajuda</strong></td></tr>
+              <tr><td><kbd>F5</kbd></td><td>Recarregamento rápido da aba atual</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd></td><td>Alternar entre <strong>Modo Escuro</strong> e <strong>Modo Claro</strong></td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd></td><td>Abrir modal para ir direto a um perfil pelo handle</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>Fechar modais abertos ou voltar à lista de conversas em DMs</td></tr>
+            </table>
+          </div>
+
+          <div class="shortcuts-section">
+            <h3>Navegação na Lista de Posts (Timeline e Perfis)</h3>
+            <table class="shortcuts-table">
+              <tr><td><kbd>J</kbd></td><td>Avançar foco para o próximo post (para baixo) ou carregar mais posts ao fim da lista</td></tr>
+              <tr><td><kbd>K</kbd></td><td>Voltar foco para o post anterior (para cima)</td></tr>
+              <tr><td><kbd>.</kbd> (Ponto)</td><td>Voltar o foco para o primeiro post no topo da lista</td></tr>
+              <tr><td><kbd>P</kbd></td><td>Abrir perfil do autor do post focado (ou abrir seletor de perfis citados)</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>E</kbd></td><td>Recolher postagens expandidas e recarregar a lista atual</td></tr>
+              <tr><td><kbd>A</kbd></td><td>Abrir link externo ou o primeiro link encontrado no texto do post focado</td></tr>
+            </table>
+          </div>
+
+          <div class="shortcuts-section">
+            <h3>Interação com Publicações (Post focado)</h3>
+            <table class="shortcuts-table">
+              <tr><td><kbd>N</kbd></td><td>Criar nova publicação (abrir modal de composição de post)</td></tr>
+              <tr><td><kbd>X</kbd></td><td>Excluir a publicação focada (apenas para suas próprias postagens)</td></tr>
+              <tr><td><kbd>L</kbd></td><td>Curtir ou descurtir o post focado</td></tr>
+              <tr><td><kbd>T</kbd></td><td>Repostar ou desfazer Repost do post focado</td></tr>
+              <tr><td><kbd>Q</kbd></td><td>Citar (Quote) o post focado em uma nova publicação</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>O</kbd></td><td>Visualizar o post original de uma citação (Quote) em modal</td></tr>
+              <tr><td><kbd>R</kbd></td><td>Responder ao post focado (ou focar no campo de mensagem do chat em DMs)</td></tr>
+              <tr><td><kbd>E</kbd></td><td>Expandir e visualizar toda a árvore de diálogo do post focado</td></tr>
+              <tr><td><kbd>V</kbd></td><td>Reproduzir/pausar o vídeo do post focado (e anunciar descrição alternativa)</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>C</kbd></td><td>Copiar a URL/link do post focado no Bluesky para a área de transferência</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>C</kbd></td><td>Copiar o texto do post focado para a área de transferência</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>S</kbd></td><td>Salvar ou remover a publicação focada dos seus <strong>Posts Salvos</strong> (Bookmarks)</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>L</kbd></td><td>Ver lista de usuários que curtiram o post focado</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>T</kbd></td><td>Ver lista de usuários que deram Repost no post focado</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>Q</kbd></td><td>Ver lista de postagens citando (Quotes) o post focado</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>R</kbd></td><td>Ver a thread de respostas do post focado</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>F</kbd></td><td>Fixar publicação no seu perfil</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>M</kbd></td><td>Mutar (silenciar) a thread da publicação focada</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>H</kbd></td><td>Ocultar a resposta focada</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>R</kbd></td><td>Ocultar ou exibir respostas na Timeline</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>D</kbd></td><td>Denunciar a publicação focada ou perfil em exibição</td></tr>
+            </table>
+          </div>
+
+          <div class="shortcuts-section">
+            <h3>Ações em Perfis, DMs e Moderação</h3>
+            <table class="shortcuts-table">
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd></td><td>Iniciar chat/DM diretamente com o autor do post focado ou perfil aberto</td></tr>
+              <tr><td><kbd>S</kbd></td><td>Seguir o perfil (quando na aba Perfil)</td></tr>
+              <tr><td><kbd>U</kbd></td><td>Deixar de seguir o perfil (quando na aba Perfil)</td></tr>
+              <tr><td><kbd>M</kbd></td><td>Silenciar o autor do post focado (ou o perfil em exibição)</td></tr>
+              <tr><td><kbd>B</kbd></td><td>Bloquear o autor do post focado (ou o perfil em exibição)</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd></td><td>(Na aba Notificações) Alternar entre exibir todas as notificações ou apenas menções</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Publicar post ou enviar no modal de composição</td></tr>
+              <tr><td><kbd>Setas</kbd> / <kbd>Enter</kbd></td><td>Navegar e selecionar itens em listas, menus e modais</td></tr>
+            </table>
+          </div>
+
+        </div>
+        <div class="actions">
+          <button type="button" id="btn-close-help">Fechar (Esc / Alt+F1)</button>
+        </div>
+      </dialog>
+
+
+    </main>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

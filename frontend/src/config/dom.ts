@@ -1,0 +1,32 @@
+export const DOM = {
+  get loginSection() { return document.getElementById('login-section') as HTMLElement; },
+  get appSections() { return document.getElementById('app-sections') as HTMLElement; },
+  get mainNav() { return document.getElementById('main-nav') as HTMLElement; },
+  get loginForm() { return document.getElementById('login-form') as HTMLFormElement; },
+  get composeModal() { return document.getElementById('compose-modal') as HTMLDialogElement; },
+  get composeForm() { return document.getElementById('compose-form') as HTMLFormElement; },
+  get btnCloseModal() { return document.getElementById('btn-close-modal') as HTMLButtonElement; },
+  get composeTitle() { return document.getElementById('post-form-title') as HTMLHeadingElement; },
+  panels: {
+    get timeline() { return document.getElementById('panel-timeline') as HTMLElement; },
+    get notifications() { return document.getElementById('panel-notifications') as HTMLElement; },
+    get profile() { return document.getElementById('panel-profile') as HTMLElement; },
+    get chat() { return document.getElementById('panel-chat') as HTMLElement; },
+    get feeds() { return document.getElementById('panel-feeds') as HTMLElement; },
+    get saved() { return document.getElementById('panel-saved') as HTMLElement; },
+    get search() { return document.getElementById('panel-search') as HTMLElement; },
+    get settings() { return document.getElementById('panel-settings') as HTMLElement; },
+    get lists() { return document.getElementById('panel-lists') as HTMLElement; },
+  },
+  tabs: {
+    get timeline() { return document.getElementById('tab-timeline') as HTMLButtonElement; },
+    get notifications() { return document.getElementById('tab-notifications') as HTMLButtonElement; },
+    get profile() { return document.getElementById('tab-profile') as HTMLButtonElement; },
+    get chat() { return document.getElementById('tab-chat') as HTMLButtonElement; },
+    get feeds() { return document.getElementById('tab-feeds') as HTMLButtonElement; },
+    get saved() { return document.getElementById('tab-saved') as HTMLButtonElement; },
+    get search() { return document.getElementById('tab-search') as HTMLButtonElement; },
+    get settings() { return document.getElementById('tab-settings') as HTMLButtonElement; },
+    get lists() { return document.getElementById('tab-lists') as HTMLButtonElement; },
+  }
+};
