@@ -6,10 +6,10 @@ A ideia é fornecer navegação completa com teclas de atalho, recursos de ampli
 
 ---
 
-## 📌 Índice
+## Índice
 
 - [Visão Geral](#visão-geral)
-- [📥 Downloads](#-downloads)
+- [Downloads](#downloads)
 - [Arquitetura](#arquitetura)
 - [Pré-requisitos](#pré-requisitos)
 - [Começando](#começando)
@@ -38,12 +38,12 @@ O Mixko é um cliente alternativo para a rede Bluesky com integração total ao 
 
 ---
 
-## 📥 Downloads
+## Downloads
 
 Você pode baixar os executáveis pré-compilados do Mixko diretamente do GitHub:
 
-- 🚀 **[Última Versão Estável (Releases)](https://github.com/jonasmarques/Mixko/releases):** Baixe o executável pronto para o seu sistema operacional (`.exe` para Windows).
-- 🛠️ **[Builds Automáticos (Actions Artifacts)](https://github.com/jonasmarques/Mixko/actions):** Acesse as compilações automáticas geradas a cada atualização de código no repositório.
+- **[Última Versão Estável (Releases)](https://github.com/jonasmarques/Mixko/releases):** Baixe o executável pronto para o seu sistema operacional (`.exe` para Windows).
+- **[Builds Automáticos (Actions Artifacts)](https://github.com/jonasmarques/Mixko/actions):** Acesse as compilações automáticas geradas a cada atualização de código no repositório.
 
 ---
 
@@ -124,7 +124,7 @@ Agradecimentos especiais a todos os projetos de código aberto e colaboradores q
 
 ---
 
-## ☕ Doe-me um café
+## Doe-me um café
 
 Este software é e sempre será gratuito e de código aberto. Se você quiser e puder apoiar o projeto:
 
