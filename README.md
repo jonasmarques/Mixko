@@ -4,6 +4,7 @@ Mixko é um aplicativo multiplataforma alternativo para o Bluesky cujo foco prin
 
 A ideia é fornecer navegação completa com teclas de atalho, recursos de ampliação e destaque e uma interface limpa e semanticamente organizada.
 
+
 ---
 
 ## Índice
@@ -13,7 +14,6 @@ A ideia é fornecer navegação completa com teclas de atalho, recursos de ampli
 - [Arquitetura](#arquitetura)
 - [Pré-requisitos](#pré-requisitos)
 - [Começando](#começando)
-- [Contribuindo](#contribuindo)
 - [Licença](#licença)
 - [Créditos e Agradecimentos](#créditos-e-agradecimentos)
 - [Doe-me um café](#doe-me-um-café)
@@ -40,10 +40,15 @@ O Mixko é um cliente alternativo para a rede Bluesky com integração total ao 
 
 ## Downloads
 
-Você pode baixar os executáveis pré-compilados do Mixko diretamente do GitHub:
+> **Nota 1 (macOS):** O pobre desenvolvedor de tão singela aplicação não possui um Mac OS para testá-la no ambiente, tampouco foi capaz de achar alguém que pudesse ser beta tester. Se você encontrar algum problema, reporte-o como PR e eu o corrigirei assim que possível.
 
-- **[Última Versão Estável (Releases)](https://github.com/jonasmarques/Mixko/releases):** Baixe o executável pronto para o seu sistema operacional (`.exe` para Windows).
-- **[Builds Automáticos (Actions Artifacts)](https://github.com/jonasmarques/Mixko/actions):** Acesse as compilações automáticas geradas a cada atualização de código no repositório.
+> **Nota 2 (Windows):** O aplicativo é um encapsulado webview, porém não possui um certificado. Isso significa que muito provavelmente você verá a tela do SmartScreen do Windows ao abrir o app. Basta clicar em "Mais informações" e depois em "Executar assim mesmo". Não se preocupe, não há qualquer tipo de malware, apenas não pude pagar 99 USD por um certificado para o aplicativo.
+
+
+O Mixko está disponível para Linux, Windows e Mac. [Baixe-o aqui](https://github.com/jonasmarques/Mixko/releases)
+
+
+
 
 ---
 
@@ -99,12 +104,6 @@ wails dev
 
 ---
 
-## Contribuindo
-
-Consulte [CONTRIBUTING.md](CONTRIBUTING.md) para diretrizes de desenvolvimento e processo de colaboração.
-
----
-
 ## Licença
 
 Este software é licenciado sob a Licença MIT.
@@ -126,7 +125,7 @@ Agradecimentos especiais a todos os projetos de código aberto e colaboradores q
 
 ## Doe-me um café
 
-Este software é e sempre será gratuito e de código aberto. Se você quiser e puder apoiar o projeto:
+Este software é e sempre será gratuito e de código aberto.  Porém ele é desenvolvido no meu pouco  tempo  livre e talvez por isso não tenha o exato refinamento em estado da arte que eu gostaria. De todo modo, se você quiser e puder apoiar o projeto, quem sou eu para  te impedir. O apoio pode ser feito pelos seguintes meios:
 
 - **Pix:** [Clique aqui para enviar um Pix](https://nubank.com.br/cobrar/futyp1/6a316637-8282-4bf0-b3d6-2c58cd82eed2)
 - **Cartão de débito ou crédito:** [Clique aqui no Mercado Pago](https://link.mercadopago.com.br/mixco)

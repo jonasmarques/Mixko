@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Build (${{ matrix.platform }})
+    name: Build (${{ matrix.build_name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -21,12 +21,26 @@ jobs:
         include:
           - platform: 'windows/amd64'
             os: 'windows-latest'
-            build_name: 'Mixko-Windows-x64.exe'
-            artifact_path: 'build/bin/Mixko.exe'
+            build_name: 'Mixko-Windows-x64'
+            artifact_path: 'build/bin/*'
+          - platform: 'darwin/universal'
+            os: 'macos-latest'
+            build_name: 'Mixko-macOS-Universal'
+            artifact_path: 'build/bin/*'
+          - platform: 'linux/amd64'
+            os: 'ubuntu-latest'
+            build_name: 'Mixko-Linux-x64'
+            artifact_path: 'build/bin/*'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -51,7 +65,7 @@ jobs:
       - name: Build Wails App
         shell: bash
         run: |
-          wails build -clean
+          wails build -platform ${{ matrix.platform }} -clean
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -75,3 +89,4 @@ jobs:
             */*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
