@@ -22,16 +22,19 @@ jobs:
           - platform: 'windows/amd64'
             os: 'windows-latest'
             build_name: 'Mixko-Windows-x64'
+            output_name: 'mixko-win.exe'
             artifact_path: 'build/bin/*'
             wails_flags: ''
           - platform: 'darwin/universal'
             os: 'macos-latest'
             build_name: 'Mixko-macOS-Universal'
+            output_name: 'mixko-mac'
             artifact_path: 'build/bin/*'
             wails_flags: ''
           - platform: 'linux/amd64'
             os: 'ubuntu-latest'
             build_name: 'Mixko-Linux-x64'
+            output_name: 'mixko-linux'
             artifact_path: 'build/bin/*'
             wails_flags: '-tags webkit2_41'
 
@@ -70,6 +73,24 @@ jobs:
         run: |
           wails build -platform ${{ matrix.platform }} ${{ matrix.wails_flags }} -clean
 
+      - name: Package and Rename Executable
+        shell: bash
+        run: |
+          cd build/bin
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            if [ -f "mixko.exe" ]; then mv mixko.exe mixko-win.exe; fi
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            if [ -d "mixko.app" ]; then
+              zip -r mixko-mac.zip mixko.app
+              rm -rf mixko.app
+            elif [ -f "mixko" ]; then
+              mv mixko mixko-mac
+            fi
+          elif [ "${{ runner.os }}" == "Linux" ]; then
+            if [ -f "mixko" ]; then mv mixko mixko-linux; fi
+          fi
+          ls -la
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -84,12 +105,14 @@ jobs:
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            */*
+            mixko-*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
