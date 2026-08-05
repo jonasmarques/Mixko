@@ -63,27 +63,28 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 			text := ""
 			hasMedia := false
 			var video *VideoEmbedDTO
+			var hydratedPost *PostDTO
 			
 			if (item.Reason == "like" || item.Reason == "repost") && item.ReasonSubject != nil {
 				if view, ok := postViews[*item.ReasonSubject]; ok {
-					text = view.Text
-					hasMedia = view.HasMedia
-					video = view.Video
+					hydratedPost = view
 				} else if item.Record != nil {
 					if subjURI := ParseRepostSubjectURI(item.Record.Val); subjURI != "" {
 						if viewSubj, okSubj := postViews[subjURI]; okSubj {
-							text = viewSubj.Text
-							hasMedia = viewSubj.HasMedia
-							video = viewSubj.Video
+							hydratedPost = viewSubj
 						}
 					}
 				}
 			} else if item.Reason == "reply" || item.Reason == "quote" || item.Reason == "mention" {
 				if view, ok := postViews[item.Uri]; ok {
-					text = view.Text
-					hasMedia = view.HasMedia
-					video = view.Video
+					hydratedPost = view
 				}
+			}
+			
+			if hydratedPost != nil {
+				text = hydratedPost.Text
+				hasMedia = hydratedPost.HasMedia
+				video = hydratedPost.Video
 			}
 			
 			if text == "" && item.Record != nil {
@@ -119,6 +120,7 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 				QuoteAuthorHandle: quoteAuthorHandle,
 				QuoteText:         quoteText,
 				QuoteUri:          quoteUri,
+				HydratedPost:      hydratedPost,
 			})
 		}
 		

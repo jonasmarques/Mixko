@@ -112,6 +112,7 @@ type NotificationDTO struct {
 	QuoteAuthorHandle string `json:"quoteAuthorHandle,omitempty"`
 	QuoteText         string `json:"quoteText,omitempty"`
 	QuoteUri          string `json:"quoteUri,omitempty"`
+	HydratedPost      *PostDTO `json:"hydratedPost,omitempty"`
 }
 
 type NotificationListDTO struct {

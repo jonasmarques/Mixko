@@ -110,35 +110,28 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
     container.innerHTML = '';
     state.currentPosts = [];
   }
-  try {
-    const res = await window.go.services.NotificationsService.GetNotifications(state.notificationsCursor);
-    if (res && res.notifications) {
-      const urisToHydrate = res.notifications
-        .map((n: any) => ((n.reason === 'like' || n.reason === 'repost') && n.reasonSubject) ? n.reasonSubject : n.uri)
-        .filter((uri: string) => !!uri);
-      
-      let hydratedMap: Record<string, any> = {};
-      if (urisToHydrate.length > 0) {
-          try {
-              const hydrateRes = await window.go.services.FeedService.GetPosts(urisToHydrate);
-              if (hydrateRes && hydrateRes.posts) {
-                  hydrateRes.posts.forEach((p: any) => {
-                      hydratedMap[p.uri] = p;
-                  });
-              }
-          } catch(e) { console.warn("Failed to hydrate notifications", e); }
-      }
+    try {
+      const res = await window.go.services.NotificationsService.GetNotifications(state.notificationsCursor);
+      if (res && res.notifications) {
+        let itemsToRender = res.notifications;
+        
+        const hydratedMap: Record<string, any> = {};
+        res.notifications.forEach((n: any) => {
+            if (n.hydratedPost) {
+                const key = (n.reason === 'like' || n.reason === 'repost') && n.reasonSubject ? n.reasonSubject : n.uri;
+                hydratedMap[key] = n.hydratedPost;
+            }
+        });
 
-      let itemsToRender = res.notifications;
-      if (state.notificationFormat === 'combined') {
-        itemsToRender = groupNotificationsList(res.notifications, hydratedMap);
-      }
+        if (state.notificationFormat === 'combined') {
+          itemsToRender = groupNotificationsList(res.notifications, hydratedMap);
+        }
 
-      itemsToRender.forEach((notif: any, idx: number) => {
-        const postUri = (notif.reason === 'like' || notif.reason === 'repost') && notif.reasonSubject
-            ? notif.reasonSubject
-            : notif.uri;
-        const hydrated = hydratedMap[notif.uri] || hydratedMap[postUri];
+        itemsToRender.forEach((notif: any, idx: number) => {
+          const postUri = (notif.reason === 'like' || notif.reason === 'repost') && notif.reasonSubject
+              ? notif.reasonSubject
+              : notif.uri;
+          const hydrated = notif.hydratedPost || hydratedMap[postUri];
 
         let isRepostOfRepost = false;
         if (notif.reason === 'repost') {

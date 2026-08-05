@@ -18,9 +18,9 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   article.dataset.createdAt = post.createdAt || post.indexedAt || "";
   
   let srMetrics = `Respostas: ${post.replyCount || 0}, Reposts: ${post.repostCount || 0}, Curtidas: ${post.likeCount || 0}`;
+  article.dataset.metrics = srMetrics;
   let fullText = post.text ? `${post.text}` : "";
   article.dataset.text = fullText;
-  article.dataset.metrics = srMetrics;
   article.dataset.viewerRepost = post.viewerRepost || "";
   if (isNotification && notifReason) {
       article.dataset.notifReason = notifReason;
@@ -202,13 +202,18 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   let repostBtnLabel = post.viewerRepost ? `Desfazer Repost (T)` : `Repost (T)`;
   let bookmarkBtnLabel = post.viewerBookmark ? `Salvo (Shift+S)` : `Salvar (Shift+S)`;
   const isOwner = (post.authorHandle === state.loggedInHandle) || (post.authorDid === state.loggedInHandle) || (post.authorName === state.loggedInHandle);
-  if (!isNotification || !['like', 'repost', 'follow'].includes(notifReason)) {
+  
+  if (!isNotification || notifReason !== 'follow') {
     footerHtml = `
     <div class="post-metrics" aria-label="Métricas do post">
       <div class="metric-item metric-replies" aria-label="${post.replyCount || 0} respostas">${post.replyCount || 0} Respostas</div>
       <div class="metric-item metric-reposts" aria-label="${post.repostCount || 0} reposts">${post.repostCount || 0} Reposts</div>
       <div class="metric-item metric-likes" aria-label="${post.likeCount || 0} curtidas">${post.likeCount || 0} Curtidas</div>
     </div>
+    `;
+  }
+  if (!isNotification || !['like', 'repost', 'follow'].includes(notifReason)) {
+    footerHtml += `
     <footer aria-label="Ações do post">
       <button class="btn-reply" aria-label="Responder a ${post.authorHandle}">Responder (R)</button>
       <button class="btn-repost" aria-label="${post.viewerRepost ? 'Desfazer Repost' : 'Repostar'}">${repostBtnLabel}</button>

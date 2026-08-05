@@ -2523,6 +2523,7 @@ export namespace services {
 	    quoteAuthorHandle?: string;
 	    quoteText?: string;
 	    quoteUri?: string;
+	    hydratedPost?: PostDTO;
 	
 	    static createFrom(source: any = {}) {
 	        return new NotificationDTO(source);
@@ -2544,6 +2545,7 @@ export namespace services {
 	        this.quoteAuthorHandle = source["quoteAuthorHandle"];
 	        this.quoteText = source["quoteText"];
 	        this.quoteUri = source["quoteUri"];
+	        this.hydratedPost = this.convertValues(source["hydratedPost"], PostDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

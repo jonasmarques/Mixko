@@ -443,7 +443,9 @@ export function setupCompose() {
             if (btnAddPost) btnAddPost.disabled = false;
             announceAssertive(postItems.length > 1 ? "Thread publicada com sucesso." : "Publicado com sucesso.");
             closeComposeModal();
-            reloadCurrentTab();
+            if (state.currentTab !== 'notifications') {
+                reloadCurrentTab();
+            }
           } catch (err: any) {
             if (btnSubmit) btnSubmit.disabled = false;
             if (btnAddPost) btnAddPost.disabled = false;
