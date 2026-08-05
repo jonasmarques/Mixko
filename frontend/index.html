@@ -553,7 +553,15 @@
           <button type="button" id="btn-close-help">Fechar (Esc / Alt+F1)</button>
         </div>
       </dialog>
-
+      <!-- Update Notification Modal -->
+      <dialog id="update-modal" aria-labelledby="update-modal-title" aria-describedby="update-modal-text">
+        <h2 id="update-modal-title">Nova Atualização Disponível</h2>
+        <p id="update-modal-text" style="margin: 15px 0; font-size: 1.05em; line-height: 1.4;"></p>
+        <div class="actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+          <button type="button" id="btn-update-ignore">Ignorar por enquanto</button>
+          <button type="button" id="btn-update-now" style="background-color: var(--primary-bg, #0085ff); color: #fff; font-weight: bold; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Atualizar agora</button>
+        </div>
+      </dialog>
 
     </main>
 

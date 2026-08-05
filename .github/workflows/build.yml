@@ -71,7 +71,7 @@ jobs:
       - name: Build Wails App
         shell: bash
         run: |
-          wails build -platform ${{ matrix.platform }} ${{ matrix.wails_flags }} -clean
+          wails build -platform ${{ matrix.platform }} ${{ matrix.wails_flags }} -ldflags "-X mixko/services.AppVersion=${{ github.ref_name }}" -clean
 
       - name: Package and Rename Executable
         shell: bash

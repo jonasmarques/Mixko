@@ -386,3 +386,11 @@ type FeedGeneratorResponseDTO struct {
 	Cursor string              `json:"cursor"`
 	Feeds  []*FeedGeneratorDTO `json:"feeds"`
 }
+
+type UpdateInfoDTO struct {
+	HasUpdate      bool   `json:"hasUpdate"`
+	CurrentVersion string `json:"currentVersion"`
+	LatestVersion  string `json:"latestVersion"`
+	ReleaseURL     string `json:"releaseUrl"`
+}
+

@@ -35,6 +35,7 @@ func main() {
 			app.Search,
 			app.Chat,
 			app.Moderation,
+			app.Updater,
 		},
 	})
 

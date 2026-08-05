@@ -23,6 +23,7 @@ type App struct {
 	Chat          *services.ChatService
 	Moderation    *services.ModerationService
 	Sync          *services.SyncService
+	Updater       *services.UpdaterService
 }
 
 // NewApp creates a new App application struct
@@ -53,6 +54,7 @@ func NewApp() *App {
 		Search:        services.NewSearchService(bskyClient),
 		Chat:          services.NewChatService(bskyClient),
 		Moderation:    services.NewModerationService(bskyClient),
+		Updater:       services.NewUpdaterService(),
 	}
 	app.Sync = services.NewSyncService(bskyClient, app.Feed, app.Notifications, app.Chat)
 	return app
