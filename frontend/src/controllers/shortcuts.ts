@@ -182,6 +182,38 @@ export function setupShortcuts() {
         });
     }
 
+    const directProfileModal = document.getElementById('direct-profile-modal') as HTMLDialogElement;
+    const directProfileForm = document.getElementById('direct-profile-form') as HTMLFormElement;
+    const directProfileInput = document.getElementById('direct-profile-input') as HTMLInputElement;
+    const btnCloseDirectProfile = document.getElementById('btn-close-direct-profile') as HTMLButtonElement;
+
+    if (directProfileModal) {
+        if (btnCloseDirectProfile) {
+            btnCloseDirectProfile.addEventListener('click', () => {
+                directProfileModal.close();
+            });
+        }
+        if (directProfileForm) {
+            directProfileForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const rawHandle = directProfileInput?.value?.trim() || '';
+                const handle = rawHandle.startsWith('@') ? rawHandle.slice(1).trim() : rawHandle;
+                if (!handle) {
+                    announceAssertive("Por favor, digite um handle válido.");
+                    return;
+                }
+                directProfileModal.close();
+                state.currentHandle = handle;
+                state.profileTabMode = 'posts';
+                announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                switchTab('profile');
+            });
+        }
+        directProfileModal.addEventListener('close', () => {
+            announcePolite("Modal de Ir para Perfil fechado.");
+        });
+    }
+
     window.addEventListener('keydown', async (e) => {
         if (!state.isAppReady) return;
         
@@ -207,6 +239,19 @@ export function setupShortcuts() {
             const isDark = document.body.classList.contains('dark-mode');
             localStorage.setItem('darkMode', isDark.toString());
             announceAssertive(isDark ? "Modo Escuro ativado" : "Modo Claro ativado");
+            return;
+        }
+
+        if (e.ctrlKey && e.shiftKey && (e.key.toLowerCase() === 'p' || e.code === 'KeyP')) {
+            e.preventDefault();
+            if (directProfileModal && directProfileInput) {
+                directProfileInput.value = '';
+                if (!directProfileModal.open) {
+                    directProfileModal.showModal();
+                }
+                directProfileInput.focus();
+                announcePolite("Digite o handle do perfil que deseja acessar.");
+            }
             return;
         }
 
@@ -244,19 +289,6 @@ export function setupShortcuts() {
             if (hideRepliesCheckbox) hideRepliesCheckbox.checked = state.hideReplies;
             announcePolite(state.hideReplies ? "Respostas ocultas" : "Respostas visíveis");
             if (state.currentTab === 'timeline') loadTimeline(false, true);
-            return;
-        }
-
-        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p') {
-            e.preventDefault();
-            const directProfileModal = document.getElementById('direct-profile-modal') as HTMLDialogElement;
-            const directProfileInput = document.getElementById('direct-profile-input') as HTMLInputElement;
-            if (directProfileModal && directProfileInput) {
-                directProfileInput.value = '';
-                directProfileModal.showModal();
-                directProfileInput.focus();
-                announcePolite("Digite o handle do perfil que deseja acessar.");
-            }
             return;
         }
 
