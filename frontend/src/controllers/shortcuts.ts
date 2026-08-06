@@ -214,9 +214,28 @@ export function setupShortcuts() {
         });
     }
 
+    let altCodeSequence = "";
+    
     window.addEventListener('keydown', async (e) => {
         if (!state.isAppReady) return;
-        
+
+        // Polyfill for Alt Codes (WebView2 bug workaround)
+        if (e.key === 'Alt') {
+            altCodeSequence = "";
+            return;
+        }
+
+        if (e.altKey && e.code.startsWith('Numpad')) {
+            const digit = e.code.replace('Numpad', '');
+            if (!isNaN(parseInt(digit))) {
+                altCodeSequence += digit;
+                e.preventDefault(); // Prevent default to avoid WebView2 consuming it
+            }
+            return;
+        } else if (!e.altKey) {
+            altCodeSequence = "";
+        }
+
         if (e.key === 'F1' && e.altKey) {
             e.preventDefault();
             const modal = document.getElementById('help-modal') as HTMLDialogElement;
@@ -273,10 +292,6 @@ export function setupShortcuts() {
             announcePolite("Recarregando aba atual...");
             reloadCurrentTab();
             return;
-        }
-
-        if (e.key === 'Alt') {
-            e.preventDefault();
         }
 
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -1030,4 +1045,61 @@ export function setupShortcuts() {
             break;
         }
     });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'Alt') {
+            if (altCodeSequence.length > 0) {
+                e.preventDefault();
+                insertAltCode(altCodeSequence);
+                altCodeSequence = "";
+            }
+        }
+    });
+}
+
+function insertAltCode(seq: string) {
+    const activeEl = document.activeElement;
+    if (!activeEl || !(activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement)) return;
+
+    let char = "";
+    if (seq.startsWith('0')) {
+        const code = parseInt(seq, 10);
+        // Windows-1252 to Unicode for 128-159
+        const win1252: Record<number, string> = {
+            128: '€', 130: '‚', 131: 'ƒ', 132: '„', 133: '…', 134: '†', 135: '‡', 
+            136: 'ˆ', 137: '‰', 138: 'Š', 139: '‹', 140: 'Œ', 142: 'Ž', 145: '‘', 
+            146: '’', 147: '“', 148: '”', 149: '•', 150: '–', 151: '—', 152: '˜', 
+            153: '™', 154: 'š', 155: '›', 156: 'œ', 158: 'ž', 159: 'Ÿ'
+        };
+        if (code >= 128 && code <= 159) {
+            char = win1252[code] || "";
+        } else {
+            char = String.fromCharCode(code);
+        }
+    } else {
+        // Very basic DOS CP437 mapping for common symbols if needed, or fallback
+        const code = parseInt(seq, 10);
+        const cp437: Record<number, string> = {
+            1: '☺', 2: '☻', 3: '♥', 4: '♦', 5: '♣', 6: '♠', 7: '•', 8: '◘', 9: '○', 10: '◙',
+            11: '♂', 12: '♀', 13: '♪', 14: '♫', 15: '☼', 16: '►', 17: '◄', 18: '↕', 19: '‼',
+            20: '¶', 21: '§', 22: '▬', 23: '↨', 24: '↑', 25: '↓', 26: '→', 27: '←', 28: '∟',
+            29: '↔', 30: '▲', 31: '▼'
+        };
+        if (code >= 1 && code <= 31) {
+            char = cp437[code] || "";
+        } else {
+            char = String.fromCharCode(code);
+        }
+    }
+
+    if (char) {
+        const start = activeEl.selectionStart || 0;
+        const end = activeEl.selectionEnd || 0;
+        const val = activeEl.value;
+        activeEl.value = val.substring(0, start) + char + val.substring(end);
+        activeEl.selectionStart = activeEl.selectionEnd = start + char.length;
+        
+        const event = new Event('input', { bubbles: true });
+        activeEl.dispatchEvent(event);
+    }
 }
