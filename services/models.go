@@ -120,21 +120,48 @@ type NotificationListDTO struct {
 	Notifications []*NotificationDTO `json:"notifications"`
 }
 
+type LabelerPolicyDefinitionDTO struct {
+	Identifier     string `json:"identifier"`
+	Severity       string `json:"severity"`
+	Blurs          string `json:"blurs"`
+	DefaultSetting string `json:"defaultSetting"`
+	AdultOnly      bool   `json:"adultOnly"`
+	Title          string `json:"title"`
+	Description    string `json:"description"`
+}
+
+type LabelerDTO struct {
+	DID          string                       `json:"did"`
+	Handle       string                       `json:"handle"`
+	DisplayName  string                       `json:"displayName"`
+	Description  string                       `json:"description"`
+	Avatar       string                       `json:"avatar"`
+	Banner       string                       `json:"banner"`
+	LikeCount    int64                        `json:"likeCount"`
+	IsSubscribed bool                         `json:"isSubscribed"`
+	ViewerLike   string                       `json:"viewerLike"`
+	IndexedAt    string                       `json:"indexedAt"`
+	Policies     []LabelerPolicyDefinitionDTO `json:"policies"`
+}
+
 type ProfileDTO struct {
-	DID              string `json:"did"`
-	Handle           string `json:"handle"`
-	DisplayName      string `json:"displayName"`
-	Description      string `json:"description"`
-	Followers        int64  `json:"followersCount"`
-	Follows          int64  `json:"followsCount"`
-	Posts            int64  `json:"postsCount"`
-	ViewerFollowing  string `json:"viewerFollowing"`
-	ViewerFollowedBy string `json:"viewerFollowedBy"`
-	ViewerMuted      bool   `json:"viewerMuted"`
-	ViewerBlocking   string `json:"viewerBlocking"`
-	ViewerBlockedBy  bool   `json:"viewerBlockedBy"`
-	PinnedPostUri    string `json:"pinnedPostUri"`
-	IsMe             bool   `json:"isMe"`
+	DID                    string      `json:"did"`
+	Handle                 string      `json:"handle"`
+	DisplayName            string      `json:"displayName"`
+	Description            string      `json:"description"`
+	Followers              int64       `json:"followersCount"`
+	Follows                int64       `json:"followsCount"`
+	Posts                  int64       `json:"postsCount"`
+	ViewerFollowing        string      `json:"viewerFollowing"`
+	ViewerFollowedBy       string      `json:"viewerFollowedBy"`
+	ViewerMuted            bool        `json:"viewerMuted"`
+	ViewerBlocking         string      `json:"viewerBlocking"`
+	ViewerBlockedBy        bool        `json:"viewerBlockedBy"`
+	PinnedPostUri          string      `json:"pinnedPostUri"`
+	IsMe                   bool        `json:"isMe"`
+	IsLabeler              bool        `json:"isLabeler"`
+	ViewerSubscribedLabeler bool       `json:"viewerSubscribedLabeler"`
+	LabelerInfo            *LabelerDTO `json:"labelerInfo,omitempty"`
 }
 
 type ProfileListDTO struct {

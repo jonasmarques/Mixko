@@ -49,10 +49,20 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 blockBtn = `<button id="btn-block" data-did="${res.did}" aria-label="Bloquear">Bloquear (B)</button>`;
               }
 
+              let labelerBtn = "";
+              if (res.isLabeler) {
+                  if (res.viewerSubscribedLabeler) {
+                      labelerBtn = `<button id="btn-unsubscribe-labeler" data-did="${res.did}" style="background-color: #ef4444; color: white;" aria-label="Cancelar assinatura do rotulador">Cancelar Assinatura de Rótulos</button>`;
+                  } else {
+                      labelerBtn = `<button id="btn-subscribe-labeler" data-did="${res.did}" style="background-color: #10b981; color: white;" aria-label="Assinar rotulador de conteúdo">Assinar Rotulador</button>`;
+                  }
+              }
+
               actionsHtml = `
                 ${followBtn}
                 ${muteBtn}
                 ${blockBtn}
+                ${labelerBtn}
                 <button id="btn-message" data-did="${res.did}" aria-label="Enviar Mensagem">Mensagem</button>
                 <button id="btn-manage-lists" data-did="${res.did}" aria-label="Gerenciar em Listas">Gerenciar em Listas</button>
                 <button id="btn-report-user" data-did="${res.did}" aria-label="Denunciar Usuário">Denunciar</button>
@@ -109,9 +119,37 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             blockedNotice = `<div style="padding:10px; background:#4a1515; color:#ffaaaa; margin-bottom:10px; border-radius:4px;">Este usuário bloqueou você.</div>`;
           }
 
+          let labelerBadge = "";
+          let labelerPoliciesHtml = "";
+          if (res.isLabeler) {
+            labelerBadge = `<div class="labeler-badge" style="display: inline-block; background: #2563eb; color: #fff; font-size: 0.85em; font-weight: bold; padding: 4px 10px; border-radius: 12px; margin-bottom: 8px;">🏷️ Rotulador de Conteúdo (Labeler) ${res.viewerSubscribedLabeler ? '• Assinado' : ''}</div>`;
+            
+            if (res.labelerInfo && res.labelerInfo.policies && res.labelerInfo.policies.length > 0) {
+              const policiesList = res.labelerInfo.policies.map((p: any) => {
+                return `
+                  <div style="background: rgba(255,255,255,0.05); padding: 8px 12px; margin-top: 6px; border-radius: 6px; border-left: 3px solid #3b82f6;">
+                    <strong>${p.title || p.identifier}</strong> <span style="font-size:0.8em; opacity:0.8;">(${p.identifier})</span>
+                    ${p.description ? `<p style="margin: 4px 0 0 0; font-size: 0.9em; opacity: 0.9;">${p.description}</p>` : ''}
+                    <div style="font-size:0.75em; margin-top:4px; opacity:0.75;">
+                      Severidade: ${p.severity || 'padrão'} | Ocultação: ${p.blurs || 'nenhuma'} ${p.adultOnly ? ' | Conteúdo Adulto' : ''}
+                    </div>
+                  </div>
+                `;
+              }).join("");
+
+              labelerPoliciesHtml = `
+                <div class="labeler-policies-card" style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 8px;">
+                  <h4 style="margin: 0 0 8px 0; font-size: 1em;">🛡️ Rótulos Definição por este Rotulador (${res.labelerInfo.policies.length})</h4>
+                  ${policiesList}
+                </div>
+              `;
+            }
+          }
+
           container.innerHTML = `
-            <div class="post-item profile-header" tabindex="0" data-text="Perfil de ${res.displayName}. ${res.viewerFollowedBy ? 'Segue você.' : ''} Seguidores: ${res.followersCount}. Seguindo: ${res.followsCount}. ${res.isMe ? '' : 'Use S para Seguir, U para Unfollow.'}">
+            <div class="post-item profile-header" tabindex="0" data-text="Perfil de ${res.displayName}. ${res.viewerFollowedBy ? 'Segue você.' : ''} ${res.isLabeler ? 'Este perfil é um Rotulador de Conteúdo.' : ''} Seguidores: ${res.followersCount}. Seguindo: ${res.followsCount}. ${res.isMe ? '' : 'Use S para Seguir, U para Unfollow.'}">
               ${blockedNotice}
+              ${labelerBadge}
               <h3>${res.displayName} (@${res.handle})</h3>
               ${res.viewerFollowedBy ? '<p><em>Segue você</em></p>' : ''}
               ${knownFollowersHtml}
@@ -122,9 +160,37 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 <strong>${res.postsCount}</strong> Posts
               </p>
               <div class="profile-actions">${actionsHtml}</div>
+              ${labelerPoliciesHtml}
             </div>
             <div id="profile-content"></div>
           `;
+
+          // Event listeners para assinatura de rotuladores
+          document.getElementById('btn-subscribe-labeler')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              announcePolite("Assinando rotulador...");
+              await window.go.services.SocialService.SubscribeLabeler(res.did);
+              announceAssertive("Rotulador assinado com sucesso!");
+              loadProfile(false, true);
+            } catch (err: any) {
+              announceAssertive("Erro ao assinar rotulador: " + err);
+            }
+          });
+
+          document.getElementById('btn-unsubscribe-labeler')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              announcePolite("Cancelando assinatura do rotulador...");
+              await window.go.services.SocialService.UnsubscribeLabeler(res.did);
+              announceAssertive("Assinatura cancelada com sucesso.");
+              loadProfile(false, true);
+            } catch (err: any) {
+              announceAssertive("Erro ao cancelar assinatura: " + err);
+            }
+          });
 
           // Handle Pinned Post if exists (ONLY for 'posts' sub-tab)
           if (res.pinnedPostUri && state.profileTabMode === 'posts') {

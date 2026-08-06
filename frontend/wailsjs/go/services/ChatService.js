@@ -34,6 +34,10 @@ export function SendMessage(arg1, arg2) {
   return window['go']['services']['ChatService']['SendMessage'](arg1, arg2);
 }
 
+export function SendMessageWithGif(arg1, arg2, arg3) {
+  return window['go']['services']['ChatService']['SendMessageWithGif'](arg1, arg2, arg3);
+}
+
 export function UnmuteConvo(arg1) {
   return window['go']['services']['ChatService']['UnmuteConvo'](arg1);
 }

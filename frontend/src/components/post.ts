@@ -59,7 +59,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   if (post.imageAlts && post.imageAlts.length > 0) {
       article.dataset.hasImage = "true";
       article.dataset.alts = post.imageAlts.join(" | ");
-      altsContext = `<div class="post-alts"><small><strong>Descrição das imagens:</strong> ${post.imageAlts.join(" | ")}</small></div>`;
+      altsContext = `<div class="post-alts"><small><strong>Imagens:</strong> ${post.imageAlts.join(" | ")}</small></div>`;
   }
 
   let imagesHtml = "";
@@ -89,6 +89,10 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     }
     if (post.quotePost.video) {
       article.dataset.hasVideo = "true";
+      article.dataset.hasQuoteVideo = "true";
+      if (post.quotePost.video.presentation === 'gif') {
+          article.dataset.quoteVideoIsGif = "true";
+      }
       article.dataset.quoteVideoAlt = post.quotePost.video.alt || "";
     }
     if (post.quotePost.external) {
@@ -112,7 +116,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
       quoteMediaHtml += `<div class="post-images-grid ${layoutClass}" style="margin-top: 8px;">${qImgElements}</div>`;
     }
     if (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0) {
-      quoteMediaHtml += `<div class="post-alts"><small><strong>Imagens do post citado:</strong> ${post.quotePost.imageAlts.join(" | ")}</small></div>`;
+      quoteMediaHtml += `<div class="post-alts"><small><strong>Imagens:</strong> ${post.quotePost.imageAlts.join(" | ")}</small></div>`;
     }
     if (post.quotePost.video) {
       const isGif = post.quotePost.video.presentation === 'gif';
@@ -123,7 +127,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
           <video class="post-video quoted-post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls'} ${posterAttr}>
               Seu navegador não suporta vídeos.
           </video>
-          <div class="post-video-alts" style="margin-top: 4px;"><small><strong>Vídeo no post citado:</strong> ${altText}</small></div>
+          <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Vídeo:'}</strong> ${altText}</small></div>
         </div>
       `;
     }
@@ -183,6 +187,8 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   if (post.video) {
     const isGif = post.video.presentation === 'gif';
     article.dataset.hasVideo = 'true';
+    article.dataset.hasMainVideo = 'true';
+    if (isGif) article.dataset.videoIsGif = 'true';
     article.dataset.videoPlaylist = post.video.playlist;
     if (post.video.alt) article.dataset.videoAlt = post.video.alt;
     const posterAttr = post.video.thumbnail ? `poster="${post.video.thumbnail}"` : '';
@@ -192,7 +198,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
         <video class="post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls playsinline preload="metadata"'} ${posterAttr}>
             Seu navegador não suporta vídeos.
         </video>
-        <div class="post-video-alts" style="margin-top: 4px;"><small><strong>Vídeo anexado:</strong> ${post.video.alt ? post.video.alt : 'Sem descrição alternativa'}</small></div>
+        <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Vídeo:'}</strong> ${post.video.alt ? post.video.alt : 'Sem descrição alternativa'}</small></div>
       </div>
     `;
   }

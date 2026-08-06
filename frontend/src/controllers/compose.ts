@@ -3,9 +3,12 @@ import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { reloadCurrentTab } from './tabs';
 import { getFilePathOrDataUrl } from '../utils/helpers';
+import { initGifModal, openGifPicker } from '../components/gif_modal';
 
 export let selectedImages: string[] = [];
 export let selectedVideo: string = "";
+export let selectedGifUrl: string = "";
+export let selectedGifAlt: string = "";
 export let postCount = 1;
 
 export function updateCharCounter(text: string) {
@@ -70,6 +73,12 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
   
   selectedImages = [];
   selectedVideo = "";
+  selectedGifUrl = "";
+  selectedGifAlt = "";
+  
+  const gifContainer = document.getElementById('selected-gif-container');
+  if (gifContainer) gifContainer.classList.add('hidden');
+  
   postCount = 1;
   post0State = { fetchedLinkUrl: "", dismissedLinkUrl: "", linkPreviewTimer: null };
   const linkPreviewContainer = document.getElementById('compose-link-preview') as HTMLDivElement;
@@ -158,6 +167,51 @@ export function setupCompose() {
     const postVideoInput = document.getElementById('post-video') as HTMLInputElement;
     const altContainer = document.getElementById('image-alts-container') as HTMLDivElement;
     const videoAltContainer = document.getElementById('video-alt-container') as HTMLDivElement;
+    const gifContainer = document.getElementById('selected-gif-container') as HTMLDivElement;
+    const gifPreview = document.getElementById('selected-gif-preview') as HTMLVideoElement;
+    const btnRemoveGif = document.getElementById('btn-remove-gif') as HTMLButtonElement;
+    const btnOpenGifPicker = document.getElementById('btn-open-gif-picker') as HTMLButtonElement;
+
+    initGifModal();
+
+    if (btnOpenGifPicker) {
+        btnOpenGifPicker.addEventListener('click', () => {
+            openGifPicker((url: string, alt: string) => {
+                if (postImageInput) postImageInput.value = "";
+                if (postVideoInput) postVideoInput.value = "";
+                selectedImages = [];
+                selectedVideo = "";
+                if (altContainer) altContainer.innerHTML = '';
+                if (videoAltContainer) videoAltContainer.classList.add('hidden');
+                
+                selectedGifUrl = url;
+                selectedGifAlt = alt;
+                if (videoAltContainer) {
+                    videoAltContainer.classList.remove('hidden');
+                    const vAltInput = document.getElementById('video-alt') as HTMLInputElement;
+                    if (vAltInput) vAltInput.value = alt;
+                }
+                if (gifContainer && gifPreview) {
+                    gifPreview.src = url;
+                    gifContainer.classList.remove('hidden');
+                }
+                announcePolite('GIF selecionado: ' + alt);
+            });
+        });
+    }
+
+    if (btnRemoveGif) {
+        btnRemoveGif.addEventListener('click', () => {
+            selectedGifUrl = "";
+            selectedGifAlt = "";
+            if (videoAltContainer) videoAltContainer.classList.add('hidden');
+            if (gifContainer && gifPreview) {
+                gifContainer.classList.add('hidden');
+                gifPreview.src = "";
+            }
+            announcePolite('GIF removido.');
+        });
+    }
 
     if (postImageInput) {
         postImageInput.addEventListener('change', async (e) => {
@@ -172,6 +226,8 @@ export function setupCompose() {
                 }
                 if (postVideoInput) postVideoInput.value = "";
                 selectedVideo = "";
+                selectedGifUrl = "";
+                if (gifContainer) gifContainer.classList.add('hidden');
                 if (videoAltContainer) videoAltContainer.classList.add('hidden');
 
                 for (let i = 0; i < files.length; i++) {
@@ -204,6 +260,8 @@ export function setupCompose() {
             if (files && files.length > 0) {
                 if (postImageInput) postImageInput.value = "";
                 selectedImages = [];
+                selectedGifUrl = "";
+                if (gifContainer) gifContainer.classList.add('hidden');
                 if (altContainer) altContainer.innerHTML = '';
 
                 selectedVideo = await getFilePathOrDataUrl(files[0]);
@@ -345,13 +403,13 @@ export function setupCompose() {
           }
           
           let vAlt = "";
-          if (selectedVideo !== "") {
+          if (selectedVideo !== "" || selectedGifUrl !== "") {
               const vAltInput = document.getElementById('video-alt') as HTMLInputElement;
               if (vAltInput) {
                   vAlt = vAltInput.value.trim();
                   if (!vAlt) {
-                      announceAssertive("Texto alternativo do vídeo ausente.");
-                      alert("Texto alternativo do vídeo ausente.");
+                      announceAssertive("Texto alternativo da mídia ausente.");
+                      alert("Texto alternativo da mídia ausente.");
                       vAltInput.focus();
                       return;
                   }
@@ -419,15 +477,16 @@ export function setupCompose() {
                 const pLink = item.linkUrl;
                 const pLang = i === 0 ? language : ""; 
                 const pThreadgate = i === 0 ? threadgate : "everyone";
+                const pGifUrl = i === 0 ? selectedGifUrl : "";
                 
                 if (state.composeMode === 'quote' && i === 0 && state.composeTarget) {
-                    res = await window.go.services.PostBuilderService.QuotePost(item.text, state.composeTarget.uri, state.composeTarget.cid, pPaths, pAlts, pVid, pVidAlt, pLang, pThreadgate);
+                    res = await (window as any).go.services.PostBuilderService.QuotePost(item.text, state.composeTarget.uri, state.composeTarget.cid, pPaths, pAlts, pVid, pVidAlt, pLang, pThreadgate, pGifUrl);
                     if (res) {
                         currentReplyUri = res.uri;
                         currentReplyCid = res.cid;
                     }
                 } else {
-                    res = await window.go.services.PostBuilderService.CreatePost(item.text, currentReplyUri, currentReplyCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate);
+                    res = await (window as any).go.services.PostBuilderService.CreatePost(item.text, currentReplyUri, currentReplyCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate, pGifUrl);
                     if (res) {
                         currentReplyUri = res.uri;
                         currentReplyCid = res.cid;

@@ -58,6 +58,10 @@ export function GetFollows(arg1, arg2) {
   return window['go']['services']['SocialService']['GetFollows'](arg1, arg2);
 }
 
+export function GetLabelerServices(arg1) {
+  return window['go']['services']['SocialService']['GetLabelerServices'](arg1);
+}
+
 export function GetListMembers(arg1, arg2) {
   return window['go']['services']['SocialService']['GetListMembers'](arg1, arg2);
 }
@@ -72,6 +76,14 @@ export function GetProfile(arg1) {
 
 export function GetSelfLabels() {
   return window['go']['services']['SocialService']['GetSelfLabels']();
+}
+
+export function GetSubscribedLabelerDIDs() {
+  return window['go']['services']['SocialService']['GetSubscribedLabelerDIDs']();
+}
+
+export function GetSubscribedLabelers() {
+  return window['go']['services']['SocialService']['GetSubscribedLabelers']();
 }
 
 export function GetSuggestedFollows() {
@@ -94,6 +106,10 @@ export function RemoveUserFromList(arg1) {
   return window['go']['services']['SocialService']['RemoveUserFromList'](arg1);
 }
 
+export function SubscribeLabeler(arg1) {
+  return window['go']['services']['SocialService']['SubscribeLabeler'](arg1);
+}
+
 export function SubscribeList(arg1) {
   return window['go']['services']['SocialService']['SubscribeList'](arg1);
 }
@@ -112,6 +128,10 @@ export function UnmuteList(arg1) {
 
 export function UnpinPost() {
   return window['go']['services']['SocialService']['UnpinPost']();
+}
+
+export function UnsubscribeLabeler(arg1) {
+  return window['go']['services']['SocialService']['UnsubscribeLabeler'](arg1);
 }
 
 export function UnsubscribeList(arg1) {

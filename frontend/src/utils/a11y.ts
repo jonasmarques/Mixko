@@ -55,24 +55,26 @@ export function getPostAccessibleLabel(article: HTMLElement): string {
         const qBody = article.dataset.quoteText ? article.dataset.quoteText : "";
         let qMedia = "";
         if (article.dataset.quoteImageAlts) {
-            qMedia += ` [Imagens no post citado: ${article.dataset.quoteImageAlts}]`;
+            qMedia += ` [Imagens: ${article.dataset.quoteImageAlts}]`;
         }
         if (article.dataset.quoteVideoAlt !== undefined) {
-            qMedia += ` [Vídeo no post citado: ${article.dataset.quoteVideoAlt ? `Descrição: ${article.dataset.quoteVideoAlt}` : "Sem descrição alternativa"}]`;
+            const isGif = article.dataset.quoteVideoIsGif === 'true';
+            qMedia += ` [${isGif ? 'GIF' : 'Vídeo'}: ${article.dataset.quoteVideoAlt ? `Descrição: ${article.dataset.quoteVideoAlt}` : "Sem descrição alternativa"}]`;
         }
         if (article.dataset.quoteExternalTitle) {
-            qMedia += ` [Link no post citado: ${article.dataset.quoteExternalTitle}${article.dataset.quoteExternalDesc ? ` - ${article.dataset.quoteExternalDesc}` : ""}]`;
+            qMedia += ` [Link: ${article.dataset.quoteExternalTitle}${article.dataset.quoteExternalDesc ? ` - ${article.dataset.quoteExternalDesc}` : ""}]`;
         }
         quoteText = ` Citando ${qAuthor}${qBody}${qMedia}`;
     }
     let altsText = "";
     if (article.dataset.alts) {
-        altsText += ` [Imagens anexadas: ${article.dataset.alts}]`;
+        altsText += ` [Imagens: ${article.dataset.alts}]`;
     } else if (article.dataset.hasImage === 'true') {
-        altsText += ` [Imagens anexadas]`;
+        altsText += ` [Imagens]`;
     }
-    if (article.dataset.hasVideo === 'true') {
-        altsText += ` [Vídeo anexado: ${article.dataset.videoAlt ? `Descrição do vídeo: ${article.dataset.videoAlt}` : 'Sem descrição alternativa'}]`;
+    if (article.dataset.hasMainVideo === 'true') {
+        const isGif = article.dataset.videoIsGif === 'true';
+        altsText += ` [${isGif ? 'GIF' : 'Vídeo'}: ${article.dataset.videoAlt ? `Descrição: ${article.dataset.videoAlt}` : 'Sem descrição alternativa'}]`;
     }
     let metricsText = "";
     if (article.dataset.metrics) {

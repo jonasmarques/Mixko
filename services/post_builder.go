@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -23,6 +24,35 @@ type PostBuilderService struct {
 	clientMgr *BSkyClient
 }
 
+func downloadTempFile(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("failed to download file: %d", resp.StatusCode)
+	}
+
+	ext := ".mp4"
+	if strings.Contains(url, ".gif") {
+		ext = ".gif"
+	}
+	tmpFile, err := os.CreateTemp("", "mixko_gif_*"+ext)
+	if err != nil {
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	_, err = io.Copy(tmpFile, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return tmpFile.Name(), nil
+}
+
 func truncatePath(p string) string {
 	if strings.HasPrefix(p, "data:") {
 		parts := strings.SplitN(p, ",", 2)
@@ -38,7 +68,7 @@ func NewPostBuilderService(clientMgr *BSkyClient) *PostBuilderService {
 }
 
 // CreatePost handles creating a new post with optional reply info, images, video, and link preview
-func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string) (*atproto.RepoCreateRecord_Output, error) {
+func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string) (*atproto.RepoCreateRecord_Output, error) {
 	ctx := context.Background()
 	if len(imagePaths) != len(altTexts) {
 		return nil, fmt.Errorf("length of imagePaths and altTexts must be identical")
@@ -127,8 +157,18 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 					Images:        images,
 				},
 			}
-		} else if videoPath != "" {
-			if videoAlt == "" {
+		} else if videoPath != "" || gifUrl != "" {
+			altText := videoAlt
+			if gifUrl != "" {
+				tmpPath, err := downloadTempFile(gifUrl)
+				if err != nil {
+					return fmt.Errorf("failed to download GIF: %w", err)
+				}
+				defer os.Remove(tmpPath)
+				videoPath = tmpPath
+			}
+			
+			if altText == "" {
 				return fmt.Errorf("Acessibilidade OBRIGATÓRIA: O Alt text não pode estar vazio para o vídeo")
 			}
 			// Use native video API
@@ -141,12 +181,25 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 				}
 			}
 			
-			post.Embed = &bsky.FeedPost_Embed{
-				EmbedVideo: &bsky.EmbedVideo{
-					LexiconTypeID: "app.bsky.embed.video",
-					Video:         blobRef,
-					Alt:           &videoAlt,
-				},
+			presentationStr := "gif"
+			vidEmbed := &bsky.EmbedVideo{
+				LexiconTypeID: "app.bsky.embed.video",
+				Video:         blobRef,
+				Alt:           &altText,
+			}
+			
+			if gifUrl != "" {
+				vidEmbed.Presentation = &presentationStr
+			}
+			
+			if gifUrl != "" {
+				post.Embed = &bsky.FeedPost_Embed{
+					EmbedVideo: vidEmbed,
+				}
+			} else {
+				post.Embed = &bsky.FeedPost_Embed{
+					EmbedVideo: vidEmbed,
+				}
 			}
 		} else if linkUrl != "" {
 			preview, err := GenerateLinkPreview(ctx, c, linkUrl)
@@ -430,7 +483,7 @@ func (s *PostBuilderService) Repost(uri, cid string) (string, error) {
 }
 
 // QuotePost handles quoting a post
-func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string) (*atproto.RepoCreateRecord_Output, error) {
+func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string) (*atproto.RepoCreateRecord_Output, error) {
 	ctx := context.Background()
 	if len(imagePaths) != len(altTexts) {
 		return nil, fmt.Errorf("length of imagePaths and altTexts must be identical")
@@ -474,8 +527,18 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 					Images:        images,
 				},
 			}
-		} else if videoPath != "" {
-			if videoAlt == "" {
+		} else if videoPath != "" || gifUrl != "" {
+			altText := videoAlt
+			if gifUrl != "" {
+				altText = "GIF"
+				tmpPath, err := downloadTempFile(gifUrl)
+				if err != nil {
+					return fmt.Errorf("failed to download GIF: %w", err)
+				}
+				defer os.Remove(tmpPath)
+				videoPath = tmpPath
+			}
+			if altText == "" {
 				return fmt.Errorf("Acessibilidade OBRIGATÓRIA: O Alt text não pode estar vazio para o vídeo")
 			}
 			blobRef, err := s.uploadVideo(ctx, c, videoPath)
@@ -489,7 +552,7 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 				EmbedVideo: &bsky.EmbedVideo{
 					LexiconTypeID: "app.bsky.embed.video",
 					Video:         blobRef,
-					Alt:           &videoAlt,
+					Alt:           &altText,
 				},
 			}
 		}

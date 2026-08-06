@@ -10,8 +10,8 @@ export function CheckVideoStatus(arg1) {
   return window['go']['services']['PostBuilderService']['CheckVideoStatus'](arg1);
 }
 
-export function CreatePost(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) {
-  return window['go']['services']['PostBuilderService']['CreatePost'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
+export function CreatePost(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11) {
+  return window['go']['services']['PostBuilderService']['CreatePost'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
 }
 
 export function DeletePost(arg1) {
@@ -34,8 +34,8 @@ export function LikePost(arg1, arg2) {
   return window['go']['services']['PostBuilderService']['LikePost'](arg1, arg2);
 }
 
-export function QuotePost(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
-  return window['go']['services']['PostBuilderService']['QuotePost'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+export function QuotePost(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) {
+  return window['go']['services']['PostBuilderService']['QuotePost'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
 }
 
 export function Repost(arg1, arg2) {

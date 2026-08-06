@@ -7,7 +7,7 @@ export function BookmarkPost(arg1:string,arg2:string):Promise<string>;
 
 export function CheckVideoStatus(arg1:string):Promise<services.VideoJobStatusDTO>;
 
-export function CreatePost(arg1:string,arg2:string,arg3:string,arg4:Array<string>,arg5:Array<string>,arg6:string,arg7:string,arg8:string,arg9:string,arg10:string):Promise<atproto.RepoCreateRecord_Output>;
+export function CreatePost(arg1:string,arg2:string,arg3:string,arg4:Array<string>,arg5:Array<string>,arg6:string,arg7:string,arg8:string,arg9:string,arg10:string,arg11:string):Promise<atproto.RepoCreateRecord_Output>;
 
 export function DeletePost(arg1:string):Promise<void>;
 
@@ -19,7 +19,7 @@ export function HideReply(arg1:string,arg2:string):Promise<void>;
 
 export function LikePost(arg1:string,arg2:string):Promise<string>;
 
-export function QuotePost(arg1:string,arg2:string,arg3:string,arg4:Array<string>,arg5:Array<string>,arg6:string,arg7:string,arg8:string,arg9:string):Promise<atproto.RepoCreateRecord_Output>;
+export function QuotePost(arg1:string,arg2:string,arg3:string,arg4:Array<string>,arg5:Array<string>,arg6:string,arg7:string,arg8:string,arg9:string,arg10:string):Promise<atproto.RepoCreateRecord_Output>;
 
 export function Repost(arg1:string,arg2:string):Promise<string>;
 

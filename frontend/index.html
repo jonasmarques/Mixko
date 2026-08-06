@@ -96,10 +96,19 @@
             <br/><br/>
             <label for="post-video">Ou Anexar Vídeo:</label>
             <input type="file" id="post-video" accept="video/mp4, video/webm, video/quicktime" />
+
+            <br/><br/>
+            <button type="button" id="btn-open-gif-picker" style="background: var(--primary-bg, #0085ff); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">
+              <span aria-hidden="true">GIF</span> Adicionar GIF
+            </button>
+            <div id="selected-gif-container" class="hidden" style="margin-top: 10px; border: 1px solid #ccc; padding: 10px; border-radius: 4px; position: relative;">
+               <button type="button" id="btn-remove-gif" style="position: absolute; top: 5px; right: 5px; background: #d32f2f; color: #fff; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer;">Remover</button>
+               <video id="selected-gif-preview" autoplay loop muted playsinline style="max-width: 100%; max-height: 200px; border-radius: 4px; display: block; margin: 0 auto;"></video>
+            </div>
             
             <div id="image-alts-container" aria-live="polite"></div>
             <div id="video-alt-container" aria-live="polite" class="hidden" style="margin-top: 10px;">
-              <label for="video-alt">Texto Alternativo do Vídeo (Obrigatório):</label>
+              <label for="video-alt">Texto Alternativo do Vídeo / GIF (Obrigatório):</label>
               <input type="text" id="video-alt" class="video-alt-input" />
             </div>
             <span id="alt-desc" class="sr-only">Descreva as mídias detalhadamente para pessoas com deficiência visual.</span>
@@ -182,6 +191,20 @@
             <button type="button" id="btn-save-profile">Salvar Perfil</button>
           </div>
         </form>
+      </dialog>
+
+      <!-- Klipy GIF Picker Modal -->
+      <dialog id="gif-picker-modal" aria-labelledby="gif-picker-title">
+        <h2 id="gif-picker-title">Buscar GIF</h2>
+        <div style="margin-bottom: 10px;">
+           <input type="search" id="gif-search-input" placeholder="Pesquisar GIFs..." style="width: 100%; padding: 8px; box-sizing: border-box;" tabindex="0" />
+        </div>
+        <div id="gif-results-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 400px; overflow-y: auto;" tabindex="0">
+           <!-- Klipy results will be injected here -->
+        </div>
+        <div class="actions" style="margin-top: 15px;">
+           <button type="button" id="btn-close-gif-picker">Cancelar (Esc)</button>
+        </div>
       </dialog>
 
       <!-- App Sections -->
@@ -407,6 +430,16 @@
                 <label><strong>Filtros de Conteúdo:</strong></label>
                 <div id="content-filters-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;">
                     Carregando...
+                </div>
+
+                <label style="margin-top: 15px; display: block;"><strong>Rotuladores Assinados (Labelers):</strong></label>
+                <p style="font-size: 0.85em; color: #aaa; margin: 4px 0 8px 0;">Assine rotuladores para aplicar novos rótulos e políticas de moderação personalizadas da comunidade.</p>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                  <input type="text" id="subscribe-labeler-input" placeholder="Handle ou DID do rotulador (ex: labeler.bsky.social)" />
+                  <button type="button" id="btn-add-labeler">Assinar Rotulador</button>
+                </div>
+                <div id="subscribed-labelers-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;">
+                    Carregando rotuladores...
                 </div>
               </fieldset>
 

@@ -18,6 +18,8 @@ export function MuteConvo(arg1:string):Promise<void>;
 
 export function SendMessage(arg1:string,arg2:string):Promise<void>;
 
+export function SendMessageWithGif(arg1:string,arg2:string,arg3:string):Promise<void>;
+
 export function UnmuteConvo(arg1:string):Promise<void>;
 
 export function UpdateReadStatus(arg1:string,arg2:string):Promise<void>;

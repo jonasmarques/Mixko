@@ -30,6 +30,8 @@ export function GetFollowers(arg1:string,arg2:string):Promise<services.ProfileLi
 
 export function GetFollows(arg1:string,arg2:string):Promise<services.ProfileListDTO>;
 
+export function GetLabelerServices(arg1:Array<string>):Promise<Array<services.LabelerDTO>>;
+
 export function GetListMembers(arg1:string,arg2:string):Promise<services.ProfileListDTO>;
 
 export function GetPreferences():Promise<services.PreferencesDTO>;
@@ -37,6 +39,10 @@ export function GetPreferences():Promise<services.PreferencesDTO>;
 export function GetProfile(arg1:string):Promise<services.ProfileDTO>;
 
 export function GetSelfLabels():Promise<Array<string>>;
+
+export function GetSubscribedLabelerDIDs():Promise<Array<string>>;
+
+export function GetSubscribedLabelers():Promise<Array<services.LabelerDTO>>;
 
 export function GetSuggestedFollows():Promise<services.ProfileListDTO>;
 
@@ -48,6 +54,8 @@ export function RemoveSelfLabel(arg1:string):Promise<void>;
 
 export function RemoveUserFromList(arg1:string):Promise<void>;
 
+export function SubscribeLabeler(arg1:string):Promise<void>;
+
 export function SubscribeList(arg1:string):Promise<void>;
 
 export function UnblockList(arg1:string):Promise<void>;
@@ -57,6 +65,8 @@ export function Unfollow(arg1:string):Promise<void>;
 export function UnmuteList(arg1:string):Promise<void>;
 
 export function UnpinPost():Promise<void>;
+
+export function UnsubscribeLabeler(arg1:string):Promise<void>;
 
 export function UnsubscribeList(arg1:string):Promise<void>;
 

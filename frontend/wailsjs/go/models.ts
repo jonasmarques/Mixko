@@ -2428,6 +2428,81 @@ export namespace services {
 		}
 	}
 	
+	export class LabelerPolicyDefinitionDTO {
+	    identifier: string;
+	    severity: string;
+	    blurs: string;
+	    defaultSetting: string;
+	    adultOnly: boolean;
+	    title: string;
+	    description: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LabelerPolicyDefinitionDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.identifier = source["identifier"];
+	        this.severity = source["severity"];
+	        this.blurs = source["blurs"];
+	        this.defaultSetting = source["defaultSetting"];
+	        this.adultOnly = source["adultOnly"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	    }
+	}
+	export class LabelerDTO {
+	    did: string;
+	    handle: string;
+	    displayName: string;
+	    description: string;
+	    avatar: string;
+	    banner: string;
+	    likeCount: number;
+	    isSubscribed: boolean;
+	    viewerLike: string;
+	    indexedAt: string;
+	    policies: LabelerPolicyDefinitionDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new LabelerDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.did = source["did"];
+	        this.handle = source["handle"];
+	        this.displayName = source["displayName"];
+	        this.description = source["description"];
+	        this.avatar = source["avatar"];
+	        this.banner = source["banner"];
+	        this.likeCount = source["likeCount"];
+	        this.isSubscribed = source["isSubscribed"];
+	        this.viewerLike = source["viewerLike"];
+	        this.indexedAt = source["indexedAt"];
+	        this.policies = this.convertValues(source["policies"], LabelerPolicyDefinitionDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class ListDTO {
 	    uri: string;
 	    cid: string;
@@ -2680,6 +2755,9 @@ export namespace services {
 	    viewerBlockedBy: boolean;
 	    pinnedPostUri: string;
 	    isMe: boolean;
+	    isLabeler: boolean;
+	    viewerSubscribedLabeler: boolean;
+	    labelerInfo?: LabelerDTO;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProfileDTO(source);
@@ -2701,7 +2779,28 @@ export namespace services {
 	        this.viewerBlockedBy = source["viewerBlockedBy"];
 	        this.pinnedPostUri = source["pinnedPostUri"];
 	        this.isMe = source["isMe"];
+	        this.isLabeler = source["isLabeler"];
+	        this.viewerSubscribedLabeler = source["viewerSubscribedLabeler"];
+	        this.labelerInfo = this.convertValues(source["labelerInfo"], LabelerDTO);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ProfileListDTO {
 	    cursor: string;

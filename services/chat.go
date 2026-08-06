@@ -204,6 +204,37 @@ func (s *ChatService) SendMessage(convoId string, text string) error {
 	return err
 }
 
+func (s *ChatService) SendMessageWithGif(convoId string, text string, gifUrl string) error {
+	ctx := context.Background()
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		chatClient := &xrpc.Client{
+			Client: c.Client,
+			Host:   "https://api.bsky.chat",
+			Auth:   c.Auth,
+		}
+
+		finalText := text
+		if gifUrl != "" {
+			if finalText != "" {
+				finalText += "\n\n" + gifUrl
+			} else {
+				finalText = gifUrl
+			}
+		}
+
+		msg := &chat.ConvoDefs_MessageInput{
+			Text: finalText,
+		}
+
+		_, err := chat.ConvoSendMessage(ctx, chatClient, &chat.ConvoSendMessage_Input{
+			ConvoId: convoId,
+			Message: msg,
+		})
+		return err
+	})
+	return err
+}
+
 func (s *ChatService) UpdateReadStatus(convoId string, messageId string) error {
 	ctx := context.Background()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {

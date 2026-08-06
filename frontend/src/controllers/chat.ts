@@ -4,6 +4,7 @@ import { linkify } from '../utils/helpers';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { createPostArticle } from '../components/post';
 import { formatPostDate } from '../utils/format';
+import { openGifPicker } from '../components/gif_modal';
 
 export async function loadChat(loadMore = false) {
   if (loadMore) {
@@ -91,11 +92,25 @@ export async function openChatConvo(convoId: string, members: string, silent = f
       </div>
       <h3>Conversa com ${members}</h3>
       <div id="chat-messages" aria-live="polite">Carregando...</div>
-      <form id="chat-send-form" style="margin-top: 1rem;">
-        <input type="text" id="chat-input" placeholder="Digite sua mensagem" required style="width: 70%;" />
+      
+      <div id="chat-selected-gif-container" class="hidden" style="margin-top: 10px; border: 1px solid #ccc; padding: 10px; border-radius: 4px; position: relative; max-width: 300px;">
+        <button type="button" id="btn-chat-remove-gif" style="position: absolute; top: 5px; right: 5px; background: #d32f2f; color: #fff; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer;">X</button>
+        <video id="chat-selected-gif-preview" autoplay loop muted playsinline style="max-width: 100%; max-height: 150px; border-radius: 4px; display: block; margin: 0 auto;"></video>
+      </div>
+
+      <form id="chat-send-form" style="margin-top: 1rem; display: flex; gap: 8px;">
+        <input type="text" id="chat-input" placeholder="Digite sua mensagem..." style="flex-grow: 1;" />
+        <button type="button" id="btn-chat-gif" style="background: var(--primary-bg, #0085ff); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold;">GIF</button>
         <button type="submit">Enviar</button>
       </form>
     `;
+    
+    let chatSelectedGifUrl = "";
+
+    const gifContainer = document.getElementById('chat-selected-gif-container') as HTMLDivElement;
+    const gifPreview = document.getElementById('chat-selected-gif-preview') as HTMLVideoElement;
+    const chatInput = document.getElementById('chat-input') as HTMLInputElement;
+
     document.getElementById('btn-back-chat')?.addEventListener('click', () => loadChat(false));
     document.getElementById('btn-mute-chat')?.addEventListener('click', async () => {
       try {
@@ -116,22 +131,49 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         }
       }
     });
+    
+    document.getElementById('btn-chat-gif')?.addEventListener('click', () => {
+        openGifPicker((url: string, _alt: string) => {
+            chatSelectedGifUrl = url;
+            if (gifContainer && gifPreview) {
+                gifPreview.src = url;
+                gifContainer.classList.remove('hidden');
+            }
+            announcePolite('GIF selecionado para enviar no chat.');
+            chatInput?.focus();
+        });
+    });
+
+    document.getElementById('btn-chat-remove-gif')?.addEventListener('click', () => {
+        chatSelectedGifUrl = "";
+        if (gifContainer && gifPreview) {
+            gifContainer.classList.add('hidden');
+            gifPreview.src = "";
+        }
+        announcePolite('GIF removido do chat.');
+        chatInput?.focus();
+    });
+
     document.getElementById('chat-send-form')?.addEventListener('submit', async (e) => {
        e.preventDefault();
-       const input = document.getElementById('chat-input') as HTMLInputElement;
-       const text = input.value;
-       if (!text) return;
+       const text = chatInput.value;
+       if (!text && !chatSelectedGifUrl) return;
        announcePolite("Enviando mensagem...");
        try {
-         await window.go.services.ChatService.SendMessage(convoId, text);
+         await (window as any).go.services.ChatService.SendMessageWithGif(convoId, text, chatSelectedGifUrl);
          announceAssertive("Enviado.");
-         input.value = "";
+         chatInput.value = "";
+         chatSelectedGifUrl = "";
+         if (gifContainer && gifPreview) {
+             gifContainer.classList.add('hidden');
+             gifPreview.src = "";
+         }
          openChatConvo(convoId, members, true);
        } catch (err: any) {
          announceAssertive("Erro ao enviar: " + err);
        }
     });
-    document.getElementById('chat-input')?.focus();
+    chatInput?.focus();
   }
 
   state.currentPosts = []; // Clear focusable articles for main navigation
@@ -149,10 +191,21 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         div.classList.add('post-item');
         div.setAttribute('tabindex', '0');
         div.dataset.messageId = msg.id;
-        let msgContent = linkify(msg.text || "");
+        
+        // Render raw Klipy/MP4 URLs as native GIFs inside the chat message text
+        let rawText = msg.text || "";
+        let inlineVideo = "";
+        const klipyRegex = /(https?:\/\/[^\s]+?klipy[^\s]+?\.mp4|(?:https?:\/\/[^\s]+\.mp4))/g;
+        rawText = rawText.replace(klipyRegex, (match: string) => {
+            inlineVideo += `<video src="${match}" autoplay loop muted playsinline style="max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 8px; display: block;"></video>`;
+            return ""; // Remove the URL from the text since it's now a video
+        }).trim();
+
+        let msgContent = linkify(rawText) + inlineVideo;
+
         let targetEmbedUri = msg.embedUri;
-        if (!targetEmbedUri && msg.text) {
-          const match = msg.text.match(/https?:\/\/bsky\.app\/profile\/([^\/]+)\/post\/([^\/\s\?]+)/);
+        if (!targetEmbedUri && rawText) {
+          const match = rawText.match(/https?:\/\/bsky\.app\/profile\/([^\/]+)\/post\/([^\/\s\?]+)/);
           if (match) {
             targetEmbedUri = `at://${match[1]}/app.bsky.feed.post/${match[2]}`;
           }

@@ -38,6 +38,11 @@ declare global {
         };
         SocialService: {
           GetProfile(actor: string): Promise<any>;
+          GetLabelerServices(dids: string[]): Promise<any>;
+          GetSubscribedLabelerDIDs(): Promise<string[]>;
+          GetSubscribedLabelers(): Promise<any>;
+          SubscribeLabeler(labelerDid: string): Promise<void>;
+          UnsubscribeLabeler(labelerDid: string): Promise<void>;
           Follow(actorDID: string): Promise<void>;
           Unfollow(followURI: string): Promise<void>;
           GetActorLists(actorDID: string, cursor: string): Promise<any>;

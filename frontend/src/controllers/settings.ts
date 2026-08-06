@@ -170,6 +170,56 @@ export async function loadSettings() {
             });
         }
 
+        // Carregar Rotuladores Assinados
+        const subscribedLabelersListDiv = document.getElementById('subscribed-labelers-list');
+        if (subscribedLabelersListDiv) {
+            try {
+                subscribedLabelersListDiv.innerHTML = 'Carregando rotuladores...';
+                const labelers = await window.go.services.SocialService.GetSubscribedLabelers();
+                subscribedLabelersListDiv.innerHTML = '';
+                if (!labelers || labelers.length === 0) {
+                    subscribedLabelersListDiv.innerHTML = '<p style="color: #888; font-size: 0.9em;">Nenhum rotulador assinado no momento.</p>';
+                } else {
+                    labelers.forEach((l: any) => {
+                        const div = document.createElement('div');
+                        div.style.display = 'flex';
+                        div.style.alignItems = 'center';
+                        div.style.justifyContent = 'space-between';
+                        div.style.padding = '8px 12px';
+                        div.style.background = 'rgba(255, 255, 255, 0.05)';
+                        div.style.borderRadius = '6px';
+                        div.style.borderLeft = '3px solid #3b82f6';
+                        div.innerHTML = `
+                            <div>
+                                <strong><a href="#" class="open-labeler-profile" data-handle="${l.handle}" style="color: #60a5fa; text-decoration: none;">${l.displayName || l.handle}</a></strong>
+                                <span style="font-size: 0.85em; color: #aaa;">(@${l.handle})</span>
+                                ${l.description ? `<p style="margin: 2px 0 0 0; font-size: 0.85em; color: #ccc;">${l.description}</p>` : ''}
+                            </div>
+                            <button type="button" class="btn-unsubscribe-setting" data-did="${l.did}" data-handle="${l.handle}" style="background-color: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;">Cancelar Assinatura</button>
+                        `;
+                        div.querySelector('.open-labeler-profile')?.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            state.currentHandle = l.handle;
+                            switchTab('profile');
+                        });
+                        div.querySelector('.btn-unsubscribe-setting')?.addEventListener('click', async (e) => {
+                            e.preventDefault();
+                            if (await confirmDialog(`Deseja cancelar a assinatura do rotulador @${l.handle}?`, 'Cancelar Assinatura')) {
+                                announcePolite("Cancelando assinatura...");
+                                await window.go.services.SocialService.UnsubscribeLabeler(l.did);
+                                announceAssertive(`Assinatura de @${l.handle} cancelada.`);
+                                loadSettings();
+                            }
+                        });
+                        subscribedLabelersListDiv.appendChild(div);
+                    });
+                }
+            } catch (err: any) {
+                console.error("Erro ao carregar rotuladores assinados:", err);
+                subscribedLabelersListDiv.innerHTML = '<p style="color: #f87171;">Erro ao carregar rotuladores assinados.</p>';
+            }
+        }
+
         state.tabStates['settings'].loaded = true;
     } catch (err) {
         console.error(err);
@@ -291,6 +341,32 @@ export function setupSettings() {
                 const mutedList = document.getElementById('muted-words-list') as HTMLUListElement;
                 if (mutedList) renderMutedWords(mutedList);
                 announcePolite(`Palavra ${word} adicionada à lista. Lembre-se de salvar.`);
+            }
+        });
+    }
+
+    const btnAddLabeler = document.getElementById('btn-add-labeler');
+    if (btnAddLabeler) {
+        btnAddLabeler.addEventListener('click', async () => {
+            const input = document.getElementById('subscribe-labeler-input') as HTMLInputElement;
+            const handleOrDid = input ? input.value.trim() : '';
+            if (!handleOrDid) {
+                announceAssertive("Digite o handle ou DID do rotulador.");
+                return;
+            }
+            try {
+                announcePolite(`Buscando rotulador ${handleOrDid}...`);
+                const profile = await window.go.services.SocialService.GetProfile(handleOrDid);
+                if (!profile || !profile.did) {
+                    announceAssertive("Rotulador não encontrado.");
+                    return;
+                }
+                await window.go.services.SocialService.SubscribeLabeler(profile.did);
+                announceAssertive(`Rotulador @${profile.handle} assinado com sucesso!`);
+                if (input) input.value = '';
+                loadSettings();
+            } catch (err: any) {
+                announceAssertive("Erro ao assinar rotulador: " + err);
             }
         });
     }

@@ -812,28 +812,31 @@ export function setupShortcuts() {
                         });
                         if (anyPlaying) {
                             vids.forEach(v => v.pause());
-                            announcePolite("Vídeo pausado.");
+                            announcePolite("Mídia pausada.");
                         } else {
                             vids.forEach(v => {
                                 v.play().catch(() => {});
                             });
                             let altMsg = "";
+                            const isMainGif = p.dataset.videoIsGif === 'true';
+                            const isQuoteGif = p.dataset.quoteVideoIsGif === 'true';
                             if (p.dataset.videoAlt) {
                                 altMsg += ` Descrição: ${p.dataset.videoAlt}.`;
                             }
                             if (p.dataset.quoteVideoAlt !== undefined) {
-                                altMsg += ` Descrição do vídeo citado: ${p.dataset.quoteVideoAlt ? p.dataset.quoteVideoAlt : "Sem descrição alternativa"}.`;
+                                altMsg += ` Descrição do ${isQuoteGif ? 'GIF' : 'vídeo'}: ${p.dataset.quoteVideoAlt ? p.dataset.quoteVideoAlt : "Sem descrição alternativa"}.`;
                             }
                             if (!altMsg) {
                                 altMsg = " (Sem descrição alternativa)";
                             }
-                            announcePolite(`Reproduzindo vídeo.${altMsg}`);
+                            const mediaType = isMainGif || isQuoteGif ? 'GIF' : 'vídeo';
+                            announcePolite(`Reproduzindo ${mediaType}.${altMsg}`);
                         }
                     } else {
-                        announcePolite("Vídeo não encontrado no post.");
+                        announcePolite("Mídia não encontrada no post.");
                     }
                 } else {
-                    announcePolite("Este post não possui vídeo.");
+                    announcePolite("Este post não possui vídeo ou GIF.");
                 }
             }
             break;

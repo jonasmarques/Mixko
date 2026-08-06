@@ -273,6 +273,261 @@ func (s *SocialService) UpdateAllPreferences(threadSort string, adultContent boo
 	})
 }
 
+func (s *SocialService) GetSubscribedLabelerDIDs() ([]string, error) {
+	ctx := context.Background()
+	var dids []string
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.ActorGetPreferences(ctx, c)
+		if err != nil {
+			return err
+		}
+		for _, pref := range res.Preferences {
+			if pref.ActorDefs_LabelersPref != nil {
+				for _, item := range pref.ActorDefs_LabelersPref.Labelers {
+					if item != nil && item.Did != "" {
+						dids = append(dids, item.Did)
+					}
+				}
+			}
+		}
+		return nil
+	})
+	return dids, err
+}
+
+func (s *SocialService) SubscribeLabeler(labelerDid string) error {
+	ctx := context.Background()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.ActorGetPreferences(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		var newPrefs []bsky.ActorDefs_Preferences_Elem
+		var labelersPref *bsky.ActorDefs_LabelersPref
+		for _, pref := range res.Preferences {
+			if pref.ActorDefs_LabelersPref != nil {
+				labelersPref = pref.ActorDefs_LabelersPref
+			} else {
+				newPrefs = append(newPrefs, pref)
+			}
+		}
+
+		if labelersPref == nil {
+			labelersPref = &bsky.ActorDefs_LabelersPref{
+				Labelers: []*bsky.ActorDefs_LabelerPrefItem{},
+			}
+		}
+
+		alreadySubscribed := false
+		for _, item := range labelersPref.Labelers {
+			if item != nil && item.Did == labelerDid {
+				alreadySubscribed = true
+				break
+			}
+		}
+
+		if !alreadySubscribed {
+			labelersPref.Labelers = append(labelersPref.Labelers, &bsky.ActorDefs_LabelerPrefItem{
+				Did: labelerDid,
+			})
+		}
+
+		newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
+			ActorDefs_LabelersPref: labelersPref,
+		})
+
+		return bsky.ActorPutPreferences(ctx, c, &bsky.ActorPutPreferences_Input{
+			Preferences: newPrefs,
+		})
+	})
+}
+
+func (s *SocialService) UnsubscribeLabeler(labelerDid string) error {
+	ctx := context.Background()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.ActorGetPreferences(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		var newPrefs []bsky.ActorDefs_Preferences_Elem
+		for _, pref := range res.Preferences {
+			if pref.ActorDefs_LabelersPref != nil {
+				var updatedList []*bsky.ActorDefs_LabelerPrefItem
+				for _, item := range pref.ActorDefs_LabelersPref.Labelers {
+					if item != nil && item.Did != labelerDid {
+						updatedList = append(updatedList, item)
+					}
+				}
+				pref.ActorDefs_LabelersPref.Labelers = updatedList
+			}
+			newPrefs = append(newPrefs, pref)
+		}
+
+		return bsky.ActorPutPreferences(ctx, c, &bsky.ActorPutPreferences_Input{
+			Preferences: newPrefs,
+		})
+	})
+}
+
+func (s *SocialService) GetLabelerServices(dids []string) ([]*LabelerDTO, error) {
+	if len(dids) == 0 {
+		return []*LabelerDTO{}, nil
+	}
+	ctx := context.Background()
+	var out []*LabelerDTO
+
+	subscribedDIDs, _ := s.GetSubscribedLabelerDIDs()
+	subMap := make(map[string]bool)
+	for _, d := range subscribedDIDs {
+		subMap[d] = true
+	}
+
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.LabelerGetServices(ctx, c, true, dids)
+		if err != nil {
+			return err
+		}
+
+		for _, viewElem := range res.Views {
+			if viewElem == nil {
+				continue
+			}
+			var dto *LabelerDTO
+			if viewElem.LabelerDefs_LabelerViewDetailed != nil {
+				v := viewElem.LabelerDefs_LabelerViewDetailed
+				handle := ""
+				displayName := ""
+				description := ""
+				avatar := ""
+				banner := ""
+				did := ""
+
+				if v.Creator != nil {
+					did = v.Creator.Did
+					handle = v.Creator.Handle
+					if v.Creator.DisplayName != nil {
+						displayName = *v.Creator.DisplayName
+					}
+					if v.Creator.Description != nil {
+						description = *v.Creator.Description
+					}
+					if v.Creator.Avatar != nil {
+						avatar = *v.Creator.Avatar
+					}
+				}
+
+				likeCount := int64(0)
+				if v.LikeCount != nil {
+					likeCount = *v.LikeCount
+				}
+
+				viewerLike := ""
+				if v.Viewer != nil && v.Viewer.Like != nil {
+					viewerLike = *v.Viewer.Like
+				}
+
+				var policies []LabelerPolicyDefinitionDTO
+				if v.Policies != nil && v.Policies.LabelValueDefinitions != nil {
+					for _, def := range v.Policies.LabelValueDefinitions {
+						if def == nil {
+							continue
+						}
+						pol := LabelerPolicyDefinitionDTO{
+							Identifier: def.Identifier,
+							Severity:   def.Severity,
+							Blurs:      def.Blurs,
+						}
+						if def.DefaultSetting != nil {
+							pol.DefaultSetting = *def.DefaultSetting
+						}
+						if def.AdultOnly != nil {
+							pol.AdultOnly = *def.AdultOnly
+						}
+						for _, loc := range def.Locales {
+							if loc != nil {
+								if loc.Name != "" {
+									pol.Title = loc.Name
+								}
+								if loc.Description != "" {
+									pol.Description = loc.Description
+								}
+							}
+						}
+						policies = append(policies, pol)
+					}
+				}
+
+				dto = &LabelerDTO{
+					DID:          did,
+					Handle:       handle,
+					DisplayName:  displayName,
+					Description:  description,
+					Avatar:       avatar,
+					Banner:       banner,
+					LikeCount:    likeCount,
+					IsSubscribed: subMap[did],
+					ViewerLike:   viewerLike,
+					IndexedAt:    v.IndexedAt,
+					Policies:     policies,
+				}
+			} else if viewElem.LabelerDefs_LabelerView != nil {
+				v := viewElem.LabelerDefs_LabelerView
+				handle := ""
+				displayName := ""
+				description := ""
+				avatar := ""
+				did := ""
+
+				if v.Creator != nil {
+					did = v.Creator.Did
+					handle = v.Creator.Handle
+					if v.Creator.DisplayName != nil {
+						displayName = *v.Creator.DisplayName
+					}
+					if v.Creator.Avatar != nil {
+						avatar = *v.Creator.Avatar
+					}
+				}
+
+				likeCount := int64(0)
+				if v.LikeCount != nil {
+					likeCount = *v.LikeCount
+				}
+
+				dto = &LabelerDTO{
+					DID:          did,
+					Handle:       handle,
+					DisplayName:  displayName,
+					Description:  description,
+					Avatar:       avatar,
+					LikeCount:    likeCount,
+					IsSubscribed: subMap[did],
+					IndexedAt:    v.IndexedAt,
+				}
+			}
+
+			if dto != nil {
+				out = append(out, dto)
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *SocialService) GetSubscribedLabelers() ([]*LabelerDTO, error) {
+	dids, err := s.GetSubscribedLabelerDIDs()
+	if err != nil {
+		return nil, err
+	}
+	if len(dids) == 0 {
+		return []*LabelerDTO{}, nil
+	}
+	return s.GetLabelerServices(dids)
+}
+
 func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 	ctx := context.Background()
 	var out *ProfileDTO
@@ -321,25 +576,53 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 		}
 
 		pinnedPostUri := ""
-		if res.PinnedPost != nil {
-			pinnedPostUri = res.PinnedPost.Uri
+		isLabeler := false
+		if res.Associated != nil && res.Associated.Labeler != nil && *res.Associated.Labeler {
+			isLabeler = true
+		}
+
+		var labelerInfo *LabelerDTO
+		viewerSubscribedLabeler := false
+
+		if isLabeler {
+			lbs, _ := s.GetLabelerServices([]string{res.Did})
+			if len(lbs) > 0 {
+				labelerInfo = lbs[0]
+				viewerSubscribedLabeler = labelerInfo.IsSubscribed
+			}
+		} else {
+			subDids, _ := s.GetSubscribedLabelerDIDs()
+			for _, d := range subDids {
+				if d == res.Did {
+					viewerSubscribedLabeler = true
+					lbs, _ := s.GetLabelerServices([]string{res.Did})
+					if len(lbs) > 0 {
+						isLabeler = true
+						labelerInfo = lbs[0]
+					}
+					break
+				}
+			}
 		}
 
 		out = &ProfileDTO{
-			DID:              res.Did,
-			Handle:           res.Handle,
-			DisplayName:      name,
-			Description:      desc,
-			Followers:        followers,
-			Follows:          follows,
-			Posts:            posts,
-			ViewerFollowing:  viewerFollowing,
-			ViewerFollowedBy: viewerFollowedBy,
-			ViewerMuted:      viewerMuted,
-			ViewerBlocking:   viewerBlocking,
-			ViewerBlockedBy:  viewerBlockedBy,
-			PinnedPostUri:    pinnedPostUri,
-			IsMe:             res.Did == c.Auth.Did,
+			DID:                    res.Did,
+			Handle:                 res.Handle,
+			DisplayName:            name,
+			Description:            desc,
+			Followers:              followers,
+			Follows:                follows,
+			Posts:                  posts,
+			ViewerFollowing:        viewerFollowing,
+			ViewerFollowedBy:       viewerFollowedBy,
+			ViewerMuted:            viewerMuted,
+			ViewerBlocking:         viewerBlocking,
+			ViewerBlockedBy:        viewerBlockedBy,
+			PinnedPostUri:          pinnedPostUri,
+			IsMe:                   res.Did == c.Auth.Did,
+			IsLabeler:              isLabeler,
+			ViewerSubscribedLabeler: viewerSubscribedLabeler,
+			LabelerInfo:            labelerInfo,
 		}
 		return nil
 	})
