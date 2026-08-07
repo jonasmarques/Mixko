@@ -27,18 +27,24 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
     container.setAttribute('aria-busy', 'false');
     console.log('[DEBUG loadSavedPosts response]', res);
 
-    if (!res || !res.posts || res.posts.length === 0) {
+    const posts = res?.posts || [];
+
+    if (!posts || posts.length === 0) {
       if (!loadMore) {
-        container.innerHTML = `<p role="alert">${i18n.t('saved.noSavedFound')}</p>`;
-        announcePolite(i18n.t('saved.noSavedFound'));
+        container.innerHTML = `
+          <div role="alert" tabindex="0" style="padding:1rem; border:1px solid var(--border-color, #444); border-radius:6px; margin:1rem 0;">
+            <p><strong>${i18n.t('saved.noSavedFound')}</strong></p>
+          </div>
+        `;
+        announceAssertive(i18n.t('saved.noSavedFound'));
       } else {
-        announcePolite(i18n.t('saved.endOfSavedPosts'));
+        announceAssertive(i18n.t('saved.endOfSavedPosts'));
       }
       state.tabStates['saved'].loaded = true;
       return;
     }
 
-    res.posts.forEach((p: any) => {
+    posts.forEach((p: any) => {
       if (!p.viewerBookmark) p.viewerBookmark = "bookmarked";
       
       if (!state.currentPosts.some(el => el.dataset.uri === p.uri)) {
@@ -48,23 +54,31 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
       }
     });
 
-    state.savedCursor = res.cursor || "";
+    state.savedCursor = res?.cursor || "";
     state.tabStates['saved'].loaded = true;
+    state.tabStates['saved'].posts = state.currentPosts;
 
-    announcePolite(i18n.t('saved.savedLoaded', { count: res.posts.length.toString() }));
+    const loadedMsg = i18n.t('saved.savedLoaded', { count: state.currentPosts.length.toString() });
+    announceAssertive(loadedMsg);
 
     if (state.currentPosts.length > 0 && (!keepFocus || state.focusedPostIndex === -1)) {
       if (!keepFocus || state.focusedPostIndex < 0) {
         state.focusedPostIndex = 0;
       }
+      state.tabStates['saved'].focusedIndex = state.focusedPostIndex;
       if (state.currentPosts[state.focusedPostIndex]) {
         state.currentPosts[state.focusedPostIndex].focus();
       }
     }
   } catch (err) {
     container.setAttribute('aria-busy', 'false');
-    container.innerHTML = `<p role="alert">${i18n.t('saved.savedError', { err: String(err) })}</p>`;
+    const errText = `Erro ao carregar salvos online: ${String(err)}`;
+    container.innerHTML = `
+      <div role="alert" tabindex="0" style="padding:1rem; border:1px solid red; border-radius:6px; margin:1rem 0;">
+        <p><strong>Erro no servidor:</strong> ${String(err)}</p>
+      </div>
+    `;
     console.error('[DEBUG loadSavedPosts error]', err);
-    announceAssertive(i18n.t('saved.savedError', { err: String(err) }));
+    announceAssertive(errText);
   }
 }

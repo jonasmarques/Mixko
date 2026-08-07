@@ -795,115 +795,32 @@ func (s *PostBuilderService) FetchLinkCard(linkUrl string) (*ExternalEmbedDTO, e
 	}, nil
 }
 
-// BookmarkPost handles bookmarking/saving a post online via ATProto com.atproto.repo.createRecord
+// BookmarkPost handles bookmarking/saving a post online via ATProto
 func (s *PostBuilderService) BookmarkPost(uri, cid string) (string, error) {
-	ctx := context.Background()
-	var bookmarkUri string
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		noValidate := false
-		type CreateRecordInput struct {
-			Repo       string                 `json:"repo"`
-			Collection string                 `json:"collection"`
-			Validate   *bool                  `json:"validate,omitempty"`
-			Record     map[string]interface{} `json:"record"`
-		}
-		type CreateRecordOutput struct {
-			Uri string `json:"uri"`
-			Cid string `json:"cid"`
-		}
-
-		input := &CreateRecordInput{
-			Repo:       c.Auth.Did,
-			Collection: "app.bsky.bookmark",
-			Validate:   &noValidate,
-			Record: map[string]interface{}{
-				"$type":     "app.bsky.bookmark",
-				"subject":   map[string]string{"uri": uri, "cid": cid},
-				"createdAt": time.Now().Format(time.RFC3339),
-			},
-		}
-
-		var out CreateRecordOutput
-		err := c.Do(ctx, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out)
-		if err == nil && out.Uri != "" {
-			bookmarkUri = out.Uri
-			fmt.Printf("[DEBUG BookmarkPost] Created record in app.bsky.bookmark: %s\n", out.Uri)
-		} else if err != nil {
-			fmt.Printf("[DEBUG BookmarkPost] createRecord error: %v\n", err)
-		}
-
-		// 2. Also attempt native Bluesky procedure app.bsky.bookmark.createBookmark
-		type CreateBookmarkInput struct {
-			Uri string `json:"uri"`
-			Cid string `json:"cid"`
-		}
-		_ = c.Do(ctx, xrpc.Procedure, "application/json", "app.bsky.bookmark.createBookmark", nil, &CreateBookmarkInput{Uri: uri, Cid: cid}, nil)
-
-		if bookmarkUri == "" {
-			bookmarkUri = "bookmarked_" + cid
-		}
-		return nil
+		return bsky.BookmarkCreateBookmark(ctx, c, &bsky.BookmarkCreateBookmark_Input{
+			Uri: uri,
+			Cid: cid,
+		})
 	})
-	return bookmarkUri, err
+	if err != nil {
+		return "", fmt.Errorf("BookmarkPost failed: %w", err)
+	}
+	return "bookmarked_" + cid, nil
 }
 
-// UnbookmarkPost handles removing a saved post online via ATProto com.atproto.repo.deleteRecord
+// UnbookmarkPost handles removing a saved post online via ATProto
 func (s *PostBuilderService) UnbookmarkPost(bookmarkUri, postUri string) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		// 1. Delete from com.atproto.repo.deleteRecord
-		target := bookmarkUri
-		if target == "" || !strings.Contains(target, "/") {
-			params := map[string]interface{}{
-				"repo":       c.Auth.Did,
-				"collection": "app.bsky.bookmark",
-				"limit":      100,
-			}
-			var rawList json.RawMessage
-			if c.Do(ctx, xrpc.Query, "", "com.atproto.repo.listRecords", params, nil, &rawList) == nil {
-				var res struct {
-					Records []struct {
-						Uri   string `json:"uri"`
-						Value struct {
-							Subject struct {
-								Uri string `json:"uri"`
-							} `json:"subject"`
-						} `json:"value"`
-					} `json:"records"`
-				}
-				if json.Unmarshal(rawList, &res) == nil {
-					for _, r := range res.Records {
-						if r.Value.Subject.Uri == postUri {
-							target = r.Uri
-							break
-						}
-					}
-				}
-			}
-		}
-
-		if strings.Contains(target, "/") {
-			parts := strings.Split(target, "/")
-			rkey := parts[len(parts)-1]
-			type DeleteRecordInput struct {
-				Repo       string `json:"repo"`
-				Collection string `json:"collection"`
-				Rkey       string `json:"rkey"`
-			}
-			_ = c.Do(ctx, xrpc.Procedure, "application/json", "com.atproto.repo.deleteRecord", nil, &DeleteRecordInput{
-				Repo:       c.Auth.Did,
-				Collection: "app.bsky.bookmark",
-				Rkey:       rkey,
-			}, nil)
-		}
-
-		// 2. Also attempt native Bluesky delete endpoint
-		type DeleteBookmarkInput struct {
-			Uri string `json:"uri"`
-		}
-		_ = c.Do(ctx, xrpc.Procedure, "application/json", "app.bsky.bookmark.deleteBookmark", nil, &DeleteBookmarkInput{Uri: postUri}, nil)
-
-		return nil
+		return bsky.BookmarkDeleteBookmark(ctx, c, &bsky.BookmarkDeleteBookmark_Input{
+			Uri: postUri,
+		})
 	})
 }
 

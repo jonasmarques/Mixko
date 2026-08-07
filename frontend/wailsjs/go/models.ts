@@ -2342,6 +2342,7 @@ export namespace services {
 	export class FeedDTO {
 	    cursor: string;
 	    posts: PostDTO[];
+	    debugMessage?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new FeedDTO(source);
@@ -2351,6 +2352,7 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cursor = source["cursor"];
 	        this.posts = this.convertValues(source["posts"], PostDTO);
+	        this.debugMessage = source["debugMessage"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

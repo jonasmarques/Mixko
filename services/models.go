@@ -94,8 +94,9 @@ type SavedFeedDTO struct {
 }
 
 type FeedDTO struct {
-	Cursor string     `json:"cursor"`
-	Posts  []*PostDTO `json:"posts"`
+	Cursor       string     `json:"cursor"`
+	Posts        []*PostDTO `json:"posts"`
+	DebugMessage string     `json:"debugMessage,omitempty"`
 }
 
 type NotificationDTO struct {

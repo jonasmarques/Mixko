@@ -3,12 +3,13 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
 )
+
 
 type FeedService struct {
 	clientMgr *BSkyClient
@@ -727,12 +728,20 @@ func extractURIsAndPostsFromJSON(rawJSON []byte) ([]string, []*bsky.FeedDefs_Pos
 					return
 				}
 			}
+			if subjStr, ok := valObj["subject"].(string); ok && strings.Contains(subjStr, "/app.bsky.feed.post/") {
+				uris = append(uris, subjStr)
+				return
+			}
 		}
 		if subjObj, ok := obj["subject"].(map[string]interface{}); ok {
 			if u, ok := subjObj["uri"].(string); ok && strings.Contains(u, "/app.bsky.feed.post/") {
 				uris = append(uris, u)
 				return
 			}
+		}
+		if subjStr, ok := obj["subject"].(string); ok && strings.Contains(subjStr, "/app.bsky.feed.post/") {
+			uris = append(uris, subjStr)
+			return
 		}
 		if u, ok := obj["uri"].(string); ok && strings.Contains(u, "/app.bsky.feed.post/") {
 			uris = append(uris, u)
@@ -758,6 +767,7 @@ func extractURIsAndPostsFromJSON(rawJSON []byte) ([]string, []*bsky.FeedDefs_Pos
 		Feed []struct {
 			Post *bsky.FeedDefs_PostView `json:"post"`
 		} `json:"feed"`
+		Posts []*bsky.FeedDefs_PostView `json:"posts"`
 	}
 	if json.Unmarshal(rawJSON, &postViewsStruct) == nil {
 		for _, bm := range postViewsStruct.Bookmarks {
@@ -772,117 +782,69 @@ func extractURIsAndPostsFromJSON(rawJSON []byte) ([]string, []*bsky.FeedDefs_Pos
 				posts = append(posts, item.Post)
 			}
 		}
+		for _, p := range postViewsStruct.Posts {
+			if p != nil {
+				posts = append(posts, p)
+			}
+		}
+	}
+
+	var altStruct struct {
+		Bookmarks []*bsky.FeedDefs_PostView `json:"bookmarks"`
+	}
+	if json.Unmarshal(rawJSON, &altStruct) == nil {
+		for _, p := range altStruct.Bookmarks {
+			if p != nil && p.Uri != "" {
+				posts = append(posts, p)
+			}
+		}
 	}
 
 	return uris, posts, cursor
 }
 
-// GetBookmarks retrieves saved posts online for the authenticated user
 func (s *FeedService) GetBookmarks(cursor string, limit int64) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	out := &FeedDTO{Posts: []*PostDTO{}}
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		var postURIs []string
-		bookmarkMap := make(map[string]string)
-		var nextCursor string
+		// Use typed indigo API: bsky.BookmarkGetBookmarks
+		result, errBsky := bsky.BookmarkGetBookmarks(ctx, c, cursor, limit)
 
-		// 1. Query user's online ATProto repository records via com.atproto.repo.listRecords
-		paramsRepo := map[string]interface{}{
-			"repo":       c.Auth.Did,
-			"collection": "app.bsky.bookmark",
-			"limit":      limit,
-		}
-		if cursor != "" {
-			paramsRepo["cursor"] = cursor
+		if errBsky != nil {
+			return errBsky
 		}
 
-		var rawRepoResp json.RawMessage
-		if errRepo := c.Do(ctx, xrpc.Query, "", "com.atproto.repo.listRecords", paramsRepo, nil, &rawRepoResp); errRepo == nil && len(rawRepoResp) > 0 {
-			extractedURIs, _, cur := extractURIsAndPostsFromJSON(rawRepoResp)
-			fmt.Printf("[DEBUG Bookmarks] RepoListRecords returned %d bytes, extracted %d post URIs\n", len(rawRepoResp), len(extractedURIs))
-			if cur != "" {
-				nextCursor = cur
-			}
-			for _, u := range extractedURIs {
-				if u != "" && !containsString(postURIs, u) {
-					postURIs = append(postURIs, u)
-				}
-			}
-		} else if errRepo != nil {
-			fmt.Printf("[DEBUG Bookmarks] RepoListRecords error: %v\n", errRepo)
+		if result == nil || len(result.Bookmarks) == 0 {
+			return nil
 		}
 
-		// 2. Query native Bluesky app.bsky.bookmark.getBookmarks endpoint
-		paramsBsky := map[string]interface{}{}
-		if cursor != "" {
-			paramsBsky["cursor"] = cursor
-		}
-		if limit > 0 {
-			paramsBsky["limit"] = limit
+		if result.Cursor != nil {
+			out.Cursor = *result.Cursor
 		}
 
-		var rawBskyResp json.RawMessage
-		if errQuery := c.Do(ctx, xrpc.Query, "", "app.bsky.bookmark.getBookmarks", paramsBsky, nil, &rawBskyResp); errQuery == nil && len(rawBskyResp) > 0 {
-			extractedURIs, extractedViews, cur := extractURIsAndPostsFromJSON(rawBskyResp)
-			fmt.Printf("[DEBUG Bookmarks] getBookmarks returned %d bytes, extracted %d URIs, %d views\n", len(rawBskyResp), len(extractedURIs), len(extractedViews))
-			if cur != "" && nextCursor == "" {
-				nextCursor = cur
+		for _, bm := range result.Bookmarks {
+			if bm == nil || bm.Item == nil {
+				continue
 			}
-			for _, pv := range extractedViews {
-				if pv != nil {
-					dto := ParsePostView(pv)
-					if dto != nil && !containsPost(out.Posts, dto.URI) {
-						dto.ViewerBookmark = "bookmarked"
-						out.Posts = append(out.Posts, dto)
-					}
-				}
+			pv := bm.Item.FeedDefs_PostView
+			if pv == nil {
+				continue
 			}
-			for _, u := range extractedURIs {
-				if u != "" && !containsString(postURIs, u) {
-					postURIs = append(postURIs, u)
-				}
+			dto := ParsePostView(pv)
+			if dto == nil {
+				continue
 			}
-		} else if errQuery != nil {
-			fmt.Printf("[DEBUG Bookmarks] getBookmarks error: %v\n", errQuery)
-		}
-
-		// 3. Resolve all post URIs into full PostDTOs via FeedGetPosts
-		if len(postURIs) > 0 {
-			var fetchURIs []string
-			for _, u := range postURIs {
-				if !containsPost(out.Posts, u) {
-					fetchURIs = append(fetchURIs, u)
-				}
-			}
-
-			if len(fetchURIs) > 0 {
-				fmt.Printf("[DEBUG Bookmarks] Calling FeedGetPosts for %d URIs: %v\n", len(fetchURIs), fetchURIs)
-				postsRes, errGetPosts := bsky.FeedGetPosts(ctx, c, fetchURIs)
-				if errGetPosts == nil && postsRes != nil {
-					fmt.Printf("[DEBUG Bookmarks] FeedGetPosts returned %d posts\n", len(postsRes.Posts))
-					for _, p := range postsRes.Posts {
-						if p != nil {
-							dto := ParsePostView(p)
-							if dto != nil {
-								if bmUri, ok := bookmarkMap[p.Uri]; ok && bmUri != "" {
-									dto.ViewerBookmark = bmUri
-								} else {
-									dto.ViewerBookmark = "bookmarked"
-								}
-								out.Posts = append(out.Posts, dto)
-							}
-						}
-					}
-				} else if errGetPosts != nil {
-					fmt.Printf("[DEBUG Bookmarks] FeedGetPosts error: %v\n", errGetPosts)
-				}
+			dto.ViewerBookmark = "bookmarked"
+			if !containsPost(out.Posts, dto.URI) {
+				out.Posts = append(out.Posts, dto)
 			}
 		}
 
-		fmt.Printf("[DEBUG Bookmarks] Total posts resolved for UI: %d\n", len(out.Posts))
-		out.Cursor = nextCursor
 		return nil
 	})
+
 	if out == nil {
 		out = &FeedDTO{Posts: []*PostDTO{}}
 	}

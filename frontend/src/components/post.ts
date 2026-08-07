@@ -471,7 +471,9 @@ export function createPostArticle(post: any, index: number, isNotification = fal
             const btn = article.querySelector('.btn-bookmark') as HTMLButtonElement;
             if (btn) btn.textContent = i18n.t('post.savedBtn');
         }
-    } catch(err) { announceAssertive(i18n.t('post.error', { error: String(err) })); }
+    } catch(err) {
+        announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
   });
 
   article.querySelector('.btn-delete-post')?.addEventListener('click', (e) => {
