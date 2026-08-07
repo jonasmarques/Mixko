@@ -717,7 +717,11 @@ export function setupShortcuts() {
                 const handles = new Set<string>();
                 if (p.dataset.authorHandle) handles.add(p.dataset.authorHandle);
                 if (p.dataset.replyTo) handles.add(p.dataset.replyTo);
-                if (p.dataset.repostedBy) handles.add(p.dataset.repostedBy);
+                if (p.dataset.repostedByHandle) {
+                    handles.add(p.dataset.repostedByHandle);
+                } else if (p.dataset.repostedBy) {
+                    handles.add(p.dataset.repostedBy);
+                }
                 if (p.dataset.quoteAuthorHandle) handles.add(p.dataset.quoteAuthorHandle);
 
                 const handleArr = Array.from(handles);

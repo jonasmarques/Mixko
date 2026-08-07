@@ -41,7 +41,8 @@ type PostDTO struct {
 	RootAuthor    string   `json:"rootAuthor"`
 	RootURI       string   `json:"rootUri"`
 	ParentPost    *PostDTO `json:"parentPost"`
-	RepostedBy    string   `json:"repostedBy"`
+	RepostedBy       string   `json:"repostedBy"`
+	RepostedByHandle string   `json:"repostedByHandle"`
 	QuotePost     *PostDTO `json:"quotePost"`
 	ImageAlts     []string          `json:"imageAlts"`
 	Images        []*ImageDTO       `json:"images"`

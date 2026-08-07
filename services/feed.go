@@ -36,11 +36,12 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
 				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
-					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil {
+					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
 						dto.RepostedBy = *item.Reason.FeedDefs_ReasonRepost.By.DisplayName
 					} else {
 						dto.RepostedBy = item.Reason.FeedDefs_ReasonRepost.By.Handle
 					}
+					dto.RepostedByHandle = item.Reason.FeedDefs_ReasonRepost.By.Handle
 				}
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {
@@ -321,6 +322,14 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 		for _, item := range res.Feed {
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
+				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
+					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
+						dto.RepostedBy = *item.Reason.FeedDefs_ReasonRepost.By.DisplayName
+					} else {
+						dto.RepostedBy = item.Reason.FeedDefs_ReasonRepost.By.Handle
+					}
+					dto.RepostedByHandle = item.Reason.FeedDefs_ReasonRepost.By.Handle
+				}
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {
 						dto.IsReply = true
@@ -425,6 +434,14 @@ func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*
 		for _, item := range res.Feed {
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
+				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
+					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
+						dto.RepostedBy = *item.Reason.FeedDefs_ReasonRepost.By.DisplayName
+					} else {
+						dto.RepostedBy = item.Reason.FeedDefs_ReasonRepost.By.Handle
+					}
+					dto.RepostedByHandle = item.Reason.FeedDefs_ReasonRepost.By.Handle
+				}
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {
 						dto.IsReply = true
@@ -512,11 +529,12 @@ func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) 
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
 				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
-					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil {
+					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
 						dto.RepostedBy = *item.Reason.FeedDefs_ReasonRepost.By.DisplayName
 					} else {
 						dto.RepostedBy = item.Reason.FeedDefs_ReasonRepost.By.Handle
 					}
+					dto.RepostedByHandle = item.Reason.FeedDefs_ReasonRepost.By.Handle
 				}
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {

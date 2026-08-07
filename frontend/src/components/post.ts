@@ -53,6 +53,9 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   let repostContext = "";
   if (post.repostedBy) {
     article.dataset.repostedBy = post.repostedBy;
+    if (post.repostedByHandle) {
+      article.dataset.repostedByHandle = post.repostedByHandle;
+    }
     repostContext = `<div class="repost-context"><small>${i18n.t('post.repostedBy', { handle: post.repostedBy })}</small></div>`;
   }
 

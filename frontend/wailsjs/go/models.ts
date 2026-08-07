@@ -2275,6 +2275,7 @@ export namespace services {
 	    rootUri: string;
 	    parentPost?: PostDTO;
 	    repostedBy: string;
+	    repostedByHandle: string;
 	    quotePost?: PostDTO;
 	    imageAlts: string[];
 	    images: ImageDTO[];
@@ -2308,6 +2309,7 @@ export namespace services {
 	        this.rootUri = source["rootUri"];
 	        this.parentPost = this.convertValues(source["parentPost"], PostDTO);
 	        this.repostedBy = source["repostedBy"];
+	        this.repostedByHandle = source["repostedByHandle"];
 	        this.quotePost = this.convertValues(source["quotePost"], PostDTO);
 	        this.imageAlts = source["imageAlts"];
 	        this.images = this.convertValues(source["images"], ImageDTO);
@@ -2745,6 +2747,7 @@ export namespace services {
 	    handle: string;
 	    displayName: string;
 	    description: string;
+	    avatar: string;
 	    followersCount: number;
 	    followsCount: number;
 	    postsCount: number;
@@ -2769,6 +2772,7 @@ export namespace services {
 	        this.handle = source["handle"];
 	        this.displayName = source["displayName"];
 	        this.description = source["description"];
+	        this.avatar = source["avatar"];
 	        this.followersCount = source["followersCount"];
 	        this.followsCount = source["followsCount"];
 	        this.postsCount = source["postsCount"];
