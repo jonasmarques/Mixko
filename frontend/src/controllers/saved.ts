@@ -1,10 +1,11 @@
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
+import { i18n } from '../utils/i18n';
 
 export async function loadSavedPosts(loadMore = false, keepFocus = false) {
   if (loadMore && state.savedCursor === "") {
-    announcePolite("Fim dos posts salvos alcançado.");
+    announcePolite(i18n.t('saved.endOfSavedPosts'));
     return;
   }
 
@@ -19,7 +20,7 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
   }
 
   container.setAttribute('aria-busy', 'true');
-  announcePolite(loadMore ? "Carregando mais posts salvos..." : "Carregando posts salvos...");
+  announcePolite(loadMore ? i18n.t('saved.loadingMoreSaved') : i18n.t('saved.loadingSaved'));
 
   try {
     const res = await (window as any).go.services.FeedService.GetBookmarks(state.savedCursor, 50);
@@ -28,10 +29,10 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
 
     if (!res || !res.posts || res.posts.length === 0) {
       if (!loadMore) {
-        container.innerHTML = '<p role="alert">Nenhum post salvo encontrado.</p>';
-        announcePolite("Nenhum post salvo encontrado.");
+        container.innerHTML = `<p role="alert">${i18n.t('saved.noSavedFound')}</p>`;
+        announcePolite(i18n.t('saved.noSavedFound'));
       } else {
-        announcePolite("Fim dos posts salvos alcançado.");
+        announcePolite(i18n.t('saved.endOfSavedPosts'));
       }
       state.tabStates['saved'].loaded = true;
       return;
@@ -50,7 +51,7 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
     state.savedCursor = res.cursor || "";
     state.tabStates['saved'].loaded = true;
 
-    announcePolite(`${res.posts.length} posts salvos carregados.`);
+    announcePolite(i18n.t('saved.savedLoaded', { count: res.posts.length.toString() }));
 
     if (state.currentPosts.length > 0 && (!keepFocus || state.focusedPostIndex === -1)) {
       if (!keepFocus || state.focusedPostIndex < 0) {
@@ -62,8 +63,8 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
     }
   } catch (err) {
     container.setAttribute('aria-busy', 'false');
-    container.innerHTML = `<p role="alert">Erro ao carregar posts salvos: ${err}</p>`;
+    container.innerHTML = `<p role="alert">${i18n.t('saved.savedError', { err: String(err) })}</p>`;
     console.error('[DEBUG loadSavedPosts error]', err);
-    announceAssertive("Erro ao carregar posts salvos: " + err);
+    announceAssertive(i18n.t('saved.savedError', { err: String(err) }));
   }
 }

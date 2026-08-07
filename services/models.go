@@ -149,6 +149,7 @@ type ProfileDTO struct {
 	Handle                 string      `json:"handle"`
 	DisplayName            string      `json:"displayName"`
 	Description            string      `json:"description"`
+	Avatar                 string      `json:"avatar"`
 	Followers              int64       `json:"followersCount"`
 	Follows                int64       `json:"followsCount"`
 	Posts                  int64       `json:"postsCount"`

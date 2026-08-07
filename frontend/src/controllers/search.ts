@@ -2,6 +2,7 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
 import { switchTab } from './tabs';
+import { i18n } from '../utils/i18n';
 
 export function setupSearch() {
     const btnSearch = document.getElementById('btn-search') as HTMLButtonElement;
@@ -16,9 +17,9 @@ export function setupSearch() {
             typeRadios.forEach((r: any) => { if (r.checked) searchType = r.value; });
             
             const container = document.getElementById('search-results') as HTMLDivElement;
-            container.innerHTML = '<p>Buscando...</p>';
+            container.innerHTML = `<p>${i18n.t('search.searching')}</p>`;
             container.setAttribute('aria-busy', 'true');
-            announcePolite(`Buscando por ${query}...`);
+            announcePolite(i18n.t('search.searchingFor', { query }));
             state.currentPosts = [];
             
             try {
@@ -48,10 +49,10 @@ export function setupSearch() {
                             container.appendChild(article);
                             state.currentPosts.push(article);
                         });
-                        announcePolite(`Encontrados ${res.posts.length} posts.`);
+                        announcePolite(i18n.t('search.postsFound', { count: res.posts.length.toString() }));
                     } else {
-                        container.innerHTML = '<p>Nenhum post encontrado.</p>';
-                        announcePolite('Nenhum post encontrado.');
+                        container.innerHTML = `<p>${i18n.t('search.noPostsFound')}</p>`;
+                        announcePolite(i18n.t('search.noPostsFound'));
                     }
                 } else {
                     const res = await window.go.services.SearchService.SearchProfiles(query, "");
@@ -61,7 +62,7 @@ export function setupSearch() {
                             const div = document.createElement('article');
                             div.classList.add('post-item');
                             div.setAttribute('tabindex', '0');
-                            div.dataset.text = `Perfil: ${prof.displayName}. ${prof.description}`;
+                            div.dataset.text = i18n.t('search.profileAria', { name: prof.displayName || prof.handle, desc: prof.description || "" });
                             div.innerHTML = `<h3>${prof.displayName} <small>(@${prof.handle})</small></h3><p>${prof.description}</p>`;
                             
                             div.dataset.index = state.currentPosts.length.toString();
@@ -74,30 +75,30 @@ export function setupSearch() {
                                 if (e.key === 'Enter') {
                                     state.currentHandle = prof.handle;
                                     state.profileTabMode = 'posts';
-                                    announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                                    announcePolite(i18n.t('search.openingProfile', { handle: state.currentHandle }));
                                     switchTab('profile');
                                 }
                             });
                             div.addEventListener('click', () => {
                                 state.currentHandle = prof.handle;
                                 state.profileTabMode = 'posts';
-                                announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                                announcePolite(i18n.t('search.openingProfile', { handle: state.currentHandle }));
                                 switchTab('profile');
                             });
                             
                             container.appendChild(div);
                             state.currentPosts.push(div);
                         });
-                        announcePolite(`Encontrados ${res.profiles.length} perfis.`);
+                        announcePolite(i18n.t('search.profilesFound', { count: res.profiles.length.toString() }));
                     } else {
-                        container.innerHTML = '<p>Nenhum perfil encontrado.</p>';
-                        announcePolite('Nenhum perfil encontrado.');
+                        container.innerHTML = `<p>${i18n.t('search.noProfilesFound')}</p>`;
+                        announcePolite(i18n.t('search.noProfilesFound'));
                     }
                 }
             } catch (err: any) {
                 console.error(err);
-                container.innerHTML = '<p>Erro na busca.</p>';
-                announceAssertive("Erro ao buscar.");
+                container.innerHTML = `<p>${i18n.t('search.searchErrorUI')}</p>`;
+                announceAssertive(i18n.t('search.searchErrorA11y'));
             } finally {
                 container.setAttribute('aria-busy', 'false');
                 state.tabStates['search'].loaded = true;

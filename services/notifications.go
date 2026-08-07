@@ -92,7 +92,7 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 			}
 			
 			if text == "" && item.Reason == "repost" {
-				text = "Repostou uma publicação sua"
+				text = ""
 			}
 
 			var quoteAuthorName, quoteAuthorHandle, quoteText, quoteUri string

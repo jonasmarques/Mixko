@@ -6,6 +6,7 @@ import { loadTimeline } from './timeline';
 import { loadNotifications } from './notifications';
 import { loadChat, openChatConvo } from './chat';
 import { checkAppUpdates } from './updater';
+import { i18n } from '../utils/i18n';
 
 export function setupAuth() {
     if (DOM.loginForm) {
@@ -14,7 +15,7 @@ export function setupAuth() {
             const idInput = document.getElementById('identifier') as HTMLInputElement;
             const pwInput = document.getElementById('appPassword') as HTMLInputElement;
             const rememberInput = document.getElementById('remember-me') as HTMLInputElement;
-            announcePolite("Iniciando login, aguarde...");
+            announcePolite(i18n.t('auth.loggingIn'));
             try {
                 const errDiv = document.getElementById('login-error');
                 if (errDiv) errDiv.classList.add('hidden');
@@ -23,7 +24,7 @@ export function setupAuth() {
                 state.loggedInHandle = idInput.value;
                 state.currentHandle = state.loggedInHandle;
                 localStorage.setItem('lastHandle', state.loggedInHandle);
-                announceAssertive("Login efetuado.");
+                announceAssertive(i18n.t('auth.loginSuccess'));
                 DOM.loginSection.classList.add('hidden');
                 DOM.appSections.classList.remove('hidden');
                 DOM.mainNav.classList.remove('hidden');
@@ -33,10 +34,11 @@ export function setupAuth() {
                 try { state.savedFeeds = await window.go.services.FeedService.GetSavedFeeds() || []; } catch(e) {}
                 switchTab('timeline');
             } catch (err: any) { 
-                announceAssertive("Erro no login: " + err); 
+                const msg = i18n.t('auth.loginError', { err: String(err) });
+                announceAssertive(msg); 
                 const errDiv = document.getElementById('login-error');
                 if (errDiv) {
-                    errDiv.textContent = "Erro no login: " + err;
+                    errDiv.textContent = msg;
                     errDiv.classList.remove('hidden');
                 }
             }
@@ -60,7 +62,7 @@ export function setupAuth() {
             }
         } else {
             state.tabStates['notifications'].loaded = false;
-            announcePolite("Novas notificações recebidas");
+            announcePolite(i18n.t('auth.newNotifications'));
         }
     });
 
@@ -69,7 +71,7 @@ export function setupAuth() {
             updateChat();
         } else {
             state.tabStates['chat'].loaded = false;
-            announcePolite("Novas mensagens de chat recebidas");
+            announcePolite(i18n.t('auth.newChatMessages'));
         }
     });
 
@@ -152,7 +154,7 @@ export async function initApp() {
         if (handle) {
             state.loggedInHandle = handle;
             state.currentHandle = state.loggedInHandle;
-            announceAssertive("Sessão restaurada.");
+            announceAssertive(i18n.t('auth.sessionRestored'));
             DOM.loginSection.classList.add('hidden');
             DOM.appSections.classList.remove('hidden');
             DOM.mainNav.classList.remove('hidden');
@@ -162,9 +164,9 @@ export async function initApp() {
             try { state.savedFeeds = await window.go.services.FeedService.GetSavedFeeds() || []; } catch(e) {}
             switchTab('timeline');
         } else {
-            announcePolite("Pronto para login.");
+            announcePolite(i18n.t('auth.readyToLogin'));
         }
     } catch (err) {
-        announcePolite("Pronto para login.");
+        announcePolite(i18n.t('auth.readyToLogin'));
     }
 }

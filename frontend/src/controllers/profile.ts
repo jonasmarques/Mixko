@@ -5,6 +5,7 @@ import { createListArticle } from '../components/list';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
 import { getFilePathOrDataUrl } from '../utils/helpers';
+import { i18n } from '../utils/i18n';
 
 export async function loadProfile(loadMore = false, keepFocus = false) {
   const container = document.getElementById('profile-card') as HTMLDivElement;
@@ -17,7 +18,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
   if (!loadMore) {
       state.profileCursor = "";
       state.currentPosts = [];
-      container.innerHTML = '<div style="padding: 20px;">Carregando perfil...</div>';
+      container.innerHTML = `<div style="padding: 20px;">${i18n.t('profile.loadingProfile')}</div>`;
       const contentContainer = document.getElementById('profile-content');
       if (contentContainer) contentContainer.innerHTML = '';
   }
@@ -30,31 +31,31 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
           if (!res.isMe) {
               let followBtn = "";
               if (res.viewerFollowing) {
-                 followBtn = `<button id="btn-unfollow" data-uri="${res.viewerFollowing}" aria-label="Deixar de seguir ${res.displayName}">Deixar de Seguir (U)</button>`;
+                 followBtn = `<button id="btn-unfollow" data-uri="${res.viewerFollowing}" aria-label="${i18n.t('profile.unfollowAria', { name: res.displayName || res.handle })}">${i18n.t('profile.unfollowBtn')}</button>`;
               } else {
-                 followBtn = `<button id="btn-follow" data-did="${res.did}" aria-label="Seguir ${res.displayName}">Seguir (S)</button>`;
+                 followBtn = `<button id="btn-follow" data-did="${res.did}" aria-label="${i18n.t('profile.followAria', { name: res.displayName || res.handle })}">${i18n.t('profile.followBtn')}</button>`;
               }
 
               let muteBtn = "";
               if (res.viewerMuted) {
-                muteBtn = `<button id="btn-unmute" data-did="${res.did}" aria-label="Desmutar">Desmutar (M)</button>`;
+                muteBtn = `<button id="btn-unmute" data-did="${res.did}" aria-label="${i18n.t('profile.unmuteAria')}">${i18n.t('profile.unmuteBtn')}</button>`;
               } else {
-                muteBtn = `<button id="btn-mute" data-handle="${res.handle}" data-did="${res.did}" aria-label="Silenciar">Silenciar (M)</button>`;
+                muteBtn = `<button id="btn-mute" data-handle="${res.handle}" data-did="${res.did}" aria-label="${i18n.t('profile.muteAria')}">${i18n.t('profile.muteBtn')}</button>`;
               }
 
               let blockBtn = "";
               if (res.viewerBlocking) {
-                blockBtn = `<button id="btn-unblock" data-did="${res.did}" aria-label="Desbloquear">Desbloquear (B)</button>`;
+                blockBtn = `<button id="btn-unblock" data-did="${res.did}" aria-label="${i18n.t('profile.unblockAria')}">${i18n.t('profile.unblockBtn')}</button>`;
               } else {
-                blockBtn = `<button id="btn-block" data-did="${res.did}" aria-label="Bloquear">Bloquear (B)</button>`;
+                blockBtn = `<button id="btn-block" data-did="${res.did}" aria-label="${i18n.t('profile.blockAria')}">${i18n.t('profile.blockBtn')}</button>`;
               }
 
               let labelerBtn = "";
               if (res.isLabeler) {
                   if (res.viewerSubscribedLabeler) {
-                      labelerBtn = `<button id="btn-unsubscribe-labeler" data-did="${res.did}" style="background-color: #ef4444; color: white;" aria-label="Cancelar assinatura do rotulador">Cancelar Assinatura de Rótulos</button>`;
+                      labelerBtn = `<button id="btn-unsubscribe-labeler" data-did="${res.did}" style="background-color: #ef4444; color: white;" aria-label="${i18n.t('profile.unsubscribeLabelerAria')}">${i18n.t('profile.unsubscribeLabelerBtn')}</button>`;
                   } else {
-                      labelerBtn = `<button id="btn-subscribe-labeler" data-did="${res.did}" style="background-color: #10b981; color: white;" aria-label="Assinar rotulador de conteúdo">Assinar Rotulador</button>`;
+                      labelerBtn = `<button id="btn-subscribe-labeler" data-did="${res.did}" style="background-color: #10b981; color: white;" aria-label="${i18n.t('profile.subscribeLabelerAria')}">${i18n.t('profile.subscribeLabelerBtn')}</button>`;
                   }
               }
 
@@ -63,41 +64,41 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 ${muteBtn}
                 ${blockBtn}
                 ${labelerBtn}
-                <button id="btn-message" data-did="${res.did}" aria-label="Enviar Mensagem">Mensagem</button>
-                <button id="btn-manage-lists" data-did="${res.did}" aria-label="Gerenciar em Listas">Gerenciar em Listas</button>
-                <button id="btn-report-user" data-did="${res.did}" aria-label="Denunciar Usuário">Denunciar</button>
+                <button id="btn-message" data-did="${res.did}" aria-label="${i18n.t('profile.messageAria')}">${i18n.t('profile.messageBtn')}</button>
+                <button id="btn-manage-lists" data-did="${res.did}" aria-label="${i18n.t('profile.manageListsAria')}">${i18n.t('profile.manageListsBtn')}</button>
+                <button id="btn-report-user" data-did="${res.did}" aria-label="${i18n.t('profile.reportAria')}">${i18n.t('profile.reportBtn')}</button>
               `;
 
               document.getElementById('btn-manage-lists')?.addEventListener('click', async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   try {
-                      announcePolite("Carregando suas listas...");
+                      announcePolite(i18n.t('profile.loadingLists'));
                       const listsRes = await window.go.services.SocialService.GetActorLists(state.loggedInHandle, "");
                       if (!listsRes || !listsRes.lists || listsRes.lists.length === 0) {
-                          announceAssertive("Você ainda não possui nenhuma lista criada. Crie uma na aba de Listas (Alt+9).");
+                          announceAssertive(i18n.t('profile.noListsCreated'));
                           return;
                       }
                       const options = listsRes.lists.map((l: any, i: number) => `${i + 1}. ${l.name}`).join("\n");
-                      const chosen = await promptDialog(`Escolha o número da lista para adicionar @${res.handle}:\n\n${options}`, "1", "Adicionar a Lista");
+                      const chosen = await promptDialog(i18n.t('profile.chooseListPrompt', { handle: res.handle, options }), "1", i18n.t('profile.addToListTitle'));
                       if (chosen) {
                           const idx = parseInt(chosen, 10) - 1;
                           if (idx >= 0 && idx < listsRes.lists.length) {
                               const selectedList = listsRes.lists[idx];
-                              announcePolite(`Adicionando @${res.handle} à lista "${selectedList.name}"...`);
+                              announcePolite(i18n.t('profile.addingToList', { handle: res.handle, name: selectedList.name }));
                               await window.go.services.SocialService.AddUserToList(selectedList.uri, res.did);
-                              announceAssertive(`@${res.handle} adicionado à lista "${selectedList.name}" com sucesso.`);
+                              announceAssertive(i18n.t('profile.addedToList', { handle: res.handle, name: selectedList.name }));
                           } else {
-                              announceAssertive("Opção inválida.");
+                              announceAssertive(i18n.t('profile.invalidOption'));
                           }
                       }
                   } catch (err: any) {
-                      announceAssertive("Erro ao gerenciar em listas: " + err);
+                      announceAssertive(i18n.t('profile.manageListsError', { err: String(err) }));
                   }
               });
           } else {
               actionsHtml = `
-                <button id="btn-edit-profile" aria-label="Editar Perfil">Editar Perfil</button>
+                <button id="btn-edit-profile" aria-label="${i18n.t('profile.editProfileAria')}">${i18n.t('profile.editProfileBtn')}</button>
               `;
           }
           
@@ -107,7 +108,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
               const knownRes = await window.go.services.SocialService.GetKnownFollowers(res.did || res.handle, "");
               if (knownRes && knownRes.profiles && knownRes.profiles.length > 0) {
                 const names = knownRes.profiles.map((p: any) => p.displayName || `@${p.handle}`).join(', ');
-                knownFollowersHtml = `<p style="font-size:0.9em; color:#aaa;"><em>Seguido por ${names}</em></p>`;
+                knownFollowersHtml = `<p style="font-size:0.9em; color:#aaa;"><em>${i18n.t('profile.followedByKnown', { names })}</em></p>`;
               }
             }
           } catch (e) {
@@ -116,13 +117,13 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
 
           let blockedNotice = "";
           if (res.viewerBlockedBy) {
-            blockedNotice = `<div style="padding:10px; background:#4a1515; color:#ffaaaa; margin-bottom:10px; border-radius:4px;">Este usuário bloqueou você.</div>`;
+            blockedNotice = `<div style="padding:10px; background:#4a1515; color:#ffaaaa; margin-bottom:10px; border-radius:4px;">${i18n.t('profile.userBlockedYou')}</div>`;
           }
 
           let labelerBadge = "";
           let labelerPoliciesHtml = "";
           if (res.isLabeler) {
-            labelerBadge = `<div class="labeler-badge" style="display: inline-block; background: #2563eb; color: #fff; font-size: 0.85em; font-weight: bold; padding: 4px 10px; border-radius: 12px; margin-bottom: 8px;">🏷️ Rotulador de Conteúdo (Labeler) ${res.viewerSubscribedLabeler ? '• Assinado' : ''}</div>`;
+            labelerBadge = `<div class="labeler-badge" style="display: inline-block; background: #2563eb; color: #fff; font-size: 0.85em; font-weight: bold; padding: 4px 10px; border-radius: 12px; margin-bottom: 8px;">${i18n.t('profile.labelerBadge')}${res.viewerSubscribedLabeler ? i18n.t('profile.subscribedBadge') : ''}</div>`;
             
             if (res.labelerInfo && res.labelerInfo.policies && res.labelerInfo.policies.length > 0) {
               const policiesList = res.labelerInfo.policies.map((p: any) => {
@@ -131,7 +132,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                     <strong>${p.title || p.identifier}</strong> <span style="font-size:0.8em; opacity:0.8;">(${p.identifier})</span>
                     ${p.description ? `<p style="margin: 4px 0 0 0; font-size: 0.9em; opacity: 0.9;">${p.description}</p>` : ''}
                     <div style="font-size:0.75em; margin-top:4px; opacity:0.75;">
-                      Severidade: ${p.severity || 'padrão'} | Ocultação: ${p.blurs || 'nenhuma'} ${p.adultOnly ? ' | Conteúdo Adulto' : ''}
+                      ${i18n.t('profile.policyDetails', { severity: p.severity || 'padrão', blurs: p.blurs || 'nenhuma', adultOnly: p.adultOnly ? i18n.t('profile.adultContent') : '' })}
                     </div>
                   </div>
                 `;
@@ -139,7 +140,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
 
               labelerPoliciesHtml = `
                 <div class="labeler-policies-card" style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 8px;">
-                  <h4 style="margin: 0 0 8px 0; font-size: 1em;">🛡️ Rótulos Definição por este Rotulador (${res.labelerInfo.policies.length})</h4>
+                  <h4 style="margin: 0 0 8px 0; font-size: 1em;">${i18n.t('profile.labelerPoliciesTitle', { count: res.labelerInfo.policies.length.toString() })}</h4>
                   ${policiesList}
                 </div>
               `;
@@ -147,17 +148,17 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
           }
 
           container.innerHTML = `
-            <div class="post-item profile-header" tabindex="0" data-text="Perfil de ${res.displayName}. ${res.viewerFollowedBy ? 'Segue você.' : ''} ${res.isLabeler ? 'Este perfil é um Rotulador de Conteúdo.' : ''} Seguidores: ${res.followersCount}. Seguindo: ${res.followsCount}. ${res.isMe ? '' : 'Use S para Seguir, U para Unfollow.'}">
+            <div class="post-item profile-header" tabindex="0" data-text="${i18n.t('profile.profileAriaDetails', { name: res.displayName, followsYou: res.viewerFollowedBy ? i18n.t('profile.followsYouAria') : '', isLabeler: res.isLabeler ? i18n.t('profile.isLabelerAria') : '', followers: res.followersCount.toString(), following: res.followsCount.toString(), shortcuts: res.isMe ? '' : i18n.t('profile.shortcutsAria') })}">
               ${blockedNotice}
               ${labelerBadge}
               <h3>${res.displayName} (@${res.handle})</h3>
-              ${res.viewerFollowedBy ? '<p><em>Segue você</em></p>' : ''}
+              ${res.viewerFollowedBy ? `<p><em>${i18n.t('profile.followsYouText')}</em></p>` : ''}
               ${knownFollowersHtml}
               <p>${res.description}</p>
               <p>
-                <strong>${res.followersCount}</strong> Seguidores | 
-                <strong>${res.followsCount}</strong> Seguindo | 
-                <strong>${res.postsCount}</strong> Posts
+                <strong>${res.followersCount}</strong> ${i18n.t('profile.tabFollowers')} | 
+                <strong>${res.followsCount}</strong> ${i18n.t('profile.tabFollowing')} | 
+                <strong>${res.postsCount}</strong> ${i18n.t('profile.tabPosts')}
               </p>
               <div class="profile-actions">${actionsHtml}</div>
               ${labelerPoliciesHtml}
@@ -170,12 +171,12 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             e.preventDefault();
             e.stopPropagation();
             try {
-              announcePolite("Assinando rotulador...");
+              announcePolite(i18n.t('profile.subscribingLabeler'));
               await window.go.services.SocialService.SubscribeLabeler(res.did);
-              announceAssertive("Rotulador assinado com sucesso!");
+              announceAssertive(i18n.t('profile.subscribedLabelerSuccess'));
               loadProfile(false, true);
             } catch (err: any) {
-              announceAssertive("Erro ao assinar rotulador: " + err);
+              announceAssertive(i18n.t('profile.subscribeLabelerError', { err: String(err) }));
             }
           });
 
@@ -183,12 +184,12 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             e.preventDefault();
             e.stopPropagation();
             try {
-              announcePolite("Cancelando assinatura do rotulador...");
+              announcePolite(i18n.t('profile.unsubscribingLabeler'));
               await window.go.services.SocialService.UnsubscribeLabeler(res.did);
-              announceAssertive("Assinatura cancelada com sucesso.");
+              announceAssertive(i18n.t('profile.unsubscribedLabelerSuccess'));
               loadProfile(false, true);
             } catch (err: any) {
-              announceAssertive("Erro ao cancelar assinatura: " + err);
+              announceAssertive(i18n.t('profile.unsubscribeLabelerError', { err: String(err) }));
             }
           });
 
@@ -202,7 +203,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 pinnedHeader.style.background = '#252836';
                 pinnedHeader.style.fontWeight = 'bold';
                 pinnedHeader.style.borderBottom = '1px solid #333';
-                pinnedHeader.innerHTML = 'Post Fixado';
+                pinnedHeader.innerHTML = i18n.t('profile.pinnedPost');
                 const pinnedArticle = createPostArticle(pinnedRes.posts[0], state.currentPosts.length);
                 const profileContentDiv = document.getElementById('profile-content');
                 if (profileContentDiv) {
@@ -217,15 +218,15 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
           }
           
           const modeLabels: Record<string, string> = {
-              posts: 'Posts',
-              replies: 'Respostas',
-              media: 'Mídia',
-              likes: 'Curtidas',
-              lists: 'Listas',
-              packs: 'Pacotes Iniciais',
-              starterPacks: 'Pacotes Iniciais',
-              followers: 'Seguidores',
-              following: 'Seguindo'
+              posts: i18n.t('profile.tabPosts'),
+              replies: i18n.t('profile.tabReplies'),
+              media: i18n.t('profile.tabMedia'),
+              likes: i18n.t('profile.tabLikes'),
+              lists: i18n.t('profile.tabLists'),
+              packs: i18n.t('profile.tabPacks'),
+              starterPacks: i18n.t('profile.tabPacks'),
+              followers: i18n.t('profile.tabFollowers'),
+              following: i18n.t('profile.tabFollowing')
           };
           ['posts', 'replies', 'media', 'likes', 'lists', 'packs', 'followers', 'following'].forEach(mode => {
               const btn = document.getElementById(`ptab-${mode}`);
@@ -246,80 +247,80 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
           if (!res.isMe) {
               document.getElementById('btn-follow')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
-                  announcePolite("Seguindo...");
+                  announcePolite(i18n.t('profile.followingAction'));
                   await window.go.services.SocialService.Follow(res.did);
-                  announceAssertive("Seguindo com sucesso.");
+                  announceAssertive(i18n.t('profile.followedSuccess'));
                   loadProfile();
               });
               document.getElementById('btn-unfollow')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
-                  announcePolite("Deixando de seguir...");
+                  announcePolite(i18n.t('profile.unfollowingAction'));
                   const followUri = (e.target as HTMLButtonElement).dataset.uri!;
                   await window.go.services.SocialService.Unfollow(followUri);
-                  announceAssertive("Deixou de seguir.");
+                  announceAssertive(i18n.t('profile.unfollowedSuccess'));
                   loadProfile();
               });
               document.getElementById('btn-mute')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
-                  if (await confirmDialog(`Deseja silenciar @${res.handle}?`, 'Silenciar Usuário')) {
-                      announcePolite(`Silenciando @${res.handle}...`);
+                  if (await confirmDialog(i18n.t('profile.mutePrompt', { handle: res.handle }), i18n.t('profile.muteTitle'))) {
+                      announcePolite(i18n.t('profile.mutingAction', { handle: res.handle }));
                       await window.go.services.ModerationService.MuteActor(res.did);
-                      announceAssertive(`Usuário silenciado.`);
+                      announceAssertive(i18n.t('profile.mutedSuccess'));
                       loadProfile();
                   }
               });
               document.getElementById('btn-unmute')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
-                  if (await confirmDialog(`Deseja remover o silêncio de @${res.handle}?`, 'Desmutar Usuário')) {
-                      announcePolite(`Removendo silêncio de @${res.handle}...`);
+                  if (await confirmDialog(i18n.t('profile.unmutePrompt', { handle: res.handle }), i18n.t('profile.unmuteTitle'))) {
+                      announcePolite(i18n.t('profile.unmutingAction', { handle: res.handle }));
                       await window.go.services.ModerationService.UnmuteActor(res.did);
-                      announceAssertive(`Usuário desmutado.`);
+                      announceAssertive(i18n.t('profile.unmutedSuccess'));
                       loadProfile();
                   }
               });
               document.getElementById('btn-block')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
-                  if (await confirmDialog(`Deseja bloquear @${res.handle}?`, 'Bloquear Usuário')) {
-                      announcePolite(`Bloqueando @${res.handle}...`);
+                  if (await confirmDialog(i18n.t('profile.blockPrompt', { handle: res.handle }), i18n.t('profile.blockTitle'))) {
+                      announcePolite(i18n.t('profile.blockingAction', { handle: res.handle }));
                       await window.go.services.ModerationService.BlockActor(res.did);
-                      announceAssertive(`Usuário bloqueado.`);
+                      announceAssertive(i18n.t('profile.blockedSuccess'));
                       loadProfile();
                   }
               });
               document.getElementById('btn-unblock')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
-                  if (await confirmDialog(`Deseja desbloquear @${res.handle}?`, 'Desbloquear Usuário')) {
-                      announcePolite(`Desbloqueando @${res.handle}...`);
+                  if (await confirmDialog(i18n.t('profile.unblockPrompt', { handle: res.handle }), i18n.t('profile.unblockTitle'))) {
+                      announcePolite(i18n.t('profile.unblockingAction', { handle: res.handle }));
                       await window.go.services.ModerationService.UnblockActor(res.did);
-                      announceAssertive(`Usuário desbloqueado.`);
+                      announceAssertive(i18n.t('profile.unblockedSuccess'));
                       loadProfile();
                   }
               });
               document.getElementById('btn-message')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
                   try {
-                    announcePolite("Abrindo conversa...");
+                    announcePolite(i18n.t('profile.openingChat'));
                     const convo = await window.go.services.ChatService.GetConvoForMembers([res.did]);
                     if (convo && convo.id) {
                       state.activeConvoId = convo.id;
                       switchTab('chat');
                     }
                   } catch (err) {
-                    announceAssertive("Erro ao iniciar conversa.");
+                    announceAssertive(i18n.t('profile.openChatError'));
                   }
               });
               document.getElementById('btn-report-user')?.addEventListener('click', async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  const reason = await promptDialog(`Motivo da denúncia para @${res.handle}:`, '', 'Denunciar Conta');
+                  const reason = await promptDialog(i18n.t('profile.reportPrompt', { handle: res.handle }), '', i18n.t('profile.reportAccountTitle'));
                   if (reason) {
-                    announcePolite("Enviando denúncia...");
+                    announcePolite(i18n.t('profile.sendingReport'));
                     try {
                       await window.go.services.ModerationService.ReportAccount(res.did, 'com.atproto.moderation.defs#reasonOther', reason);
-                      announceAssertive("Denúncia enviada com sucesso.");
+                      announceAssertive(i18n.t('profile.reportSuccess'));
                     } catch (err: any) {
                       console.error("ReportAccount error:", err);
-                      announceAssertive("Erro ao enviar denúncia: " + err);
+                      announceAssertive(i18n.t('profile.reportError', { err: String(err) }));
                     }
                   }
               });
@@ -351,7 +352,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                         });
                       }
                     } catch (err) {
-                      console.error("Erro ao carregar self-labels:", err);
+                      console.error("Error loading self-labels:", err);
                     }
 
                     dialog.showModal();
@@ -405,7 +406,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 const div = document.createElement('article');
                 div.classList.add('post-item');
                 div.setAttribute('tabindex', '0');
-                div.dataset.text = `Perfil: ${prof.displayName}. ${prof.description || ''}`;
+                div.dataset.text = i18n.t('profile.profileCardAria', { name: prof.displayName || prof.handle, desc: prof.description || '' });
                 div.innerHTML = `<h3>${prof.displayName} <small>(@${prof.handle})</small></h3><p>${prof.description || ''}</p>`;
                 
                 div.dataset.index = state.currentPosts.length.toString();
@@ -417,7 +418,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 const openProfile = () => {
                     state.currentHandle = prof.handle;
                     state.profileTabMode = 'posts';
-                    announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                    announcePolite(i18n.t('profile.openingProfile', { handle: state.currentHandle }));
                     loadProfile();
                 };
                 
@@ -447,8 +448,8 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             });
             state.profileCursor = resData.cursor;
         } else if (!loadMore) {
-            contentContainer.innerHTML = '<p style="padding:15px; color:#aaa;">Este usuário ainda não possui nenhuma lista criada.</p>';
-            announcePolite("Nenhuma lista encontrada para este perfil.");
+            contentContainer.innerHTML = `<p style="padding:15px; color:#aaa;">${i18n.t('profile.noListsForUser')}</p>`;
+            announcePolite(i18n.t('profile.noListsFound'));
         }
     } else if (state.profileTabMode === 'starterPacks') {
         let resData = await window.go.services.SocialService.GetActorStarterPacks(state.currentHandle, state.profileCursor);
@@ -458,23 +459,23 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 article.classList.add('post-item');
                 article.setAttribute('tabindex', '0');
                 article.dataset.index = (state.currentPosts.length).toString();
-                article.dataset.text = `Starter Pack: ${item.name}. ${item.description || ''}`;
+                article.dataset.text = i18n.t('profile.starterPackCardAria', { name: item.name, desc: item.description || '' });
                 article.setAttribute('aria-label', article.dataset.text);
                 
                 if (item.listUri) {
                     article.innerHTML = `
                         <h3>${item.name}</h3>
                         <p>${item.description || ''}</p>
-                        <button class="btn-follow-all-pack" data-list-uri="${item.listUri}" style="margin-top:6px; padding:4px 10px; font-weight:bold;">Seguir Todos</button>
+                        <button class="btn-follow-all-pack" data-list-uri="${item.listUri}" style="margin-top:6px; padding:4px 10px; font-weight:bold;">${i18n.t('profile.followAllBtn')}</button>
                     `;
                     article.querySelector('.btn-follow-all-pack')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         try {
-                            announcePolite(`Seguindo todos os perfis do pacote "${item.name}"...`);
+                            announcePolite(i18n.t('profile.followingPackMembers', { name: item.name }));
                             const count = await window.go.services.SocialService.FollowAllInList(item.listUri);
-                            announceAssertive(`Você agora está seguindo ${count} novos perfis do pacote "${item.name}".`);
+                            announceAssertive(i18n.t('profile.followedPackMembersSuccess', { count: count.toString(), name: item.name }));
                         } catch (err: any) {
-                            announceAssertive("Erro ao seguir membros do pacote: " + err);
+                            announceAssertive(i18n.t('profile.followPackMembersError', { err: String(err) }));
                         }
                     });
                 } else {
@@ -491,14 +492,14 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             });
             state.profileCursor = resData.cursor;
         } else if (!loadMore) {
-            contentContainer.innerHTML = '<p style="padding:15px; color:#aaa;">Este usuário ainda não possui nenhum Starter Pack.</p>';
-            announcePolite("Nenhum Starter Pack encontrado para este perfil.");
+            contentContainer.innerHTML = `<p style="padding:15px; color:#aaa;">${i18n.t('profile.noPacksForUser')}</p>`;
+            announcePolite(i18n.t('profile.noPacksFound'));
         }
     }
     
     state.tabStates['profile'].loaded = true;
     state.tabStates['profile'].lastHandle = state.currentHandle;
-    announcePolite(`Perfil carregado com ${state.currentPosts.length} itens interativos.`);
+    announcePolite(i18n.t('profile.profileLoaded', { count: state.currentPosts.length.toString() }));
     if (!loadMore && state.currentPosts.length > 0) {
         let focused = false;
         if (keepFocus && targetUri) {
@@ -514,7 +515,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             state.currentPosts[0].focus();
         }
     }
-  } catch (err: any) { console.error(err); announceAssertive("Erro ao carregar perfil."); } 
+  } catch (err: any) { console.error(err); announceAssertive(i18n.t('profile.loadProfileError')); } 
   finally { container.setAttribute('aria-busy', 'false'); }
 }
 
@@ -602,17 +603,17 @@ export function setupProfile() {
         headerDesc.textContent = desc;
       }
 
-      announceAssertive("Perfil atualizado com sucesso!");
+      announceAssertive(i18n.t('profile.profileUpdatedSuccess'));
       dialog.close();
 
       setTimeout(() => {
         loadProfile(false, true).catch((e) => console.error(e));
       }, 1200);
     } catch (err: unknown) {
-      console.error("Erro ao atualizar perfil:", err);
+      console.error("Error updating profile:", err);
       const msg = err instanceof Error ? err.message : String(err);
-      showModalError(`Erro ao salvar: ${msg}`);
-      announceAssertive("Erro ao atualizar perfil: " + msg);
+      showModalError(i18n.t('profile.saveErrorMsg', { msg }));
+      announceAssertive(i18n.t('profile.updateProfileError', { msg }));
     } finally {
       if (saveBtn) saveBtn.disabled = false;
     }

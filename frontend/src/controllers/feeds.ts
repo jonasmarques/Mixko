@@ -3,11 +3,12 @@ import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
 import { createListArticle } from '../components/list';
+import { i18n } from '../utils/i18n';
 
 export async function loadFeedsTab() {
     const container = document.getElementById('feed-list') as HTMLDivElement;
     container.setAttribute('aria-busy', 'true');
-    container.innerHTML = '<div style="padding: 20px;">Carregando...</div>';
+    container.innerHTML = `<div style="padding: 20px;">${i18n.t('feeds.loading')}</div>`;
     
     // Setup tabs
     ['saved', 'lists', 'discover'].forEach(mode => {
@@ -42,22 +43,22 @@ export async function loadFeedsTab() {
             followingDiv.dataset.index = state.currentPosts.length.toString();
             followingDiv.dataset.uri = "";
             followingDiv.innerHTML = `
-                <h3>Seguindo (Timeline Principal)</h3>
-                <small>Feed padrão de postagens das contas que você segue. <strong>(Atalho: Alt+Shift+0)</strong></small>
+                <h3>${i18n.t('feeds.followingMain')}</h3>
+                <small>${i18n.t('feeds.followingDesc')}</small>
                 <div class="actions" style="margin-top: 10px; display:flex; gap:10px;">
-                    <button class="btn-open-feed" data-uri="">Abrir Feed</button>
+                    <button class="btn-open-feed" data-uri="">${i18n.t('feeds.openFeed')}</button>
                 </div>
             `;
             followingDiv.querySelector('.btn-open-feed')?.addEventListener('click', (e) => {
                 e.stopPropagation();
                 state.currentFeedUri = "";
                 switchTab('timeline');
-                announcePolite("Feed principal (Seguindo) carregado na timeline.");
+                announcePolite(i18n.t('feeds.mainFeedLoaded'));
             });
             followingDiv.addEventListener('click', () => {
                 state.currentFeedUri = "";
                 switchTab('timeline');
-                announcePolite("Feed principal (Seguindo) carregado na timeline.");
+                announcePolite(i18n.t('feeds.mainFeedLoaded'));
             });
             followingDiv.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -84,22 +85,22 @@ export async function loadFeedsTab() {
                     div.dataset.index = state.currentPosts.length.toString();
                     div.dataset.uri = feed.uri;
                     const shortcutBadge = index < 9 ? ` <strong>(Atalho: Alt+Shift+${index + 1})</strong>` : '';
-                    const pinnedBadge = feed.pinned ? ' <em>Fixado</em>' : '';
-                    const pinBtnLabel = feed.pinned ? 'Desafixar' : 'Fixar';
+                    const pinnedBadge = feed.pinned ? i18n.t('feeds.pinnedBadge') : '';
+                    const pinBtnLabel = feed.pinned ? i18n.t('feeds.unpin') : i18n.t('feeds.pin');
                     div.innerHTML = `
                         <h3>${feed.displayName}${pinnedBadge}</h3>
-                        <small>Criado por: @${feed.creator}${shortcutBadge}</small>
+                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}${shortcutBadge}</small>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
-                            <button class="btn-open-feed" data-uri="${feed.uri}">Abrir Feed</button>
+                            <button class="btn-open-feed" data-uri="${feed.uri}">${i18n.t('feeds.openFeed')}</button>
                             <button class="btn-pin-feed" data-uri="${feed.uri}" data-pinned="${feed.pinned ? '1' : '0'}">${pinBtnLabel}</button>
-                            <button class="btn-remove-feed" data-uri="${feed.uri}" style="background:#d32f2f; color:#fff; border:none; border-radius:4px; padding:4px 8px;">Remover</button>
+                            <button class="btn-remove-feed" data-uri="${feed.uri}" style="background:#d32f2f; color:#fff; border:none; border-radius:4px; padding:4px 8px;">${i18n.t('feeds.remove')}</button>
                         </div>
                     `;
                     div.querySelector('.btn-open-feed')?.addEventListener('click', (e) => {
                         e.stopPropagation();
                         state.currentFeedUri = feed.uri;
                         switchTab('timeline');
-                        announcePolite(`Feed ${feed.displayName} carregado na timeline.`);
+                        announcePolite(i18n.t('feeds.feedLoaded', { displayName: feed.displayName }));
                     });
                     div.querySelector('.btn-pin-feed')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
@@ -109,26 +110,26 @@ export async function loadFeedsTab() {
                         const newPinned = isPinned ? currentPinned : [...currentPinned, feed.uri];
                         try {
                             await window.go.services.SocialService.UpdateSavedFeeds(newPinned, allSavedUris);
-                            announceAssertive(isPinned ? `Feed "${feed.displayName}" desafixado.` : `Feed "${feed.displayName}" fixado.`);
+                            announceAssertive(isPinned ? i18n.t('feeds.feedUnpinned', { displayName: feed.displayName }) : i18n.t('feeds.feedPinned', { displayName: feed.displayName }));
                             loadFeedsTab();
                         } catch (err) {
-                            announceAssertive("Erro ao atualizar feed.");
+                            announceAssertive(i18n.t('feeds.feedUpdateError'));
                         }
                     });
                     div.querySelector('.btn-remove-feed')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        if (await confirmDialog(`Deseja remover o feed "${feed.displayName}" dos seus salvos?`, 'Remover Feed')) {
+                        if (await confirmDialog(i18n.t('feeds.confirmRemove', { displayName: feed.displayName }), i18n.t('feeds.removeFeedTitle'))) {
                             const newSaved = state.savedFeeds.filter((f: any) => f.uri !== feed.uri).map((f: any) => f.uri);
                             const newPinned = state.savedFeeds.filter((f: any) => f.pinned && f.uri !== feed.uri).map((f: any) => f.uri);
                             await window.go.services.SocialService.UpdateSavedFeeds(newPinned, newSaved);
-                            announceAssertive("Feed removido dos salvos.");
+                            announceAssertive(i18n.t('feeds.feedRemoved'));
                             loadFeedsTab();
                         }
                     });
                     div.addEventListener('click', () => {
                         state.currentFeedUri = feed.uri;
                         switchTab('timeline');
-                        announcePolite(`Feed ${feed.displayName} carregado na timeline.`);
+                        announcePolite(i18n.t('feeds.feedLoaded', { displayName: feed.displayName }));
                     });
                     div.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter') {
@@ -146,7 +147,7 @@ export async function loadFeedsTab() {
                     container.appendChild(div);
                     state.currentPosts.push(div);
                 });
-                announcePolite(`${state.savedFeeds.length + 1} feeds disponíveis.`);
+                announcePolite(i18n.t('feeds.availableFeeds', { count: (state.savedFeeds.length + 1).toString() }));
             }
         } else if (state.feedsTabMode === 'lists') {
             const res = await window.go.services.SocialService.GetActorLists(state.loggedInHandle, "");
@@ -161,9 +162,9 @@ export async function loadFeedsTab() {
                     container.appendChild(article);
                     state.currentPosts.push(article);
                 });
-                announcePolite(`${res.lists.length} listas carregadas.`);
+                announcePolite(i18n.t('feeds.listsLoaded', { count: res.lists.length.toString() }));
             } else {
-                container.innerHTML = '<p>Nenhuma lista encontrada.</p>';
+                container.innerHTML = `<p>${i18n.t('feeds.noListFound')}</p>`;
             }
         } else if (state.feedsTabMode === 'discover') {
             const queryInput = document.getElementById('discover-feed-search-input') as HTMLInputElement;
@@ -171,8 +172,8 @@ export async function loadFeedsTab() {
             const res = await window.go.services.FeedService.GetPopularFeedGenerators("", query);
             container.innerHTML = `
                 <div style="margin-bottom: 15px; display: flex; gap: 10px;">
-                    <input type="search" id="discover-feed-search-input" placeholder="Pesquisar feeds por palavra-chave..." value="${query}" style="flex:1; padding:6px;" />
-                    <button type="button" id="btn-search-discover-feeds" style="padding:6px 12px;">Buscar Feeds</button>
+                    <input type="search" id="discover-feed-search-input" placeholder="${i18n.t('feeds.searchFeedsPlaceholder')}" value="${query}" style="flex:1; padding:6px;" />
+                    <button type="button" id="btn-search-discover-feeds" style="padding:6px 12px;">${i18n.t('feeds.searchFeedsBtn')}</button>
                 </div>
                 <div id="discover-feeds-list"></div>
             `;
@@ -197,19 +198,19 @@ export async function loadFeedsTab() {
                     div.dataset.uri = feed.uri;
                     div.innerHTML = `
                         <h3>${feed.displayName}</h3>
-                        <p>${feed.description || "Sem descrição"}</p>
-                        <small>Criado por: @${feed.creator}</small>
-                        <div style="font-size: 0.8em; margin-top: 5px;">Curtidas: ${feed.likeCount}</div>
+                        <p>${feed.description || i18n.t('feeds.noDescription')}</p>
+                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}</small>
+                        <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: feed.likeCount.toString() })}</div>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px;">
-                            <button class="btn-open-feed" data-uri="${feed.uri}">Abrir Feed</button>
-                            <button class="btn-save-feed" data-uri="${feed.uri}" ${alreadySaved ? 'disabled aria-disabled="true"' : ''}>${alreadySaved ? 'Já Salvo' : 'Salvar Feed'}</button>
+                            <button class="btn-open-feed" data-uri="${feed.uri}">${i18n.t('feeds.openFeed')}</button>
+                            <button class="btn-save-feed" data-uri="${feed.uri}" ${alreadySaved ? 'disabled aria-disabled="true"' : ''}>${alreadySaved ? i18n.t('feeds.alreadySaved') : i18n.t('feeds.saveFeed')}</button>
                         </div>
                     `;
                     div.querySelector('.btn-open-feed')?.addEventListener('click', (e) => {
                         e.stopPropagation();
                         state.currentFeedUri = feed.uri;
                         switchTab('timeline');
-                        announcePolite(`Feed ${feed.displayName} carregado na timeline.`);
+                        announcePolite(i18n.t('feeds.feedLoaded', { displayName: feed.displayName }));
                     });
                     div.querySelector('.btn-save-feed')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
@@ -219,16 +220,16 @@ export async function loadFeedsTab() {
                             const pinnedUris = (state.savedFeeds || []).filter((f: any) => f.pinned).map((f: any) => f.uri);
                             existingUris.push(feed.uri);
                             await window.go.services.SocialService.UpdateSavedFeeds(pinnedUris, existingUris);
-                            announceAssertive(`Feed "${feed.displayName}" salvo com sucesso!`);
+                            announceAssertive(i18n.t('feeds.feedSaved', { displayName: feed.displayName }));
                             loadFeedsTab();
                         } catch (err) {
-                            announceAssertive("Erro ao salvar feed.");
+                            announceAssertive(i18n.t('feeds.feedSaveError'));
                         }
                     });
                     div.addEventListener('click', () => {
                         state.currentFeedUri = feed.uri;
                         switchTab('timeline');
-                        announcePolite(`Feed ${feed.displayName} carregado na timeline.`);
+                        announcePolite(i18n.t('feeds.feedLoaded', { displayName: feed.displayName }));
                     });
                     div.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter') {
@@ -246,16 +247,16 @@ export async function loadFeedsTab() {
                     (feedsListContainer || container).appendChild(div);
                     state.currentPosts.push(div);
                 });
-                announcePolite(`${res.feeds.length} feeds populares carregados.`);
+                announcePolite(i18n.t('feeds.popularFeedsLoaded', { count: res.feeds.length.toString() }));
             } else {
-                if (feedsListContainer) feedsListContainer.innerHTML = '<p>Nenhum feed popular encontrado.</p>';
-                else container.innerHTML = '<p>Nenhum feed popular encontrado.</p>';
+                if (feedsListContainer) feedsListContainer.innerHTML = `<p>${i18n.t('feeds.noPopularFeedFound')}</p>`;
+                else container.innerHTML = `<p>${i18n.t('feeds.noPopularFeedFound')}</p>`;
             }
         }
     } catch (err) {
         console.error(err);
-        container.innerHTML = '<p>Erro ao carregar feeds.</p>';
-        announceAssertive("Erro ao carregar feeds.");
+        container.innerHTML = `<p>${i18n.t('feeds.loadFeedsError')}</p>`;
+        announceAssertive(i18n.t('feeds.loadFeedsError'));
     } finally {
         container.setAttribute('aria-busy', 'false');
         state.tabStates['feeds'].loaded = true;

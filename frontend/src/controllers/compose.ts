@@ -4,6 +4,8 @@ import { announcePolite, announceAssertive } from '../utils/a11y';
 import { reloadCurrentTab } from './tabs';
 import { getFilePathOrDataUrl } from '../utils/helpers';
 import { initGifModal, openGifPicker } from '../components/gif_modal';
+import { i18n } from '../utils/i18n';
+import { MentionAutocomplete } from '../components/mention_autocomplete';
 
 export let selectedImages: string[] = [];
 export let selectedVideo: string = "";
@@ -16,11 +18,11 @@ export function updateCharCounter(text: string) {
     const remaining = 300 - len;
     const charCounter = document.getElementById('char-counter') as HTMLDivElement;
     if (charCounter) {
-        charCounter.textContent = `${remaining} caracteres restantes`;
+        charCounter.textContent = i18n.t('compose.charsRemaining', { count: remaining.toString() });
         if (remaining <= 5) {
             charCounter.style.color = 'red';
             charCounter.style.fontWeight = 'bold';
-            announceAssertive(`Atenção: restam ${remaining} caracteres`);
+            announceAssertive(i18n.t('compose.warnRemaining', { count: remaining.toString() }));
         } else {
             charCounter.style.color = '#555';
             charCounter.style.fontWeight = 'normal';
@@ -33,9 +35,9 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
   state.composeTarget = target || null;
   
   if (DOM.composeTitle) {
-      if (mode === 'reply') DOM.composeTitle.textContent = `Respondendo a @${target?.authorHandle}`;
-      else if (mode === 'quote') DOM.composeTitle.textContent = `Citando publicação de @${target?.authorHandle}`;
-      else DOM.composeTitle.textContent = `Criar Nova Publicação`;
+      if (mode === 'reply') DOM.composeTitle.textContent = i18n.t('compose.replyingTo', { handle: target?.authorHandle || '' });
+      else if (mode === 'quote') DOM.composeTitle.textContent = i18n.t('compose.quoting', { handle: target?.authorHandle || '' });
+      else DOM.composeTitle.textContent = i18n.t('compose.newPost');
   }
   
   const postLanguageInput = document.getElementById('post-language') as HTMLSelectElement;
@@ -94,8 +96,70 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
   }
 }
 
+let mainMentionAutocomplete: MentionAutocomplete | null = null;
+let threadMentionAutocompletes: MentionAutocomplete[] = [];
+let isClosingConfirmed = false;
+
+export function forceCloseComposeModal() {
+    if (mainMentionAutocomplete) {
+        mainMentionAutocomplete.close();
+    }
+    threadMentionAutocompletes.forEach(autoc => autoc.close());
+    threadMentionAutocompletes = [];
+
+    if (DOM.composeModal) {
+        isClosingConfirmed = true;
+        DOM.composeModal.close();
+        isClosingConfirmed = false;
+    }
+}
+
+export function requestCloseComposeModal() {
+    const postTextInput = document.getElementById('post-text') as HTMLTextAreaElement;
+    const hasContent = (postTextInput && postTextInput.value.trim().length > 0) ||
+        selectedImages.length > 0 ||
+        selectedVideo !== "" ||
+        selectedGifUrl !== "";
+
+    if (!hasContent) {
+        forceCloseComposeModal();
+        return;
+    }
+
+    const confirmModal = document.getElementById('confirm-discard-modal') as HTMLDialogElement;
+    if (confirmModal) {
+        confirmModal.showModal();
+        const btnYes = document.getElementById('btn-confirm-discard-yes');
+        const btnNo = document.getElementById('btn-confirm-discard-no');
+
+        const onYes = () => {
+            confirmModal.close();
+            forceCloseComposeModal();
+            cleanup();
+        };
+
+        const onNo = () => {
+            confirmModal.close();
+            if (postTextInput) postTextInput.focus();
+            cleanup();
+        };
+
+        const cleanup = () => {
+            btnYes?.removeEventListener('click', onYes);
+            btnNo?.removeEventListener('click', onNo);
+        };
+
+        btnYes?.addEventListener('click', onYes, { once: true });
+        btnNo?.addEventListener('click', onNo, { once: true });
+    } else {
+        if (confirm(i18n.t('compose.confirmDiscardMessage'))) {
+            forceCloseComposeModal();
+        }
+    }
+}
+
 export function closeComposeModal() {
-    if (DOM.composeModal) DOM.composeModal.close();
+    requestCloseComposeModal();
 }
 
 interface PostLinkState {
@@ -126,13 +190,13 @@ function checkAndFetchLinkPreviewForPost(pState: PostLinkState, text: string, co
     pState.linkPreviewTimer = setTimeout(async () => {
         try {
             containerEl.classList.remove('hidden');
-            containerEl.innerHTML = `<small>Carregando cartão do link...</small>`;
+            containerEl.innerHTML = `<small>${i18n.t('compose.loadingLink')}</small>`;
             const card = await window.go.services.PostBuilderService.FetchLinkCard(url);
             if (card && (card.title || card.description || card.thumb)) {
                 pState.fetchedLinkUrl = url;
                 containerEl.innerHTML = `
-                    <button type="button" class="btn-remove-link-preview" style="position: absolute; top: 5px; right: 5px; background: #d32f2f; color: #fff; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer; font-size: 0.8em;">Remover pré-visualização</button>
-                    ${card.thumb ? `<img src="${card.thumb}" alt="Pré-visualização do link" style="max-height: 100px; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
+                    <button type="button" class="btn-remove-link-preview" style="position: absolute; top: 5px; right: 5px; background: #d32f2f; color: #fff; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer; font-size: 0.8em;">${i18n.t('compose.removePreviewBtn')}</button>
+                    ${card.thumb ? `<img src="${card.thumb}" alt="${i18n.t('compose.linkPreviewAlt')}" style="max-height: 100px; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
                     <strong>${card.title || url}</strong>
                     ${card.description ? `<p style="font-size: 0.85em; margin: 4px 0 0 0; color: #555;">${card.description}</p>` : ''}
                 `;
@@ -141,9 +205,9 @@ function checkAndFetchLinkPreviewForPost(pState: PostLinkState, text: string, co
                     pState.fetchedLinkUrl = "";
                     containerEl.innerHTML = "";
                     containerEl.classList.add('hidden');
-                    announcePolite("Pré-visualização do link removida.");
+                    announcePolite(i18n.t('compose.previewRemoved'));
                 });
-                announcePolite(`Cartão do link carregado: ${card.title || url}`);
+                announcePolite(i18n.t('compose.linkLoaded', { title: card.title || url }));
             } else {
                 if (!pState.fetchedLinkUrl) {
                     containerEl.innerHTML = "";
@@ -163,6 +227,25 @@ function checkAndFetchLinkPreviewForPost(pState: PostLinkState, text: string, co
 export function setupCompose() {
     if (DOM.btnCloseModal) DOM.btnCloseModal.addEventListener('click', closeComposeModal);
     
+    if (DOM.composeModal) {
+        DOM.composeModal.addEventListener('cancel', (e) => {
+            e.preventDefault();
+            if (mainMentionAutocomplete && mainMentionAutocomplete.isOpen()) {
+                mainMentionAutocomplete.close();
+                return;
+            }
+            for (const autoc of threadMentionAutocompletes) {
+                if (autoc.isOpen()) {
+                    autoc.close();
+                    return;
+                }
+            }
+            if (!isClosingConfirmed) {
+                requestCloseComposeModal();
+            }
+        });
+    }
+
     const postImageInput = document.getElementById('post-image') as HTMLInputElement;
     const postVideoInput = document.getElementById('post-video') as HTMLInputElement;
     const altContainer = document.getElementById('image-alts-container') as HTMLDivElement;
@@ -195,7 +278,7 @@ export function setupCompose() {
                     gifPreview.src = url;
                     gifContainer.classList.remove('hidden');
                 }
-                announcePolite('GIF selecionado: ' + alt);
+                announcePolite(i18n.t('compose.gifSelected', { alt }));
             });
         });
     }
@@ -209,7 +292,7 @@ export function setupCompose() {
                 gifContainer.classList.add('hidden');
                 gifPreview.src = "";
             }
-            announcePolite('GIF removido.');
+            announcePolite(i18n.t('compose.gifRemoved'));
         });
     }
 
@@ -220,7 +303,7 @@ export function setupCompose() {
             selectedImages = [];
             if (files && files.length > 0) {
                 if (files.length > 4) {
-                    announceAssertive("Máximo de 4 imagens permitido.");
+                    announceAssertive(i18n.t('compose.maxImagesLimit'));
                     postImageInput.value = "";
                     return;
                 }
@@ -236,7 +319,7 @@ export function setupCompose() {
                     const div = document.createElement('div');
                     div.style.marginBottom = '10px';
                     const label = document.createElement('label');
-                    label.textContent = `Texto Alternativo Imagem ${i+1}:`;
+                    label.textContent = i18n.t('compose.altImgLabel', { index: (i+1).toString() });
                     label.style.display = 'block';
                     const input = document.createElement('input');
                     input.type = 'text';
@@ -247,7 +330,7 @@ export function setupCompose() {
                     div.appendChild(input);
                     if (altContainer) altContainer.appendChild(div);
                 }
-                announcePolite(`${files.length} imagens selecionadas. Preencha os textos alternativos.`);
+                announcePolite(i18n.t('compose.imgsSelected', { count: files.length.toString() }));
                 const firstAltInput = document.querySelector('.alt-text-input') as HTMLInputElement;
                 if (firstAltInput) firstAltInput.focus();
             }
@@ -266,7 +349,7 @@ export function setupCompose() {
 
                 selectedVideo = await getFilePathOrDataUrl(files[0]);
                 if (videoAltContainer) videoAltContainer.classList.remove('hidden');
-                announcePolite(`Vídeo selecionado. Preencha o texto alternativo.`);
+                announcePolite(i18n.t('compose.videoSelected'));
                 const vAltInput = document.getElementById('video-alt') as HTMLInputElement;
                 if (vAltInput) vAltInput.focus();
             } else {
@@ -278,6 +361,7 @@ export function setupCompose() {
 
     const postTextInput = document.getElementById('post-text') as HTMLTextAreaElement;
     if (postTextInput) {
+        mainMentionAutocomplete = new MentionAutocomplete(postTextInput);
         postTextInput.addEventListener('input', (e) => {
             const val = (e.target as HTMLTextAreaElement).value;
             updateCharCounter(val);
@@ -313,7 +397,7 @@ export function setupCompose() {
             wrapper.style.borderTop = '1px solid #ddd';
             
             const label = document.createElement('label');
-            label.textContent = `Post ${postCount}:`;
+            label.textContent = i18n.t('compose.postCountLabel', { count: postCount.toString() });
             label.style.display = 'block';
             label.style.fontWeight = 'bold';
             label.style.marginBottom = '5px';
@@ -324,6 +408,9 @@ export function setupCompose() {
             textarea.required = true;
             textarea.style.width = '100%';
             
+            const threadAutoc = new MentionAutocomplete(textarea);
+            threadMentionAutocompletes.push(threadAutoc);
+
             const threadPostState: PostLinkState = { fetchedLinkUrl: "", dismissedLinkUrl: "", linkPreviewTimer: null };
             (textarea as any)._linkState = threadPostState;
 
@@ -336,17 +423,17 @@ export function setupCompose() {
             counter.style.fontSize = '0.85em';
             counter.style.color = '#555';
             counter.style.marginBottom = '10px';
-            counter.textContent = '300 caracteres restantes';
+            counter.textContent = i18n.t('compose.charsRemaining', { count: '300' });
             
             textarea.addEventListener('input', (e) => {
                 const val = (e.target as HTMLTextAreaElement).value;
                 const len = val.length;
                 const remaining = 300 - len;
-                counter.textContent = `${remaining} caracteres restantes`;
+                counter.textContent = i18n.t('compose.charsRemaining', { count: remaining.toString() });
                 if (remaining <= 5) {
                     counter.style.color = 'red';
                     counter.style.fontWeight = 'bold';
-                    announceAssertive(`Atenção: restam ${remaining} caracteres no post ${postCount}`);
+                    announceAssertive(i18n.t('compose.warnRemainingThread', { remaining: remaining.toString(), count: postCount.toString() }));
                 } else {
                     counter.style.color = '#555';
                     counter.style.fontWeight = 'normal';
@@ -356,7 +443,7 @@ export function setupCompose() {
             
             const btnRemove = document.createElement('button');
             btnRemove.type = 'button';
-            btnRemove.textContent = 'Remover Post';
+            btnRemove.textContent = i18n.t('compose.removePostBtn');
             btnRemove.onclick = () => { wrapper.remove(); };
             
             wrapper.appendChild(label);
@@ -367,7 +454,7 @@ export function setupCompose() {
             container.appendChild(wrapper);
             textarea.focus();
             
-            announcePolite(`Post ${postCount} adicionado a thread.`);
+            announcePolite(i18n.t('compose.postAdded', { count: postCount.toString() }));
         });
     }
 
@@ -394,8 +481,9 @@ export function setupCompose() {
           for (let i = 0; i < altInputs.length; i++) {
               const val = altInputs[i].value.trim();
               if (!val) {
-                  announceAssertive("Texto alternativo ausente. Por favor, descreva todas as imagens antes de postar.");
-                  alert("Texto alternativo ausente. Por favor, descreva todas as imagens antes de postar.");
+                  const msg = i18n.t('compose.altMissing');
+                  announceAssertive(msg);
+                  alert(msg);
                   altInputs[i].focus();
                   return;
               }
@@ -408,8 +496,9 @@ export function setupCompose() {
               if (vAltInput) {
                   vAlt = vAltInput.value.trim();
                   if (!vAlt) {
-                      announceAssertive("Texto alternativo da mídia ausente.");
-                      alert("Texto alternativo da mídia ausente.");
+                      const msg = i18n.t('compose.mediaAltMissing');
+                      announceAssertive(msg);
+                      alert(msg);
                       vAltInput.focus();
                       return;
                   }
@@ -430,8 +519,8 @@ export function setupCompose() {
 
               if (item.text.trim() === "" && !hasMedia) {
                   const errorMsg = postItems.length > 1
-                      ? `O post ${i + 1} da thread está vazio. Por favor, insira um texto.`
-                      : "O post está vazio. Por favor, insira um texto.";
+                      ? i18n.t('compose.emptyThreadPost', { count: (i + 1).toString() })
+                      : i18n.t('compose.emptyPost');
                   announceAssertive(errorMsg);
                   alert(errorMsg);
                   if (isFirstPost) {
@@ -444,8 +533,8 @@ export function setupCompose() {
 
               if (item.text.length > 300) {
                   const errorMsg = postItems.length > 1
-                      ? `O post ${i + 1} da thread excede o limite de 300 caracteres (possui ${item.text.length} caracteres).`
-                      : `O post excede o limite de 300 caracteres (possui ${item.text.length} caracteres).`;
+                      ? i18n.t('compose.tooLongThreadPost', { count: (i + 1).toString(), length: item.text.length.toString() })
+                      : i18n.t('compose.tooLongPost', { length: item.text.length.toString() });
                   announceAssertive(errorMsg);
                   alert(errorMsg);
                   if (isFirstPost) {
@@ -462,7 +551,7 @@ export function setupCompose() {
           if (btnSubmit) btnSubmit.disabled = true;
           if (btnAddPost) btnAddPost.disabled = true;
 
-          announcePolite(`Publicando ${postItems.length > 1 ? postItems.length + ' posts' : 'post'}...`);
+          announcePolite(postItems.length > 1 ? i18n.t('compose.publishingMultiple', { count: postItems.length.toString() }) : i18n.t('compose.publishingSingle'));
           try {
             let currentReplyUri = state.composeTarget?.uri || "";
             let currentReplyCid = state.composeTarget?.cid || "";
@@ -494,23 +583,24 @@ export function setupCompose() {
                 }
                 
                 if (postItems.length > 1) {
-                    announcePolite(`Enviado ${i + 1} de ${postItems.length}...`);
+                    announcePolite(i18n.t('compose.sendingOf', { current: (i + 1).toString(), total: postItems.length.toString() }));
                 }
             }
             
             if (btnSubmit) btnSubmit.disabled = false;
             if (btnAddPost) btnAddPost.disabled = false;
-            announceAssertive(postItems.length > 1 ? "Thread publicada com sucesso." : "Publicado com sucesso.");
-            closeComposeModal();
+            announceAssertive(postItems.length > 1 ? i18n.t('compose.threadSuccess') : i18n.t('compose.postSuccess'));
+            forceCloseComposeModal();
             if (state.currentTab !== 'notifications') {
                 reloadCurrentTab();
             }
           } catch (err: any) {
             if (btnSubmit) btnSubmit.disabled = false;
             if (btnAddPost) btnAddPost.disabled = false;
-            console.error("Erro ao publicar:", err);
-            announceAssertive("Erro: " + err);
-            alert("Erro ao publicar: " + err);
+            console.error("Error publishing post:", err);
+            const msg = i18n.t('compose.publishError') + err;
+            announceAssertive(msg);
+            alert(msg);
           }
         });
     }

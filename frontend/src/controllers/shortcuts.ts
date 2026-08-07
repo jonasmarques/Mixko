@@ -3,6 +3,7 @@ import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab, reloadCurrentTab } from './tabs';
+import { i18n } from '../utils/i18n';
 import { loadTimeline } from './timeline';
 import { loadProfile } from './profile';
 import { loadChat, openChatConvo } from './chat';
@@ -23,7 +24,7 @@ function showProfilesModal(title: string, profiles: any[]) {
     container.innerHTML = '';
     
     if (profiles.length === 0) {
-        container.innerHTML = '<p role="alert">Nenhum perfil encontrado.</p>';
+        container.innerHTML = `<p role="alert">${i18n.t('shortcuts.noProfilesFound')}</p>`;
     } else {
         profiles.forEach((p, i) => {
             const div = document.createElement('div');
@@ -34,13 +35,13 @@ function showProfilesModal(title: string, profiles: any[]) {
             div.style.borderBottom = '1px solid #ccc';
             div.style.cursor = 'pointer';
             div.innerHTML = `<strong>${p.displayName || p.handle}</strong> <small>@${p.handle}</small>`;
-            div.setAttribute('aria-label', `Perfil: ${p.displayName || p.handle}, @${p.handle}`);
+            div.setAttribute('aria-label', `${i18n.t('app.profile')}: ${p.displayName || p.handle}, @${p.handle}`);
             
             const selectProfile = () => {
                 modal.close();
                 state.currentHandle = p.handle;
                 state.profileTabMode = 'posts';
-                announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                announcePolite(i18n.t('shortcuts.openingProfile', { handle: state.currentHandle }));
                 switchTab('profile');
             };
 
@@ -94,7 +95,7 @@ function showProfilesModal(title: string, profiles: any[]) {
         }
     };
     modal.showModal();
-    announceAssertive(`Modal aberto: ${title}. ${profiles.length} perfis exibidos. Use J e K ou setas para navegar, Enter para abrir, e Esc para fechar.`);
+    announceAssertive(i18n.t('shortcuts.modalOpen', { title, count: profiles.length.toString() }));
     const firstItem = container.querySelector('.profile-list-item') as HTMLElement;
     if (firstItem) {
         setTimeout(() => firstItem.focus(), 0);
@@ -118,7 +119,7 @@ function showPostsModal(title: string, posts: any[]) {
     const prevIdx = state.focusedPostIndex;
 
     if (posts.length === 0) {
-        container.innerHTML = '<p role="alert">Nenhum post encontrado.</p>';
+        container.innerHTML = `<p role="alert">${i18n.t('shortcuts.noPostsFound')}</p>`;
     } else {
         posts.forEach((p, i) => {
             const article = createPostArticle(p, i);
@@ -140,7 +141,7 @@ function showPostsModal(title: string, posts: any[]) {
                 setTimeout(() => prevPosts[prevIdx].focus(), 0);
             }
         }
-        announcePolite("Modal fechado.");
+        announcePolite(i18n.t('shortcuts.modalClosed'));
     };
 
     closeBtn.onclick = () => modal.close();
@@ -160,7 +161,7 @@ function showPostsModal(title: string, posts: any[]) {
         }
     };
     modal.showModal();
-    announceAssertive(`Modal aberto: ${title}. ${posts.length} publicações exibidas. Use J e K para navegar entre os posts, e Esc para fechar.`);
+    announceAssertive(i18n.t('shortcuts.postsModalOpen', { title, count: posts.length.toString() }));
     if (modalPosts.length > 0) {
         setTimeout(() => modalPosts[0].focus(), 0);
     } else {
@@ -178,7 +179,7 @@ export function setupShortcuts() {
             });
         }
         helpModal.addEventListener('close', () => {
-            announcePolite("Menu de Ajuda fechado.");
+            announcePolite(i18n.t('shortcuts.helpClosed'));
         });
     }
 
@@ -199,18 +200,18 @@ export function setupShortcuts() {
                 const rawHandle = directProfileInput?.value?.trim() || '';
                 const handle = rawHandle.startsWith('@') ? rawHandle.slice(1).trim() : rawHandle;
                 if (!handle) {
-                    announceAssertive("Por favor, digite um handle válido.");
+                    announceAssertive(i18n.t('shortcuts.invalidHandle'));
                     return;
                 }
                 directProfileModal.close();
                 state.currentHandle = handle;
                 state.profileTabMode = 'posts';
-                announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                announcePolite(i18n.t('shortcuts.openingProfile', { handle: state.currentHandle }));
                 switchTab('profile');
             });
         }
         directProfileModal.addEventListener('close', () => {
-            announcePolite("Modal de Ir para Perfil fechado.");
+            announcePolite(i18n.t('shortcuts.profileModalClosed'));
         });
     }
 
@@ -219,7 +220,6 @@ export function setupShortcuts() {
     window.addEventListener('keydown', async (e) => {
         if (!state.isAppReady) return;
 
-        // Polyfill for Alt Codes (WebView2 bug workaround)
         if (e.key === 'Alt') {
             altCodeSequence = "";
             return;
@@ -229,7 +229,7 @@ export function setupShortcuts() {
             const digit = e.code.replace('Numpad', '');
             if (!isNaN(parseInt(digit))) {
                 altCodeSequence += digit;
-                e.preventDefault(); // Prevent default to avoid WebView2 consuming it
+                e.preventDefault();
             }
             return;
         } else if (!e.altKey) {
@@ -243,7 +243,7 @@ export function setupShortcuts() {
                 if (!modal.open) {
                     modal.showModal();
                     document.getElementById('help-shortcuts-list')?.focus();
-                    announceAssertive("Menu de Ajuda aberto. Pressione Esc para fechar.");
+                    announceAssertive(i18n.t('shortcuts.helpOpen'));
                 } else {
                     modal.close();
                 }
@@ -251,13 +251,12 @@ export function setupShortcuts() {
             return;
         }
 
-        // Dark Mode Toggle
         if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'e') {
             e.preventDefault();
             document.body.classList.toggle('dark-mode');
             const isDark = document.body.classList.contains('dark-mode');
             localStorage.setItem('darkMode', isDark.toString());
-            announceAssertive(isDark ? "Modo Escuro ativado" : "Modo Claro ativado");
+            announceAssertive(isDark ? i18n.t('settings.darkModeOn') : i18n.t('settings.darkModeOff'));
             return;
         }
 
@@ -269,7 +268,7 @@ export function setupShortcuts() {
                     directProfileModal.showModal();
                 }
                 directProfileInput.focus();
-                announcePolite("Digite o handle do perfil que deseja acessar.");
+                announcePolite(i18n.t('shortcuts.enterHandle'));
             }
             return;
         }
@@ -289,7 +288,7 @@ export function setupShortcuts() {
 
         if (e.key === 'F5') {
             e.preventDefault();
-            announcePolite("Recarregando aba atual...");
+            announcePolite(i18n.t('shortcuts.reloadingTab'));
             reloadCurrentTab();
             return;
         }
@@ -302,7 +301,7 @@ export function setupShortcuts() {
             localStorage.setItem('hideReplies', String(state.hideReplies));
             const hideRepliesCheckbox = document.getElementById('setting-hide-replies') as HTMLInputElement;
             if (hideRepliesCheckbox) hideRepliesCheckbox.checked = state.hideReplies;
-            announcePolite(state.hideReplies ? "Respostas ocultas" : "Respostas visíveis");
+            announcePolite(state.hideReplies ? i18n.t('settings.repliesHidden') : i18n.t('settings.repliesVisible'));
             if (state.currentTab === 'timeline') loadTimeline(false, true);
             return;
         }
@@ -324,13 +323,13 @@ export function setupShortcuts() {
                     const rkey = uri.split('/').pop();
                     const bskyUrl = `https://bsky.app/profile/${authorHandle}/post/${rkey}`;
                     navigator.clipboard.writeText(bskyUrl).then(() => {
-                        announceAssertive("URL do post copiada.");
+                        announceAssertive(i18n.t('shortcuts.urlCopied'));
                     }).catch(() => {
-                        announceAssertive("Erro ao copiar URL do post.");
+                        announceAssertive(i18n.t('shortcuts.errorCopyUrl'));
                     });
                 }
             } else {
-                announceAssertive("Nenhum post focado para copiar a URL.");
+                announceAssertive(i18n.t('shortcuts.noPostFocused'));
             }
             return;
         }
@@ -351,7 +350,8 @@ export function setupShortcuts() {
                     'posts', 'replies', 'media', 'likes', 'lists', 'starterPacks', 'followers', 'following'
                 ];
                 const labels = [
-                    'Posts', 'Respostas', 'Mídia', 'Curtidas', 'Listas', 'Pacotes Iniciais', 'Seguidores', 'Seguindo'
+                    i18n.t('profile.posts'), i18n.t('profile.replies'), i18n.t('profile.media'), i18n.t('profile.likes'), 
+                    i18n.t('profile.lists'), i18n.t('profile.starterPacks'), i18n.t('profile.followers'), i18n.t('profile.following')
                 ];
                 const mode = profileModes[digitNum - 1];
                 const label = labels[digitNum - 1];
@@ -374,7 +374,7 @@ export function setupShortcuts() {
                 e.preventDefault();
                 if (digitNum === 0) {
                     state.currentFeedUri = "";
-                    announcePolite("Feed principal (Seguindo) selecionado");
+                    announcePolite(i18n.t('timeline.followingSelected'));
                     if (state.currentTab !== 'timeline') {
                         state.tabStates['timeline'].loaded = false;
                         switchTab('timeline');
@@ -386,7 +386,7 @@ export function setupShortcuts() {
                     if (feedIdx >= 0 && feedIdx < state.savedFeeds.length) {
                         const feed = state.savedFeeds[feedIdx];
                         state.currentFeedUri = feed.uri;
-                        announcePolite(`Feed ${feed.displayName} selecionado`);
+                        announcePolite(i18n.t('timeline.feedSelected', { name: feed.displayName }));
                         if (state.currentTab !== 'timeline') {
                             state.tabStates['timeline'].loaded = false;
                             switchTab('timeline');
@@ -394,7 +394,7 @@ export function setupShortcuts() {
                             loadTimeline();
                         }
                     } else {
-                        announcePolite(`Nenhum feed salvo no atalho Alt+Shift+${digitNum}`);
+                        announcePolite(i18n.t('timeline.noFeedSaved', { num: digitNum.toString() }));
                     }
                 }
                 return;
@@ -429,7 +429,7 @@ export function setupShortcuts() {
             }
 
             if (targetDid) {
-                announcePolite(`Iniciando chat com @${targetHandle}...`);
+                announcePolite(i18n.t('chat.openingChat', { handle: targetHandle }));
                 try {
                     const convo = await window.go.services.ChatService.GetConvoForMembers([targetDid]);
                     if (convo && convo.id) {
@@ -438,10 +438,10 @@ export function setupShortcuts() {
                         openChatConvo(convo.id, targetHandle);
                     }
                 } catch (err) {
-                    announceAssertive("Erro ao abrir chat: " + err);
+                    announceAssertive(i18n.t('shortcuts.errorOpenChat', { msg: String(err) }));
                 }
             } else {
-                announceAssertive("Nenhum perfil selecionado ou focado para enviar mensagem.");
+                announceAssertive(i18n.t('shortcuts.noTargetForChat'));
             }
             return;
         }
@@ -452,9 +452,9 @@ export function setupShortcuts() {
                 const p = state.currentPosts[state.focusedPostIndex];
                 const textToCopy = p.querySelector('.post-content p')?.textContent || p.dataset.text || "";
                 navigator.clipboard.writeText(textToCopy).then(() => {
-                    announceAssertive("Texto copiado.");
+                    announceAssertive(i18n.t('shortcuts.textCopied'));
                 }).catch(() => {
-                    announceAssertive("Erro ao copiar.");
+                    announceAssertive(i18n.t('shortcuts.errorCopy'));
                 });
             }
             return;
@@ -467,12 +467,12 @@ export function setupShortcuts() {
             const cid = focusedPost?.dataset.cid;
 
             if (uri && cid) {
-                promptDialog("Motivo da denúncia para a publicação:", "", "Denunciar Publicação").then(reason => {
+                promptDialog(i18n.t('shortcuts.reportReasonPrompt'), "", i18n.t('shortcuts.reportPostAction')).then(reason => {
                     if (reason) {
-                        announcePolite("Enviando denúncia...");
+                        announcePolite(i18n.t('shortcuts.sendingReport'));
                         window.go.services.ModerationService.ReportPost(uri, cid, 'com.atproto.moderation.defs#reasonOther', reason).then(() => {
-                            announceAssertive("Denúncia de post enviada com sucesso.");
-                        }).catch(err => announceAssertive("Erro ao enviar denúncia: " + err));
+                            announceAssertive(i18n.t('shortcuts.reportSuccess'));
+                        }).catch(err => announceAssertive(i18n.t('shortcuts.errorReport', { msg: String(err) })));
                     }
                 });
             } else if (state.currentTab === 'profile') {
@@ -480,19 +480,19 @@ export function setupShortcuts() {
                 const targetDid = reportBtn?.dataset.did;
                 const targetHandle = state.currentHandle;
                 if (targetDid) {
-                    promptDialog(`Motivo da denúncia para @${targetHandle}:`, "", "Denunciar Conta").then(reason => {
+                    promptDialog(i18n.t('shortcuts.reportAccountReason', { handle: targetHandle }), "", i18n.t('shortcuts.reportAccountAction')).then(reason => {
                         if (reason) {
-                            announcePolite("Enviando denúncia de conta...");
+                            announcePolite(i18n.t('shortcuts.sendingAccountReport'));
                             window.go.services.ModerationService.ReportAccount(targetDid, 'com.atproto.moderation.defs#reasonOther', reason).then(() => {
-                                announceAssertive("Denúncia de conta enviada com sucesso.");
-                            }).catch(err => announceAssertive("Erro ao enviar denúncia: " + err));
+                                announceAssertive(i18n.t('shortcuts.reportAccountSuccess'));
+                            }).catch(err => announceAssertive(i18n.t('shortcuts.errorReport', { msg: String(err) })));
                         }
                     });
                 } else {
-                    announceAssertive("Nenhum perfil focado para denunciar.");
+                    announceAssertive(i18n.t('shortcuts.noProfileFocused'));
                 }
             } else {
-                announceAssertive("Nenhuma publicação ou perfil focado para denunciar.");
+                announceAssertive(i18n.t('shortcuts.noTargetFocused'));
             }
             return;
         }
@@ -503,12 +503,12 @@ export function setupShortcuts() {
             const uri = focusedPost?.dataset.uri;
             const rootUri = focusedPost?.dataset.rootUri || focusedPost?.dataset.replyToUri || uri;
             if (uri && rootUri) {
-                announcePolite("Ocultando resposta...");
+                announcePolite(i18n.t('shortcuts.hidingReply'));
                 window.go.services.PostBuilderService.HideReply(rootUri, uri).then(() => {
-                    announceAssertive("Resposta ocultada com sucesso.");
-                }).catch((err: any) => announceAssertive("Erro ao ocultar resposta: " + err));
+                    announceAssertive(i18n.t('shortcuts.hideReplySuccess'));
+                }).catch((err: any) => announceAssertive(i18n.t('shortcuts.errorHideReply', { msg: String(err) })));
             } else {
-                announceAssertive("Nenhuma resposta focada para ocultar.");
+                announceAssertive(i18n.t('shortcuts.noReplyFocused'));
             }
             return;
         }
@@ -518,12 +518,12 @@ export function setupShortcuts() {
             const focusedPost = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex] : null;
             const uri = focusedPost?.dataset.uri;
             if (uri) {
-                announcePolite("Mutando thread...");
+                announcePolite(i18n.t('shortcuts.mutingThread'));
                 window.go.services.ModerationService.MuteThread(uri).then(() => {
-                    announceAssertive("Thread mutada com sucesso.");
-                }).catch((err: any) => announceAssertive("Erro ao mutar thread: " + err));
+                    announceAssertive(i18n.t('shortcuts.muteThreadSuccess'));
+                }).catch((err: any) => announceAssertive(i18n.t('shortcuts.errorMuteThread', { msg: String(err) })));
             } else {
-                announceAssertive("Nenhuma postagem focada para mutar thread.");
+                announceAssertive(i18n.t('shortcuts.noPostFocused'));
             }
             return;
         }
@@ -534,12 +534,12 @@ export function setupShortcuts() {
             const uri = focusedPost?.dataset.uri;
             const cid = focusedPost?.dataset.cid;
             if (uri && cid) {
-                announcePolite("Fixando publicação no seu perfil...");
+                announcePolite(i18n.t('shortcuts.pinningPost'));
                 window.go.services.SocialService.PinPost(uri, cid).then(() => {
-                    announceAssertive("Publicação fixada com sucesso.");
-                }).catch((err: any) => announceAssertive("Erro ao fixar publicação: " + err));
+                    announceAssertive(i18n.t('shortcuts.pinSuccess'));
+                }).catch((err: any) => announceAssertive(i18n.t('shortcuts.errorPin', { msg: String(err) })));
             } else {
-                announceAssertive("Nenhuma postagem focada para fixar.");
+                announceAssertive(i18n.t('shortcuts.noPostFocused'));
             }
             return;
         }
@@ -549,7 +549,7 @@ export function setupShortcuts() {
             e.preventDefault();
             if (state.currentTab === 'notifications') {
                 state.showOnlyMentions = !state.showOnlyMentions;
-                announcePolite(state.showOnlyMentions ? "Exibindo apenas menções." : "Exibindo todas as notificações.");
+                announcePolite(state.showOnlyMentions ? i18n.t('notifications.onlyMentions') : i18n.t('notifications.allNotifications'));
                 loadNotifications();
             }
             return;
@@ -562,10 +562,10 @@ export function setupShortcuts() {
                 const uri = p.dataset.uri;
                 const cid = p.dataset.cid;
                 if (uri && cid) {
-                    announcePolite("Carregando quotes...");
+                    announcePolite(i18n.t('shortcuts.loadingQuotes'));
                     window.go.services.FeedService.GetQuotes(uri, cid, "").then(res => {
-                        showPostsModal("Quotes", res.posts || []);
-                    }).catch(err => announceAssertive("Erro ao carregar quotes: " + err));
+                        showPostsModal(i18n.t('shortcuts.quotesTitle'), res.posts || []);
+                    }).catch(err => announceAssertive(i18n.t('shortcuts.errorLoadQuotes', { msg: String(err) })));
                 }
             }
             return;
@@ -578,10 +578,10 @@ export function setupShortcuts() {
                 const uri = p.dataset.uri;
                 const cid = p.dataset.cid;
                 if (uri && cid) {
-                    announcePolite("Carregando curtidas...");
+                    announcePolite(i18n.t('shortcuts.loadingLikes'));
                     window.go.services.FeedService.GetLikes(uri, cid, "").then(res => {
-                        showProfilesModal("Curtidas", res.profiles || []);
-                    }).catch(err => announceAssertive("Erro ao carregar curtidas: " + err));
+                        showProfilesModal(i18n.t('shortcuts.likesTitle'), res.profiles || []);
+                    }).catch(err => announceAssertive(i18n.t('shortcuts.errorLoadLikes', { msg: String(err) })));
                 }
             }
             return;
@@ -593,12 +593,12 @@ export function setupShortcuts() {
                 const p = state.currentPosts[state.focusedPostIndex];
                 const quoteUri = p.dataset.quoteUri;
                 if (quoteUri) {
-                    announcePolite("Carregando post original citado...");
+                    announcePolite(i18n.t('shortcuts.loadingOriginalQuote'));
                     window.go.services.FeedService.GetPosts([quoteUri]).then(res => {
-                        showPostsModal("Post Citado (Original)", res.posts || []);
-                    }).catch(err => announceAssertive("Erro ao carregar post original: " + err));
+                        showPostsModal(i18n.t('shortcuts.originalQuoteTitle'), res.posts || []);
+                    }).catch(err => announceAssertive(i18n.t('shortcuts.errorLoadOriginal', { msg: String(err) })));
                 } else {
-                    announcePolite("Este post não possui uma citação (quote).");
+                    announcePolite(i18n.t('shortcuts.noQuoteFound'));
                 }
             }
             return;
@@ -610,10 +610,10 @@ export function setupShortcuts() {
                 const p = state.currentPosts[state.focusedPostIndex];
                 const uri = p.dataset.uri;
                 if (uri) {
-                    announcePolite("Carregando respostas...");
+                    announcePolite(i18n.t('shortcuts.loadingReplies'));
                     window.go.services.FeedService.GetPostThread(uri, 5).then(res => {
-                        showPostsModal("Respostas", res.posts || []);
-                    }).catch(err => announceAssertive("Erro ao carregar respostas: " + err));
+                        showPostsModal(i18n.t('shortcuts.repliesTitle'), res.posts || []);
+                    }).catch(err => announceAssertive(i18n.t('shortcuts.errorLoadReplies', { msg: String(err) })));
                 }
             }
             return;
@@ -626,10 +626,10 @@ export function setupShortcuts() {
                 const uri = p.dataset.uri;
                 const cid = p.dataset.cid;
                 if (uri && cid) {
-                    announcePolite("Carregando reposts...");
+                    announcePolite(i18n.t('shortcuts.loadingReposts'));
                     window.go.services.FeedService.GetRepostedBy(uri, cid, "").then(res => {
-                        showProfilesModal("Reposts", res.profiles || []);
-                    }).catch(err => announceAssertive("Erro ao carregar reposts: " + err));
+                        showProfilesModal(i18n.t('shortcuts.repostsTitle'), res.profiles || []);
+                    }).catch(err => announceAssertive(i18n.t('shortcuts.errorLoadReposts', { msg: String(err) })));
                 }
             }
             return;
@@ -669,19 +669,19 @@ export function setupShortcuts() {
                 state.currentPosts[state.focusedPostIndex].focus();
             } else if (state.focusedPostIndex === state.currentPosts.length - 1 && !(document.getElementById('posts-list-modal') as HTMLDialogElement)?.open) {
                 if (state.currentTab === 'timeline') {
-                announcePolite("Carregando mais posts...");
+                announcePolite(i18n.t('shortcuts.loadingMore'));
                 loadTimeline(true);
                 } else if (state.currentTab === 'profile' && state.focusedPostIndex > 0) {
-                announcePolite("Carregando mais conteúdo do perfil...");
+                announcePolite(i18n.t('shortcuts.loadingMore'));
                 loadProfile(true);
                 } else if (state.currentTab === 'notifications') {
-                announcePolite("Carregando mais notificações...");
+                announcePolite(i18n.t('shortcuts.loadingMore'));
                 loadNotifications(true);
                 } else if (state.currentTab === 'chat' && !state.activeConvoId) {
-                announcePolite("Carregando mais chats...");
+                announcePolite(i18n.t('shortcuts.loadingMore'));
                 loadChat(true);
                 } else if (state.currentTab === 'saved') {
-                announcePolite("Carregando mais posts salvos...");
+                announcePolite(i18n.t('shortcuts.loadingMore'));
                 loadSavedPosts(true);
                 }
             }
@@ -724,7 +724,7 @@ export function setupShortcuts() {
                 if (handleArr.length === 1) {
                     state.currentHandle = handleArr[0];
                     state.profileTabMode = 'posts';
-                    announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                    announcePolite(i18n.t('shortcuts.openingProfile', { handle: state.currentHandle }));
                     switchTab('profile');
                 } else if (handleArr.length > 1) {
                     const modal = document.getElementById('profile-picker-modal') as HTMLDialogElement;
@@ -744,7 +744,7 @@ export function setupShortcuts() {
                                 modal.close();
                                 state.currentHandle = h;
                                 state.profileTabMode = 'posts';
-                                announcePolite(`Abrindo perfil de @${state.currentHandle}`);
+                                announcePolite(i18n.t('shortcuts.openingProfile', { handle: state.currentHandle }));
                                 switchTab('profile');
                             });
                             btn.addEventListener('keydown', (ev) => {
@@ -771,7 +771,7 @@ export function setupShortcuts() {
                         
                         modal.showModal();
                         if (options.length > 0) options[0].focus();
-                        announcePolite(`Múltiplos perfis encontrados. Use as setas para selecionar.`);
+                        announcePolite(i18n.t('shortcuts.multipleProfilesFound'));
                     }
                 }
             }
@@ -779,7 +779,7 @@ export function setupShortcuts() {
             case 'e':
             e.preventDefault();
             if (e.shiftKey) {
-                announcePolite("Recolhendo postagens expandidas...");
+                announcePolite(i18n.t('shortcuts.collapsingThreads'));
                 reloadCurrentTab();
                 break;
             }
@@ -787,12 +787,12 @@ export function setupShortcuts() {
                 const p = state.currentPosts[state.focusedPostIndex];
                 const targetUri = p.dataset.uri;
                 if (targetUri) {
-                    announcePolite("Expandindo árvore de diálogo...");
+                    announcePolite(i18n.t('shortcuts.expandingTree'));
                     window.go.services.FeedService.GetPostThread(targetUri, 10).then(res => {
-                        showPostsModal("Árvore de Diálogo", res.posts || []);
-                    }).catch(err => announceAssertive("Erro ao expandir árvore de diálogo: " + err));
+                        showPostsModal(i18n.t('shortcuts.dialogTreeTitle'), res.posts || []);
+                    }).catch(err => announceAssertive(i18n.t('shortcuts.errorExpandTree', { msg: String(err) })));
                 } else {
-                    announcePolite("Não foi possível identificar o URI do post para expandir o diálogo.");
+                    announcePolite(i18n.t('shortcuts.uriNotFound'));
                 }
             }
             break;
@@ -802,14 +802,14 @@ export function setupShortcuts() {
                 const p = state.currentPosts[state.focusedPostIndex];
                 if (p.dataset.externalUrl) {
                     (window as any).runtime.BrowserOpenURL(p.dataset.externalUrl);
-                    announcePolite("Abrindo link externo");
+                    announcePolite(i18n.t('shortcuts.openingLink'));
                 } else if (p.dataset.text) {
                     const urlMatch = p.dataset.text.match(/(https?:\/\/[^\s]+)/);
                     if (urlMatch) {
                         (window as any).runtime.BrowserOpenURL(urlMatch[0]);
-                        announcePolite("Abrindo link do texto");
+                        announcePolite(i18n.t('shortcuts.openingLink'));
                     } else {
-                        announcePolite("Nenhum link encontrado na postagem.");
+                        announcePolite(i18n.t('shortcuts.noLinkFound'));
                     }
                 }
             }
@@ -827,7 +827,7 @@ export function setupShortcuts() {
                         });
                         if (anyPlaying) {
                             vids.forEach(v => v.pause());
-                            announcePolite("Mídia pausada.");
+                            announcePolite(i18n.t('shortcuts.mediaPaused'));
                         } else {
                             vids.forEach(v => {
                                 v.play().catch(() => {});
@@ -836,22 +836,22 @@ export function setupShortcuts() {
                             const isMainGif = p.dataset.videoIsGif === 'true';
                             const isQuoteGif = p.dataset.quoteVideoIsGif === 'true';
                             if (p.dataset.videoAlt) {
-                                altMsg += ` Descrição: ${p.dataset.videoAlt}.`;
+                                altMsg += i18n.t('shortcuts.altDesc', { desc: p.dataset.videoAlt });
                             }
                             if (p.dataset.quoteVideoAlt !== undefined) {
-                                altMsg += ` Descrição do ${isQuoteGif ? 'GIF' : 'vídeo'}: ${p.dataset.quoteVideoAlt ? p.dataset.quoteVideoAlt : "Sem descrição alternativa"}.`;
+                                altMsg += i18n.t('shortcuts.quoteAltDesc', { type: isQuoteGif ? 'GIF' : i18n.t('app.video'), desc: p.dataset.quoteVideoAlt ? p.dataset.quoteVideoAlt : i18n.t('shortcuts.noDesc') });
                             }
                             if (!altMsg) {
-                                altMsg = " (Sem descrição alternativa)";
+                                altMsg = i18n.t('shortcuts.noAltDesc');
                             }
-                            const mediaType = isMainGif || isQuoteGif ? 'GIF' : 'vídeo';
-                            announcePolite(`Reproduzindo ${mediaType}.${altMsg}`);
+                            const mediaType = isMainGif || isQuoteGif ? 'GIF' : i18n.t('app.video');
+                            announcePolite(i18n.t('shortcuts.playingMedia', { type: mediaType, altMsg }));
                         }
                     } else {
-                        announcePolite("Mídia não encontrada no post.");
+                        announcePolite(i18n.t('shortcuts.mediaNotFound'));
                     }
                 } else {
-                    announcePolite("Este post não possui vídeo ou GIF.");
+                    announcePolite(i18n.t('shortcuts.noMedia'));
                 }
             }
             break;
@@ -872,16 +872,16 @@ export function setupShortcuts() {
                     handle = muteBtn?.dataset.handle;
                 }
                 if (did && handle) {
-                    confirmDialog(`Deseja silenciar @${handle}?`, 'Silenciar Usuário').then(confirmed => {
+                    confirmDialog(i18n.t('shortcuts.muteConfirm', { handle }), i18n.t('shortcuts.muteAction')).then(confirmed => {
                         if (confirmed) {
-                            announcePolite(`Silenciando @${handle}...`);
+                            announcePolite(i18n.t('shortcuts.mutingUser', { handle }));
                             window.go.services.ModerationService.MuteActor(did!).then(() => {
-                                announceAssertive(`Usuário @${handle} silenciado.`);
-                            }).catch((err: any) => announceAssertive("Erro ao silenciar: " + err));
+                                announceAssertive(i18n.t('shortcuts.muteSuccess', { handle }));
+                            }).catch((err: any) => announceAssertive(i18n.t('shortcuts.errorMuteUser', { msg: String(err) })));
                         }
                     });
                 } else {
-                    announceAssertive("Nenhum usuário focado para silenciar.");
+                    announceAssertive(i18n.t('shortcuts.noUserFocused'));
                 }
             }
             break;
@@ -896,16 +896,16 @@ export function setupShortcuts() {
                     author = state.currentHandle || undefined;
                 }
                 if (did && author) {
-                    confirmDialog(`Deseja bloquear @${author}?`, 'Bloquear Usuário').then(confirmed => {
+                    confirmDialog(i18n.t('shortcuts.blockConfirm', { handle: author }), i18n.t('shortcuts.blockAction')).then(confirmed => {
                         if (confirmed) {
-                            announcePolite(`Bloqueando @${author}...`);
+                            announcePolite(i18n.t('shortcuts.blockingUser', { handle: author }));
                             window.go.services.ModerationService.BlockActor(did!).then(() => {
-                                announceAssertive(`Usuário @${author} bloqueado.`);
-                            }).catch((_err: any) => announceAssertive("Erro ao bloquear usuário."));
+                                announceAssertive(i18n.t('shortcuts.blockSuccess', { handle: author }));
+                            }).catch((_err: any) => announceAssertive(i18n.t('shortcuts.errorBlockUser')));
                         }
                     });
                 } else {
-                    announceAssertive("Nenhum usuário focado para bloquear.");
+                    announceAssertive(i18n.t('shortcuts.noUserFocused'));
                 }
             }
             break;
@@ -938,18 +938,18 @@ export function setupShortcuts() {
                     const isOwner = (authorHandle && authorHandle === state.loggedInHandle) || (authorDid && authorDid === state.loggedInHandle);
                     
                     if (!isOwner) {
-                        announceAssertive("Você só pode excluir suas próprias publicações.");
+                        announceAssertive(i18n.t('shortcuts.onlyDeleteOwn'));
                         break;
                     }
                     
                     const uri = p.dataset.uri;
                     if (uri) {
-                        confirmDialog("Deseja realmente excluir esta publicação?", "Excluir Publicação").then(async (confirmed) => {
+                        confirmDialog(i18n.t('shortcuts.deleteConfirm'), i18n.t('shortcuts.deleteAction')).then(async (confirmed) => {
                             if (confirmed) {
-                                announcePolite("Excluindo publicação...");
+                                announcePolite(i18n.t('shortcuts.deletingPost'));
                                 try {
                                     await window.go.services.PostBuilderService.DeletePost(uri);
-                                    announceAssertive("Publicação excluída com sucesso.");
+                                    announceAssertive(i18n.t('shortcuts.postDeleted'));
                                     p.remove();
                                     state.currentPosts.splice(state.focusedPostIndex, 1);
                                     if (state.focusedPostIndex >= state.currentPosts.length) {
@@ -959,7 +959,7 @@ export function setupShortcuts() {
                                         state.currentPosts[state.focusedPostIndex].focus();
                                     }
                                 } catch (err: any) {
-                                    announceAssertive("Erro ao excluir publicação: " + err);
+                                    announceAssertive(i18n.t('shortcuts.errorDeletePost', { msg: String(err) }));
                                 }
                             }
                         });
@@ -994,8 +994,9 @@ export function setupShortcuts() {
                 e.preventDefault();
                 if (state.currentTab === 'chat') {
                     if (document.getElementById('chat-input')) {
-                        document.getElementById('chat-input')?.focus();
-                        announcePolite("Modo de resposta no chat");
+                        const input = document.getElementById('chat-message-input') as HTMLTextAreaElement;
+                        input?.focus();
+                        announcePolite(i18n.t('shortcuts.chatReplyMode'));
                     }
                     break;
                 }

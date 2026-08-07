@@ -8,6 +8,10 @@ import { setupCompose, openComposeModal } from './controllers/compose';
 import { setupProfile } from './controllers/profile';
 import { switchTab } from './controllers/tabs';
 import { setupBskyLinkDelegation } from './controllers/bsky_router';
+import { i18n } from './utils/i18n';
+
+// Translate the DOM initially
+i18n.translateDOM();
 
 // Bind Main Navigation Tabs
 Object.keys(DOM.tabs).forEach(tabId => {

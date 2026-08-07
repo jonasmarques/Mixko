@@ -2,6 +2,7 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive, getPostAccessibleLabel } from '../utils/a11y';
 import { confirmDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
+import { i18n } from '../utils/i18n';
 
 const STANDARD_LABELS = ['porn', 'sexual', 'graphic-media', 'gore', 'spam'];
 
@@ -12,12 +13,12 @@ export function renderMutedWords(listElement: HTMLUListElement) {
         li.style.marginBottom = '5px';
         li.innerHTML = `
             <span>${word}</span>
-            <button type="button" aria-label="Remover ${word}" data-index="${index}" style="margin-left: 10px;">Remover</button>
+            <button type="button" aria-label="${i18n.t('app.remove')} ${word}" data-index="${index}" style="margin-left: 10px;">${i18n.t('app.remove')}</button>
         `;
         li.querySelector('button')?.addEventListener('click', () => {
             state.mutedWordsCache.splice(index, 1);
             renderMutedWords(listElement);
-            announcePolite(`Palavra ${word} removida da lista. Lembre-se de salvar.`);
+            announcePolite(i18n.t('settingsMsgs.wordRemoved', { word }));
         });
         listElement.appendChild(li);
     });
@@ -40,9 +41,9 @@ function renderContentFilters(container: HTMLDivElement, filters: any[]) {
         div.innerHTML = `
             <span><strong>${label}</strong></span>
             <select class="content-filter-select" data-label="${label}">
-                <option value="hide" ${currentVis === 'hide' ? 'selected' : ''}>Ocultar</option>
-                <option value="warn" ${currentVis === 'warn' ? 'selected' : ''}>Avisar</option>
-                <option value="show" ${currentVis === 'show' ? 'selected' : ''}>Mostrar</option>
+                <option value="hide" ${currentVis === 'hide' ? 'selected' : ''}>${i18n.t('settingsMsgs.filterHide')}</option>
+                <option value="warn" ${currentVis === 'warn' ? 'selected' : ''}>${i18n.t('settingsMsgs.filterWarn')}</option>
+                <option value="show" ${currentVis === 'show' ? 'selected' : ''}>${i18n.t('settingsMsgs.filterShow')}</option>
             </select>
         `;
         container.appendChild(div);
@@ -70,9 +71,13 @@ export async function loadSettings() {
     const notificationFormatSelect = document.getElementById('notification-format-select') as HTMLSelectElement;
     const fontSizeSelect = document.getElementById('font-size-select') as HTMLSelectElement;
     const hideRepliesCheckbox = document.getElementById('setting-hide-replies') as HTMLInputElement;
+    const langOverrideSelect = document.getElementById('lang-override-select') as HTMLSelectElement;
 
     const savedTheme = localStorage.getItem('theme') || 'system';
     if (themeSelect) themeSelect.value = savedTheme;
+
+    const savedLang = localStorage.getItem('app-language') || '';
+    if (langOverrideSelect) langOverrideSelect.value = savedLang;
 
     const savedFontSize = (localStorage.getItem('fontSize') as 'normal' | 'large' | 'x-large' | 'huge') || 'normal';
     state.fontSize = savedFontSize;
@@ -117,13 +122,13 @@ export async function loadSettings() {
         if (mutedListDiv && mutedRes && mutedRes.profiles) {
             mutedListDiv.innerHTML = '';
             if (mutedRes.profiles.length === 0) {
-                mutedListDiv.innerHTML = '<p>Nenhum usuário silenciado.</p>';
+                mutedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noMuted')}</p>`;
             }
             mutedRes.profiles.forEach((p: any) => {
                 const div = document.createElement('div');
                 div.style.padding = '5px';
                 div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>@${p.handle}</span> <button class="btn-unmute" style="float: right;" data-did="${p.did}" data-handle="${p.handle}">Dessilenciar</button>`;
+                div.innerHTML = `<span>@${p.handle}</span> <button class="btn-unmute" style="float: right;" data-did="${p.did}" data-handle="${p.handle}">${i18n.t('settingsMsgs.btnUnmute')}</button>`;
                 mutedListDiv.appendChild(div);
             });
             mutedListDiv.querySelectorAll('.btn-unmute').forEach(btn => {
@@ -132,9 +137,9 @@ export async function loadSettings() {
                     const target = e.currentTarget as HTMLButtonElement;
                     const did = target.dataset.did!;
                     const handle = target.dataset.handle!;
-                    if (await confirmDialog(`Deseja dessilenciar @${handle}?`, 'Desmutar Usuário')) {
+                    if (await confirmDialog(i18n.t('settingsMsgs.unmuteConfirm', { handle }), i18n.t('settingsMsgs.btnUnmute'))) {
                         await window.go.services.ModerationService.UnmuteActor(did);
-                        announceAssertive(`@${handle} dessilenciado.`);
+                        announceAssertive(i18n.t('settingsMsgs.unmuteSuccess', { handle }));
                         target.parentElement?.remove();
                     }
                 });
@@ -146,13 +151,13 @@ export async function loadSettings() {
         if (blockedListDiv && blockedRes && blockedRes.profiles) {
             blockedListDiv.innerHTML = '';
             if (blockedRes.profiles.length === 0) {
-                blockedListDiv.innerHTML = '<p>Nenhum usuário bloqueado.</p>';
+                blockedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noBlocked')}</p>`;
             }
             blockedRes.profiles.forEach((p: any) => {
                 const div = document.createElement('div');
                 div.style.padding = '5px';
                 div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>@${p.handle}</span> <button class="btn-unblock" style="float: right;" data-did="${p.did}" data-handle="${p.handle}">Desbloquear</button>`;
+                div.innerHTML = `<span>@${p.handle}</span> <button class="btn-unblock" style="float: right;" data-did="${p.did}" data-handle="${p.handle}">${i18n.t('settingsMsgs.btnUnblock')}</button>`;
                 blockedListDiv.appendChild(div);
             });
             blockedListDiv.querySelectorAll('.btn-unblock').forEach(btn => {
@@ -161,24 +166,23 @@ export async function loadSettings() {
                     const target = e.currentTarget as HTMLButtonElement;
                     const did = target.dataset.did!;
                     const handle = target.dataset.handle!;
-                    if (await confirmDialog(`Deseja desbloquear @${handle}?`, 'Desbloquear Usuário')) {
+                    if (await confirmDialog(i18n.t('settingsMsgs.unblockConfirm', { handle }), i18n.t('settingsMsgs.btnUnblock'))) {
                         await window.go.services.ModerationService.UnblockActor(did);
-                        announceAssertive(`@${handle} desbloqueado.`);
+                        announceAssertive(i18n.t('settingsMsgs.unblockSuccess', { handle }));
                         target.parentElement?.remove();
                     }
                 });
             });
         }
 
-        // Carregar Rotuladores Assinados
         const subscribedLabelersListDiv = document.getElementById('subscribed-labelers-list');
         if (subscribedLabelersListDiv) {
             try {
-                subscribedLabelersListDiv.innerHTML = 'Carregando rotuladores...';
+                subscribedLabelersListDiv.innerHTML = i18n.t('app.loading');
                 const labelers = await window.go.services.SocialService.GetSubscribedLabelers();
                 subscribedLabelersListDiv.innerHTML = '';
                 if (!labelers || labelers.length === 0) {
-                    subscribedLabelersListDiv.innerHTML = '<p style="color: #888; font-size: 0.9em;">Nenhum rotulador assinado no momento.</p>';
+                    subscribedLabelersListDiv.innerHTML = `<p style="color: #888; font-size: 0.9em;">${i18n.t('settingsMsgs.noLabelers')}</p>`;
                 } else {
                     labelers.forEach((l: any) => {
                         const div = document.createElement('div');
@@ -195,7 +199,7 @@ export async function loadSettings() {
                                 <span style="font-size: 0.85em; color: #aaa;">(@${l.handle})</span>
                                 ${l.description ? `<p style="margin: 2px 0 0 0; font-size: 0.85em; color: #ccc;">${l.description}</p>` : ''}
                             </div>
-                            <button type="button" class="btn-unsubscribe-setting" data-did="${l.did}" data-handle="${l.handle}" style="background-color: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;">Cancelar Assinatura</button>
+                            <button type="button" class="btn-unsubscribe-setting" data-did="${l.did}" data-handle="${l.handle}" style="background-color: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;">${i18n.t('settingsMsgs.btnUnsub')}</button>
                         `;
                         div.querySelector('.open-labeler-profile')?.addEventListener('click', (e) => {
                             e.preventDefault();
@@ -204,10 +208,10 @@ export async function loadSettings() {
                         });
                         div.querySelector('.btn-unsubscribe-setting')?.addEventListener('click', async (e) => {
                             e.preventDefault();
-                            if (await confirmDialog(`Deseja cancelar a assinatura do rotulador @${l.handle}?`, 'Cancelar Assinatura')) {
-                                announcePolite("Cancelando assinatura...");
+                            if (await confirmDialog(i18n.t('settingsMsgs.unsubConfirm', { handle: l.handle }), i18n.t('settingsMsgs.btnUnsub'))) {
+                                announcePolite(i18n.t('settingsMsgs.unsubbing'));
                                 await window.go.services.SocialService.UnsubscribeLabeler(l.did);
-                                announceAssertive(`Assinatura de @${l.handle} cancelada.`);
+                                announceAssertive(i18n.t('settingsMsgs.unsubSuccess', { handle: l.handle }));
                                 loadSettings();
                             }
                         });
@@ -215,15 +219,15 @@ export async function loadSettings() {
                     });
                 }
             } catch (err: any) {
-                console.error("Erro ao carregar rotuladores assinados:", err);
-                subscribedLabelersListDiv.innerHTML = '<p style="color: #f87171;">Erro ao carregar rotuladores assinados.</p>';
+                console.error("Error loading subscribed labelers:", err);
+                subscribedLabelersListDiv.innerHTML = '<p style="color: #f87171;">' + i18n.t('settingsMsgs.labelerError') + '</p>';
             }
         }
 
         state.tabStates['settings'].loaded = true;
     } catch (err) {
         console.error(err);
-        announceAssertive("Erro ao carregar configurações.");
+        announceAssertive(i18n.t('settingsMsgs.loadSettingsError'));
     }
 }
 
@@ -235,7 +239,7 @@ export function setupSettings() {
             state.fontSize = selectedFontSize;
             localStorage.setItem('fontSize', selectedFontSize);
             applyFontSize(selectedFontSize);
-            announcePolite(`Tamanho da fonte alterado para ${fontSizeSelect.options[fontSizeSelect.selectedIndex].text}`);
+            announcePolite(`${i18n.t('settingsMsgs.fontChanged')} ${fontSizeSelect.options[fontSizeSelect.selectedIndex].text}`);
         });
     }
 
@@ -244,7 +248,7 @@ export function setupSettings() {
         hideRepliesCheckbox.addEventListener('change', async () => {
             state.hideReplies = hideRepliesCheckbox.checked;
             localStorage.setItem('hideReplies', String(state.hideReplies));
-            announcePolite(state.hideReplies ? "Ocultar respostas ativado" : "Exibir respostas ativado");
+            announcePolite(state.hideReplies ? i18n.t('settingsMsgs.hideRepliesOn') : i18n.t('settingsMsgs.hideRepliesOff'));
             if (state.currentTab === 'timeline') {
                 const { loadTimeline } = await import('./timeline');
                 loadTimeline(false, true);
@@ -265,6 +269,32 @@ export function setupSettings() {
                 document.body.classList.add('dark-mode');
             } else {
                 document.body.classList.remove('dark-mode');
+            }
+
+            const langOverrideSelect = document.getElementById('lang-override-select') as HTMLSelectElement;
+            if (langOverrideSelect) {
+                const selectedLang = langOverrideSelect.value;
+                const oldLang = localStorage.getItem('app-language') || '';
+                if (selectedLang !== oldLang) {
+                    if (selectedLang === '') {
+                        localStorage.removeItem('app-language');
+                        i18n.setLanguage(navigator.language.toLowerCase().replace('-', '_')); // Fallback immediately if auto is selected
+                    } else {
+                        localStorage.setItem('app-language', selectedLang);
+                        i18n.setLanguage(selectedLang);
+                    }
+                    
+                    // Force refresh timeline because posts are loaded and cached
+                    if (state.currentTab === 'timeline') {
+                        import('./timeline').then(m => m.loadTimeline(false, true));
+                    } else {
+                        // Let's just reload the page to make it clean if we changed language? Or just reload DOM.
+                        // Since I18n handles translateDOM, it already translates the static DOM.
+                        // But dynamically generated items like feeds may need a refresh.
+                        // A quick reload might be better for an app-wide language change, 
+                        // but let's stick to dynamically changing it.
+                    }
+                }
             }
 
             const dateFormatSelect = document.getElementById('date-format-select') as HTMLSelectElement;
@@ -295,7 +325,7 @@ export function setupSettings() {
                 });
             }
 
-            announcePolite("Salvando configurações...");
+            announcePolite(i18n.t('settingsMsgs.saving'));
             try {
                 // Thread Prefs
                 const sortSelect = document.getElementById('thread-sort-select') as HTMLSelectElement;
@@ -321,11 +351,11 @@ export function setupSettings() {
 
                 await window.go.services.SocialService.UpdateAllPreferences(threadSort, adultContent, mutedWords, filtersToSave);
 
-                announceAssertive("Configurações salvas com sucesso!");
+                announceAssertive(i18n.t('settingsMsgs.saveSuccess'));
                 switchTab('timeline');
             } catch (err) {
                 console.error(err);
-                announceAssertive("Erro ao salvar configurações.");
+                announceAssertive(i18n.t('settingsMsgs.saveError'));
             }
         });
     }
@@ -340,7 +370,7 @@ export function setupSettings() {
                 input.value = '';
                 const mutedList = document.getElementById('muted-words-list') as HTMLUListElement;
                 if (mutedList) renderMutedWords(mutedList);
-                announcePolite(`Palavra ${word} adicionada à lista. Lembre-se de salvar.`);
+                announcePolite(i18n.t('settingsMsgs.wordAdded', { word }));
             }
         });
     }
@@ -351,22 +381,22 @@ export function setupSettings() {
             const input = document.getElementById('subscribe-labeler-input') as HTMLInputElement;
             const handleOrDid = input ? input.value.trim() : '';
             if (!handleOrDid) {
-                announceAssertive("Digite o handle ou DID do rotulador.");
+                announceAssertive(i18n.t('settingsMsgs.typeLabeler'));
                 return;
             }
             try {
-                announcePolite(`Buscando rotulador ${handleOrDid}...`);
+                announcePolite(i18n.t('settingsMsgs.searchingLabeler', { handle: handleOrDid }));
                 const profile = await window.go.services.SocialService.GetProfile(handleOrDid);
                 if (!profile || !profile.did) {
-                    announceAssertive("Rotulador não encontrado.");
+                    announceAssertive(i18n.t('settingsMsgs.labelerNotFound'));
                     return;
                 }
                 await window.go.services.SocialService.SubscribeLabeler(profile.did);
-                announceAssertive(`Rotulador @${profile.handle} assinado com sucesso!`);
+                announceAssertive(i18n.t('settingsMsgs.labelerSubscribed', { handle: profile.handle }));
                 if (input) input.value = '';
                 loadSettings();
             } catch (err: any) {
-                announceAssertive("Erro ao assinar rotulador: " + err);
+                announceAssertive(i18n.t('settingsMsgs.labelerError') + err);
             }
         });
     }
@@ -377,11 +407,11 @@ export function setupSettings() {
             const label = (btn as HTMLElement).dataset.label;
             if (label) {
                 try {
-                    announcePolite(`Aplicando rótulo de conteúdo "${label}"...`);
+                    announcePolite(i18n.t('settingsMsgs.applyingLabel', { label }));
                     await window.go.services.SocialService.AddSelfLabel(label);
-                    announceAssertive(`Rótulo "${label}" aplicado à sua conta com sucesso.`);
+                    announceAssertive(i18n.t('settingsMsgs.labelApplied', { label }));
                 } catch (err: any) {
-                    announceAssertive("Erro ao aplicar rótulo: " + err);
+                    announceAssertive(i18n.t('settingsMsgs.labelError') + err);
                 }
             }
         });

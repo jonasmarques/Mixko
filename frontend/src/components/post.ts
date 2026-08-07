@@ -6,6 +6,7 @@ import { confirmDialog } from '../utils/dialog';
 import { state } from '../config/state';
 // TODO: extract openComposeModal to controllers/compose
 import { openComposeModal } from '../controllers/compose';
+import { i18n } from '../utils/i18n';
 
 export function createPostArticle(post: any, index: number, isNotification = false, notifReason = ""): HTMLElement {
   const article = document.createElement('article');
@@ -17,7 +18,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   article.dataset.index = index.toString();
   article.dataset.createdAt = post.createdAt || post.indexedAt || "";
   
-  let srMetrics = `Respostas: ${post.replyCount || 0}, Reposts: ${post.repostCount || 0}, Curtidas: ${post.likeCount || 0}`;
+  let srMetrics = i18n.t('post.metricsReplies', { replies: (post.replyCount || 0).toString(), reposts: (post.repostCount || 0).toString(), likes: (post.likeCount || 0).toString() });
   article.dataset.metrics = srMetrics;
   let fullText = post.text ? `${post.text}` : "";
   article.dataset.text = fullText;
@@ -41,10 +42,10 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     const isDidRoot = post.rootAuthor ? post.rootAuthor.startsWith('did:') : false;
     if (!isDidReply) {
       if (post.rootAuthor && !isDidRoot && post.rootAuthor !== post.replyToAuthor && post.rootAuthor !== state.currentHandle) {
-          replyContext = `<div class="reply-context"><small>Em resposta a @${post.replyToAuthor} (thread de @${post.rootAuthor}):</small></div>`;
+          replyContext = `<div class="reply-context"><small>${i18n.t('post.inReplyTo', { handle: post.replyToAuthor })} (${i18n.t('post.threadOf', { handle: post.rootAuthor })}):</small></div>`;
           article.dataset.rootAuthor = post.rootAuthor;
       } else {
-          replyContext = `<div class="reply-context"><small>Em resposta a @${post.replyToAuthor}:</small></div>`;
+          replyContext = `<div class="reply-context"><small>${i18n.t('post.inReplyTo', { handle: post.replyToAuthor })}:</small></div>`;
       }
     }
   }
@@ -52,14 +53,14 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   let repostContext = "";
   if (post.repostedBy) {
     article.dataset.repostedBy = post.repostedBy;
-    repostContext = `<div class="repost-context"><small>Repostado por ${post.repostedBy}</small></div>`;
+    repostContext = `<div class="repost-context"><small>${i18n.t('post.repostedBy', { handle: post.repostedBy })}</small></div>`;
   }
 
   let altsContext = "";
   if (post.imageAlts && post.imageAlts.length > 0) {
       article.dataset.hasImage = "true";
       article.dataset.alts = post.imageAlts.join(" | ");
-      altsContext = `<div class="post-alts"><small><strong>Imagens:</strong> ${post.imageAlts.join(" | ")}</small></div>`;
+      altsContext = `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${post.imageAlts.join(" | ")}</small></div>`;
   }
 
   let imagesHtml = "";
@@ -68,14 +69,14 @@ export function createPostArticle(post: any, index: number, isNotification = fal
       const layoutClass = count === 1 ? 'single-image' : (count === 2 ? 'two-images' : (count === 3 ? 'three-images' : 'four-images'));
       const imgElements = post.images.map((img: any) => {
           const src = img.thumb || img.fullsize;
-          const alt = img.alt || 'Imagem anexada à publicação';
+          const alt = img.alt || i18n.t('post.attachedImageAlt');
           return `<div class="post-image-item">
-            <a href="${img.fullsize || src}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="Abrir imagem em tamanho real: ${alt}">
+            <a href="${img.fullsize || src}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${i18n.t('post.openFullImage', { alt })}">
               <img src="${src}" alt="${alt}" loading="lazy" class="post-image-img" />
             </a>
           </div>`;
       }).join('');
-      imagesHtml = `<div class="post-images-grid ${layoutClass}" aria-label="Galeria de imagens anexadas">${imgElements}</div>`;
+      imagesHtml = `<div class="post-images-grid ${layoutClass}" aria-label="${i18n.t('post.imageGalleryAria')}">${imgElements}</div>`;
   }
 
   let quoteContext = "";
@@ -106,9 +107,9 @@ export function createPostArticle(post: any, index: number, isNotification = fal
       const layoutClass = count === 1 ? 'single-image' : 'two-images';
       const qImgElements = post.quotePost.images.map((img: any) => {
         const src = img.thumb || img.fullsize;
-        const alt = img.alt || 'Imagem do post citado';
+        const alt = img.alt || i18n.t('post.quoteImageAlt');
         return `<div class="post-image-item">
-          <a href="${img.fullsize || src}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="Abrir imagem em tamanho real: ${alt}">
+          <a href="${img.fullsize || src}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${i18n.t('post.openFullImage', { alt })}">
             <img src="${src}" alt="${alt}" loading="lazy" class="post-image-img" />
           </a>
         </div>`;
@@ -116,18 +117,18 @@ export function createPostArticle(post: any, index: number, isNotification = fal
       quoteMediaHtml += `<div class="post-images-grid ${layoutClass}" style="margin-top: 8px;">${qImgElements}</div>`;
     }
     if (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0) {
-      quoteMediaHtml += `<div class="post-alts"><small><strong>Imagens:</strong> ${post.quotePost.imageAlts.join(" | ")}</small></div>`;
+      quoteMediaHtml += `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${post.quotePost.imageAlts.join(" | ")}</small></div>`;
     }
     if (post.quotePost.video) {
       const isGif = post.quotePost.video.presentation === 'gif';
-      const altText = post.quotePost.video.alt || "Sem descrição alternativa";
+      const altText = post.quotePost.video.alt || i18n.t('post.noAlt');
       const posterAttr = post.quotePost.video.thumbnail ? `poster="${post.quotePost.video.thumbnail}"` : '';
       quoteMediaHtml += `
         <div class="video-context quoted-video-context" style="margin-top: 10px;">
           <video class="post-video quoted-post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls'} ${posterAttr}>
-              Seu navegador não suporta vídeos.
+              ${i18n.t('post.videoNoSupport')}
           </video>
-          <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Vídeo:'}</strong> ${altText}</small></div>
+          <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${altText}</small></div>
         </div>
       `;
     }
@@ -145,7 +146,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
           <span>@${post.quotePost.authorHandle}</span>
         </header>
         <div class="post-content">
-          <p>${post.quotePost.text || (post.quotePost.hasMedia ? "Mídia anexada" : "Conteúdo não disponível")}</p>
+          <p>${post.quotePost.text || (post.quotePost.hasMedia ? i18n.t('post.mediaAttached') : i18n.t('post.contentNotAvailable'))}</p>
           ${quoteMediaHtml}
         </div>
       </div>
@@ -157,15 +158,15 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   if (isNotification) {
     let tReason = notifReason;
     if (notifReason === 'repost') {
-      const isRepostOfRepost = post.text && post.text.includes('sua repostagem');
-      tReason = isRepostOfRepost ? 'repostou sua repostagem' : 'repostou seu post';
+      const isRepostOfRepost = Boolean(post.isRepostOfRepost);
+      tReason = isRepostOfRepost ? i18n.t('post.notifRepostOfRepost') : i18n.t('post.notifRepost');
     }
-    else if (notifReason === 'like') tReason = 'curtiu seu post';
-    else if (notifReason === 'reply') tReason = 'respondeu seu post';
-    else if (notifReason === 'quote') tReason = 'citou seu post';
-    else if (notifReason === 'mention') tReason = 'mencionou você';
-    else if (notifReason === 'follow') tReason = 'começou a seguir você';
-    notifContext = `<div class="notif-context" aria-hidden="true"><strong>Nova notificação: ${tReason}</strong></div>`;
+    else if (notifReason === 'like') tReason = i18n.t('post.notifLike');
+    else if (notifReason === 'reply') tReason = i18n.t('post.notifReply');
+    else if (notifReason === 'quote') tReason = i18n.t('post.notifQuote');
+    else if (notifReason === 'mention') tReason = i18n.t('post.notifMention');
+    else if (notifReason === 'follow') tReason = i18n.t('post.notifFollow');
+    notifContext = `<div class="notif-context" aria-hidden="true"><strong>${i18n.t('post.newNotification')} ${tReason}</strong></div>`;
   }
 
   let externalContext = "";
@@ -176,7 +177,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     
     externalContext = `
       <div class="external-card" style="border: 1px solid #ddd; padding: 8px; margin-top: 8px; border-radius: 4px;">
-        ${post.external.thumb ? `<img src="${post.external.thumb}" alt="Thumbnail do link" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
+        ${post.external.thumb ? `<img src="${post.external.thumb}" alt="${i18n.t('post.linkThumbAlt')}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
         <strong><a href="${post.external.uri}" target="_blank" rel="noopener noreferrer">${post.external.title || post.external.uri}</a></strong>
         ${post.external.description ? `<p style="font-size: 0.85em; margin: 4px 0 0 0; color: var(--text-muted, #666);">${post.external.description}</p>` : ''}
       </div>
@@ -196,41 +197,41 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     videoContext = `
       <div class="video-context" style="margin-top: 10px;">
         <video class="post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls playsinline preload="metadata"'} ${posterAttr}>
-            Seu navegador não suporta vídeos.
+            ${i18n.t('post.videoNoSupport')}
         </video>
-        <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Vídeo:'}</strong> ${post.video.alt ? post.video.alt : 'Sem descrição alternativa'}</small></div>
+        <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${post.video.alt ? post.video.alt : i18n.t('post.noAlt')}</small></div>
       </div>
     `;
   }
   
   let footerHtml = "";
-  let likeBtnLabel = post.viewerLike ? `Descurtir (L)` : `Curtir (L)`;
-  let repostBtnLabel = post.viewerRepost ? `Desfazer Repost (T)` : `Repost (T)`;
-  let bookmarkBtnLabel = post.viewerBookmark ? `Salvo (Shift+S)` : `Salvar (Shift+S)`;
+  let likeBtnLabel = post.viewerLike ? i18n.t('post.unlikeBtn') : i18n.t('post.likeBtn');
+  let repostBtnLabel = post.viewerRepost ? i18n.t('post.undoRepostBtn') : i18n.t('post.repostBtn');
+  let bookmarkBtnLabel = post.viewerBookmark ? i18n.t('post.savedBtn') : i18n.t('post.saveBtn');
   const isOwner = (post.authorHandle === state.loggedInHandle) || (post.authorDid === state.loggedInHandle) || (post.authorName === state.loggedInHandle);
   
   if (!isNotification || notifReason !== 'follow') {
     footerHtml = `
-    <div class="post-metrics" aria-label="Métricas do post">
-      <div class="metric-item metric-replies" aria-label="${post.replyCount || 0} respostas">${post.replyCount || 0} Respostas</div>
-      <div class="metric-item metric-reposts" aria-label="${post.repostCount || 0} reposts">${post.repostCount || 0} Reposts</div>
-      <div class="metric-item metric-likes" aria-label="${post.likeCount || 0} curtidas">${post.likeCount || 0} Curtidas</div>
+    <div class="post-metrics" aria-label="${i18n.t('post.metricsAria')}">
+      <div class="metric-item metric-replies" aria-label="${i18n.t('post.repliesAria', { count: (post.replyCount || 0).toString() })}">${i18n.t('post.metricRepliesCount', { count: (post.replyCount || 0).toString() })}</div>
+      <div class="metric-item metric-reposts" aria-label="${i18n.t('post.repostsAria', { count: (post.repostCount || 0).toString() })}">${i18n.t('post.metricRepostsCount', { count: (post.repostCount || 0).toString() })}</div>
+      <div class="metric-item metric-likes" aria-label="${i18n.t('post.likesAria', { count: (post.likeCount || 0).toString() })}">${i18n.t('post.metricLikesCount', { count: (post.likeCount || 0).toString() })}</div>
     </div>
     `;
   }
   if (!isNotification || !['like', 'repost', 'follow'].includes(notifReason)) {
     footerHtml += `
-    <footer aria-label="Ações do post">
-      <button class="btn-reply" aria-label="Responder a ${post.authorHandle}">Responder (R)</button>
-      <button class="btn-repost" aria-label="${post.viewerRepost ? 'Desfazer Repost' : 'Repostar'}">${repostBtnLabel}</button>
-      <button class="btn-quote" aria-label="Citar">Citar (Q)</button>
-      <button class="btn-like" aria-label="${post.viewerLike ? 'Descurtir' : 'Curtir'}">${likeBtnLabel}</button>
-      <button class="btn-bookmark" aria-label="${post.viewerBookmark ? 'Remover dos Salvos' : 'Salvar Publicação'}">${bookmarkBtnLabel}</button>
-      <button class="btn-mute-thread" aria-label="Mutar conversa">Mutar Thread (Shift+M)</button>
-      <button class="btn-report-post" aria-label="Denunciar publicação">Denunciar (Alt+D)</button>
-      ${post.isReply ? '<button class="btn-hide-reply" aria-label="Ocultar resposta">Ocultar (Alt+H)</button>' : ''}
-      ${isOwner ? '<button class="btn-pin-post" aria-label="Fixar publicação">Fixar (Shift+F)</button>' : ''}
-      ${isOwner ? '<button class="btn-delete-post" aria-label="Excluir publicação">Excluir (X)</button>' : ''}
+    <footer aria-label="${i18n.t('post.actionsAria')}">
+      <button class="btn-reply" aria-label="${i18n.t('post.replyAria', { handle: post.authorHandle })}">${i18n.t('post.actionReply')}</button>
+      <button class="btn-repost" aria-label="${post.viewerRepost ? i18n.t('post.unrepostAria') : i18n.t('post.repostAria')}">${repostBtnLabel}</button>
+      <button class="btn-quote" aria-label="${i18n.t('post.quoteAria')}">${i18n.t('post.actionQuote')}</button>
+      <button class="btn-like" aria-label="${post.viewerLike ? i18n.t('post.unlikeAria') : i18n.t('post.likeAria')}">${likeBtnLabel}</button>
+      <button class="btn-bookmark" aria-label="${post.viewerBookmark ? i18n.t('post.removeBookmarkAria') : i18n.t('post.savePostAria')}">${bookmarkBtnLabel}</button>
+      <button class="btn-mute-thread" aria-label="${i18n.t('post.muteThreadAria')}">${i18n.t('post.actionMute')}</button>
+      <button class="btn-report-post" aria-label="${i18n.t('post.reportPostAria')}">${i18n.t('post.actionReport')}</button>
+      ${post.isReply ? `<button class="btn-hide-reply" aria-label="${i18n.t('post.hideReplyAria')}">${i18n.t('post.actionHide')}</button>` : ''}
+      ${isOwner ? `<button class="btn-pin-post" aria-label="${i18n.t('post.pinPostAria')}">${i18n.t('post.actionPin')}</button>` : ''}
+      ${isOwner ? `<button class="btn-delete-post" aria-label="${i18n.t('post.deletePostAria')}">${i18n.t('post.actionDelete')}</button>` : ''}
     </footer>`;
   }
 
@@ -253,11 +254,11 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     const uri = article.dataset.uri;
     if (!uri) return;
     try {
-      announcePolite("Mutando thread...");
+      announcePolite(i18n.t('post.mutingThread'));
       await window.go.services.ModerationService.MuteThread(uri);
-      announceAssertive("Thread mutada com sucesso.");
+      announceAssertive(i18n.t('post.muteThreadSuccess'));
     } catch (err: any) {
-      announceAssertive("Erro ao mutar thread: " + err);
+      announceAssertive(i18n.t('post.error', { error: err }));
     }
   });
 
@@ -267,14 +268,14 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     const cid = article.dataset.cid;
     if (!uri || !cid) return;
     const { promptDialog } = await import('../utils/dialog');
-    const reason = await promptDialog("Motivo da denúncia para a publicação:", "", "Denunciar Publicação");
+    const reason = await promptDialog(i18n.t('post.reportPrompt'), "", i18n.t('post.reportTitle'));
     if (reason) {
       try {
-        announcePolite("Enviando denúncia...");
+        announcePolite(i18n.t('post.reporting'));
         await window.go.services.ModerationService.ReportPost(uri, cid, 'com.atproto.moderation.defs#reasonOther', reason);
-        announceAssertive("Denúncia enviada com sucesso.");
+        announceAssertive(i18n.t('post.reportSuccess'));
       } catch (err: any) {
-        announceAssertive("Erro ao enviar denúncia: " + err);
+        announceAssertive(i18n.t('post.error', { error: err }));
       }
     }
   });
@@ -285,11 +286,11 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     if (!uri) return;
     const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
     try {
-      announcePolite("Ocultando resposta...");
+      announcePolite(i18n.t('post.hidingReply'));
       await window.go.services.PostBuilderService.HideReply(rootUri, uri);
-      announceAssertive("Resposta ocultada com sucesso.");
+      announceAssertive(i18n.t('post.hideReplySuccess'));
     } catch (err: any) {
-      announceAssertive("Erro ao ocultar resposta: " + err);
+      announceAssertive(i18n.t('post.error', { error: err }));
     }
   });
 
@@ -299,11 +300,11 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     const cid = article.dataset.cid;
     if (!uri || !cid) return;
     try {
-      announcePolite("Fixando publicação...");
+      announcePolite(i18n.t('post.pinning'));
       await window.go.services.SocialService.PinPost(uri, cid);
-      announceAssertive("Publicação fixada no seu perfil.");
+      announceAssertive(i18n.t('post.pinSuccess'));
     } catch (err: any) {
-      announceAssertive("Erro ao fixar publicação: " + err);
+      announceAssertive(i18n.t('post.error', { error: err }));
     }
   });
 
@@ -321,7 +322,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
       <small>${formattedTime}</small>
     </header>
     <div class="post-content">
-      <p>${post.text ? linkify(post.text) : (post.hasMedia ? "Mídia anexada" : (post.quotePost ? "Postagem citada" : "Conteúdo não disponível"))}</p>
+      <p>${post.text ? linkify(post.text) : (post.hasMedia ? i18n.t('post.attachedMediaFallback') : (post.quotePost ? i18n.t('post.quotedPostFallback') : i18n.t('post.contentUnavailableFallback')))}</p>
       ${imagesHtml}
       ${altsContext}
       ${quoteContext}
@@ -334,8 +335,8 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   if (postHasMutedWord) {
       article.innerHTML = `
         <div class="muted-warning" style="padding: 15px; background: #fff3cd; color: #856404; border-radius: 5px; text-align: center;">
-            <p>Post ocultado por conter uma palavra silenciada (${triggeredMutedWord}).</p>
-            <button class="btn-show-muted" style="background: transparent; border: 1px solid #856404; color: #856404; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Mostrar mesmo assim</button>
+            <p>${i18n.t('post.mutedWarning', { word: triggeredMutedWord })}</p>
+            <button class="btn-show-muted" style="background: transparent; border: 1px solid #856404; color: #856404; padding: 5px 10px; border-radius: 3px; cursor: pointer;">${i18n.t('post.showAnyway')}</button>
         </div>
         <div class="muted-content" style="display: none;">
             ${innerHtmlContent}
@@ -348,7 +349,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
               const warningDiv = article.querySelector('.muted-warning') as HTMLElement;
               if (contentDiv) contentDiv.style.display = 'block';
               if (warningDiv) warningDiv.style.display = 'none';
-              announcePolite("Conteúdo exibido.");
+              announcePolite(i18n.t('post.contentShown'));
           });
       }, 0);
   } else {
@@ -390,24 +391,24 @@ export function createPostArticle(post: any, index: number, isNotification = fal
         let count = post.likeCount || 0;
         if (article.dataset.viewerLike) {
             await window.go.services.PostBuilderService.UnlikePost(article.dataset.viewerLike);
-            announceAssertive("Descurtido com sucesso");
+            announceAssertive(i18n.t('post.unlikeSuccess'));
             article.dataset.viewerLike = "";
             const btn = article.querySelector('.btn-like');
-            if (btn) btn.textContent = "Curtir (L)";
+            if (btn) btn.textContent = i18n.t('post.likeBtn');
             count = Math.max(0, count - 1);
             post.likeCount = count;
-            if (likeMetric) likeMetric.textContent = `${count} Curtidas`;
+            if (likeMetric) likeMetric.textContent = i18n.t('post.metricLikesCount', { count: count.toString() });
         } else {
             const res = await window.go.services.PostBuilderService.LikePost(post.uri, post.cid);
-            announceAssertive("Curtido com sucesso");
+            announceAssertive(i18n.t('post.likeSuccess'));
             article.dataset.viewerLike = res;
             const btn = article.querySelector('.btn-like');
-            if (btn) btn.textContent = "Descurtir (L)";
+            if (btn) btn.textContent = i18n.t('post.unlikeBtn');
             count += 1;
             post.likeCount = count;
-            if (likeMetric) likeMetric.textContent = `${count} Curtidas`;
+            if (likeMetric) likeMetric.textContent = i18n.t('post.metricLikesCount', { count: count.toString() });
         }
-    } catch(err) { announceAssertive("Erro: " + err); }
+    } catch(err) { announceAssertive(i18n.t('post.error', { error: String(err) })); }
   });
   
   article.querySelector('.btn-repost')?.addEventListener('click', async (e) => {
@@ -416,27 +417,27 @@ export function createPostArticle(post: any, index: number, isNotification = fal
         const repostMetric = article.querySelector('.metric-reposts');
         let count = post.repostCount || 0;
         if (article.dataset.viewerRepost) {
-            announcePolite("Desfazendo repost...");
+            announcePolite(i18n.t('post.undoingRepost'));
             await window.go.services.PostBuilderService.DeleteRepost(article.dataset.viewerRepost);
-            announceAssertive("Repost desfeito com sucesso");
+            announceAssertive(i18n.t('post.undoRepostSuccess'));
             article.dataset.viewerRepost = "";
             const btn = article.querySelector('.btn-repost');
-            if (btn) btn.textContent = "Repost (T)";
+            if (btn) btn.textContent = i18n.t('post.repostBtn');
             count = Math.max(0, count - 1);
             post.repostCount = count;
-            if (repostMetric) repostMetric.textContent = `${count} Reposts`;
+            if (repostMetric) repostMetric.textContent = i18n.t('post.metricRepostsCount', { count: count.toString() });
         } else {
-            announcePolite("Repostando...");
+            announcePolite(i18n.t('post.reposting'));
             const res = await window.go.services.PostBuilderService.Repost(post.uri, post.cid);
-            announceAssertive("Repostado com sucesso");
+            announceAssertive(i18n.t('post.repostSuccess'));
             article.dataset.viewerRepost = res || "reposted";
             const btn = article.querySelector('.btn-repost');
-            if (btn) btn.textContent = "Desfazer Repost (T)";
+            if (btn) btn.textContent = i18n.t('post.undoRepostBtn');
             count += 1;
             post.repostCount = count;
-            if (repostMetric) repostMetric.textContent = `${count} Reposts`;
+            if (repostMetric) repostMetric.textContent = i18n.t('post.metricRepostsCount', { count: count.toString() });
         }
-    } catch(err) { announceAssertive("Erro: " + err); }
+    } catch(err) { announceAssertive(i18n.t('post.error', { error: String(err) })); }
   });
 
   article.querySelector('.btn-reply')?.addEventListener('click', (e) => {
@@ -453,33 +454,33 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     e.stopPropagation();
     try {
         if (article.dataset.viewerBookmark) {
-            announcePolite("Removendo dos salvos...");
+            announcePolite(i18n.t('post.removingSaved'));
             await (window as any).go.services.PostBuilderService.UnbookmarkPost(article.dataset.viewerBookmark, post.uri);
-            announceAssertive("Post removido dos salvos");
+            announceAssertive(i18n.t('post.removeSavedSuccess'));
             article.dataset.viewerBookmark = "";
             const btn = article.querySelector('.btn-bookmark') as HTMLButtonElement;
-            if (btn) btn.textContent = "Salvar (Shift+S)";
+            if (btn) btn.textContent = i18n.t('post.saveBtn');
         } else {
-            announcePolite("Salvando post...");
+            announcePolite(i18n.t('post.savingPost'));
             const res = await (window as any).go.services.PostBuilderService.BookmarkPost(post.uri, post.cid);
-            announceAssertive("Post salvo com sucesso");
+            announceAssertive(i18n.t('post.saveSuccessPost'));
             article.dataset.viewerBookmark = res || "bookmarked";
             const btn = article.querySelector('.btn-bookmark') as HTMLButtonElement;
-            if (btn) btn.textContent = "Salvo (Shift+S)";
+            if (btn) btn.textContent = i18n.t('post.savedBtn');
         }
-    } catch(err) { announceAssertive("Erro ao alterar salvos: " + err); }
+    } catch(err) { announceAssertive(i18n.t('post.error', { error: String(err) })); }
   });
 
   article.querySelector('.btn-delete-post')?.addEventListener('click', (e) => {
     e.stopPropagation();
     const uri = article.dataset.uri;
     if (!uri) return;
-    confirmDialog("Deseja realmente excluir esta publicação?", "Excluir Publicação").then(async (confirmed) => {
+    confirmDialog(i18n.t('post.deleteConfirm'), i18n.t('post.deleteTitle')).then(async (confirmed) => {
       if (confirmed) {
-        announcePolite("Excluindo publicação...");
+        announcePolite(i18n.t('post.deleting'));
         try {
           await window.go.services.PostBuilderService.DeletePost(uri);
-          announceAssertive("Publicação excluída com sucesso.");
+          announceAssertive(i18n.t('post.deleteSuccess'));
           article.remove();
           const idx = state.currentPosts.indexOf(article);
           if (idx !== -1) {
@@ -492,7 +493,7 @@ export function createPostArticle(post: any, index: number, isNotification = fal
             }
           }
         } catch (err: any) {
-          announceAssertive("Erro ao excluir publicação: " + err);
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
       }
     });

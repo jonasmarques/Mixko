@@ -8,6 +8,7 @@ import { loadChat } from './chat';
 import { loadFeedsTab } from './feeds';
 import { loadSavedPosts } from './saved';
 import { loadListsTab } from './lists';
+import { i18n } from '../utils/i18n';
 
 export async function updateCurrentTab() {
   if (state.currentTab === 'timeline') await loadTimeline(false, true);
@@ -63,7 +64,7 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
       else if (tabId === 'saved') loadSavedPosts();
       else if (tabId === 'lists') loadListsTab();
   } else {
-      announcePolite(` ${tabId}: ${state.currentPosts.length} itens.`);
+      announcePolite(i18n.t('tabs.tabItems', { tab: tabId, count: state.currentPosts.length.toString() }));
       if (state.focusedPostIndex >= 0 && state.focusedPostIndex < state.currentPosts.length) {
           state.currentPosts[state.focusedPostIndex].focus();
       }
@@ -71,7 +72,7 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
 }
 
 export function reloadCurrentTab(keepFocus = true) {
-  announcePolite(`Recarregando aba ${state.currentTab}...`);
+  announcePolite(i18n.t('tabs.reloadingTab', { tab: state.currentTab }));
   if (state.currentTab === 'timeline') loadTimeline(false, keepFocus);
   else if (state.currentTab === 'notifications') loadNotifications(false, keepFocus);
   else if (state.currentTab === 'profile') loadProfile(false, keepFocus);

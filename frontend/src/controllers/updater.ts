@@ -1,4 +1,5 @@
 import { announceAssertive, announcePolite } from '../utils/a11y';
+import { i18n } from '../utils/i18n';
 
 export async function checkAppUpdates() {
     try {
@@ -10,7 +11,7 @@ export async function checkAppUpdates() {
             const btnIgnore = document.getElementById('btn-update-ignore') as HTMLButtonElement;
 
             if (modal && textEl) {
-                textEl.textContent = `Uma nova versão do Mixko está disponível (${res.latestVersion}). Você está utilizando a versão ${res.currentVersion}. Deseja atualizar agora?`;
+                textEl.textContent = i18n.t('updater.updateAvailable', { latest: res.latestVersion, current: res.currentVersion });
 
                 if (btnNow) {
                     btnNow.onclick = () => {
@@ -21,23 +22,23 @@ export async function checkAppUpdates() {
                             window.open(targetUrl, '_blank');
                         }
                         modal.close();
-                        announcePolite("Redirecionando para a página de atualização...");
+                        announcePolite(i18n.t('updater.redirecting'));
                     };
                 }
 
                 if (btnIgnore) {
                     btnIgnore.onclick = () => {
                         modal.close();
-                        announcePolite("Atualização ignorada.");
+                        announcePolite(i18n.t('updater.ignored'));
                     };
                 }
 
                 modal.showModal();
                 btnNow?.focus();
-                announceAssertive(`Atenção: Nova versão ${res.latestVersion} disponível. Sua versão atual é ${res.currentVersion}.`);
+                announceAssertive(i18n.t('updater.attention', { latest: res.latestVersion, current: res.currentVersion }));
             }
         }
     } catch (err) {
-        console.warn("Erro ao verificar atualizações:", err);
+        console.warn("Error checking for updates:", err);
     }
 }

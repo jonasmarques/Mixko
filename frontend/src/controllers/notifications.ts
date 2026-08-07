@@ -1,6 +1,7 @@
 import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
+import { i18n } from '../utils/i18n';
 
 function groupNotificationsList(notifications: any[], hydratedMap: Record<string, any> = {}): any[] {
   const result: any[] = [];
@@ -15,15 +16,11 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
       const postUri = notif.reasonSubject;
       const hydrated = hydratedMap[notif.uri] || hydratedMap[postUri];
       let isRepostOfRepost = false;
-      if (notif.reason === 'repost') {
-        if (hydrated) {
-          const isMyPost = (hydrated.authorHandle === state.loggedInHandle) ||
-                           (hydrated.authorDid === state.loggedInHandle) ||
-                           (hydrated.authorName === state.loggedInHandle);
-          if (!isMyPost) {
-            isRepostOfRepost = true;
-          }
-        } else if (notif.text && notif.text.toLowerCase().includes('sua repostagem')) {
+      if (notif.reason === 'repost' && hydrated) {
+        const isMyPost = (hydrated.authorHandle === state.loggedInHandle) ||
+                         (hydrated.authorDid === state.loggedInHandle) ||
+                         (hydrated.authorName === state.loggedInHandle);
+        if (!isMyPost) {
           isRepostOfRepost = true;
         }
       }
@@ -65,23 +62,27 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
       const count = group.authors.length;
       let combinedAuthorName = group.authors[0];
       if (count === 2) {
-        combinedAuthorName = `${group.authors[0]} e ${group.authors[1]}`;
+        combinedAuthorName = i18n.t('notif.andOneOther', { name: group.authors[1] }).replace('{{name}}', group.authors[1]);
+        if (combinedAuthorName.startsWith('and ') || combinedAuthorName.startsWith('y ') || combinedAuthorName.startsWith('e ')) {
+             combinedAuthorName = `${group.authors[0]} ${combinedAuthorName}`;
+        }
       } else if (count > 2) {
-        combinedAuthorName = `${group.authors[0]} e outras ${count - 1} pessoas`;
+        let othersStr = i18n.t('notif.andOthers', { count: (count - 1).toString() });
+        combinedAuthorName = `${group.authors[0]} ${othersStr}`;
       }
 
       notif.authorName = combinedAuthorName;
 
       let verb = "";
       if (notif.reason === 'like') {
-        verb = count === 1 ? 'curtiu seu post' : 'curtiram seu post';
+        verb = count === 1 ? i18n.t('notif.likedYourPost') : i18n.t('notif.likedYourPostPlural');
       } else {
-        const targetNoun = group.isRepostOfRepost ? 'sua repostagem' : 'seu post';
-        verb = count === 1 ? `repostou ${targetNoun}` : `repostaram ${targetNoun}`;
+        const targetNoun = group.isRepostOfRepost ? i18n.t('notif.yourRepost') : i18n.t('notif.yourPost');
+        verb = count === 1 ? `${i18n.t('notif.reposted')} ${targetNoun}` : `${i18n.t('notif.reposted')} ${targetNoun}`;
       }
 
       let cleanOrig = group.origText;
-      if (cleanOrig.toLowerCase().startsWith('repostou') || cleanOrig.toLowerCase().startsWith('curtiu')) {
+      if (cleanOrig.toLowerCase().startsWith('repostou') || cleanOrig.toLowerCase().startsWith('curtiu') || cleanOrig.toLowerCase().startsWith('liked') || cleanOrig.toLowerCase().startsWith('reposted')) {
         cleanOrig = "";
       }
 
@@ -96,7 +97,7 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
 
 export async function loadNotifications(loadMore = false, keepFocus = false) {
   if (loadMore && state.notificationsCursor === "") {
-    announcePolite("Fim das notificações alcançado.");
+    announcePolite(i18n.t('notif.endOfNotifs'));
     return;
   }
   const container = document.getElementById('notif-items') as HTMLDivElement;
@@ -134,56 +135,46 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
           const hydrated = notif.hydratedPost || hydratedMap[postUri];
 
         let isRepostOfRepost = false;
-        if (notif.reason === 'repost') {
-            if (hydrated) {
-                const isMyPost = (hydrated.authorHandle === state.loggedInHandle) ||
-                                 (hydrated.authorDid === state.loggedInHandle) ||
-                                 (hydrated.authorName === state.loggedInHandle);
-                if (!isMyPost) {
-                    isRepostOfRepost = true;
-                }
-            } else if (notif.text && notif.text.toLowerCase().includes('sua repostagem')) {
+        if (notif.reason === 'repost' && hydrated) {
+            const isMyPost = (hydrated.authorHandle === state.loggedInHandle) ||
+                             (hydrated.authorDid === state.loggedInHandle) ||
+                             (hydrated.authorName === state.loggedInHandle);
+            if (!isMyPost) {
                 isRepostOfRepost = true;
             }
         }
 
         const authorFormatted = formatAuthor(notif.authorName, notif.authorHandle);
-        const repostNoun = isRepostOfRepost ? 'sua repostagem' : 'seu post';
+        const repostNoun = isRepostOfRepost ? i18n.t('notif.yourRepost') : i18n.t('notif.yourPost');
 
         let notifText = notif.text || "";
-        if (notif.reason === 'like') {
-            if (!notifText.toLowerCase().startsWith('curti')) {
-                notifText = `curtiu seu post: ${notif.text || ""}`;
+        if (state.notificationFormat !== 'combined') {
+            if (notif.reason === 'like') {
+                notifText = notif.text ? i18n.t('notif.likedYourPostText', { text: notif.text }) : i18n.t('notif.likedYourPost');
+            } else if (notif.reason === 'repost') {
+                notifText = notif.text 
+                    ? (isRepostOfRepost ? i18n.t('notif.repostedYourRepostText', { text: notif.text }) : i18n.t('notif.repostedYourPostText', { text: notif.text }))
+                    : (isRepostOfRepost ? i18n.t('notif.repostedYourRepost') : i18n.t('notif.repostedYourPost'));
             }
-        } else if (notif.reason === 'repost') {
-            if (!notifText.toLowerCase().startsWith('repost')) {
-                if (notif.text && notif.text.toLowerCase().startsWith('repostou')) {
-                    notifText = notif.text;
-                } else {
-                    notifText = `repostou ${repostNoun}: ${notif.text || ""}`;
-                }
-            } else {
-                if (isRepostOfRepost && notifText.includes('seu post')) {
-                    notifText = notifText.replace('seu post', 'sua repostagem');
-                }
-            }
-        } else if (notif.reason === 'follow') {
-            notifText = `começou a seguir você.`;
+        }
+
+        if (notif.reason === 'follow') {
+            notifText = i18n.t('notif.startedFollowing');
         } else if (notif.reason === 'quote') {
-            notifText = `citou seu post: ${notif.text || "Citação sem texto"}`;
+            notifText = i18n.t('notif.quotedYourPost', { text: notif.text || i18n.t('notif.quoteNoText') });
         } else if (notif.reason === 'reply') {
-            notifText = `respondeu ao seu post: ${notif.text || "Resposta sem texto"}`;
+            notifText = i18n.t('notif.repliedYourPost', { text: notif.text || i18n.t('notif.replyNoText') });
         } else if (notif.reason === 'mention') {
-            notifText = `mencionou você: ${notif.text || "Menção sem texto"}`;
+            notifText = i18n.t('notif.mentionedYou', { text: notif.text || i18n.t('notif.mentionNoText') });
         }
 
         if (!notifText || notifText.trim() === "") {
             if (notif.reason === 'repost') {
-                notifText = `repostou ${repostNoun}`;
+                notifText = `${i18n.t('notif.reposted')} ${repostNoun}`;
             } else if (notif.reason === 'like') {
-                notifText = `curtiu seu post`;
+                notifText = i18n.t('notif.likedYourPost');
             } else {
-                notifText = `Notificação de ${authorFormatted}`;
+                notifText = i18n.t('notif.notificationFrom', { author: authorFormatted });
             }
         }
 
@@ -221,9 +212,9 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
         }
       });
       state.notificationsCursor = res.cursor || "";
-      announcePolite(`${state.currentPosts.length} notificações carregadas.`);
+      announcePolite(i18n.t('notif.notifsLoaded', { count: state.currentPosts.length.toString() }));
       window.go.services.NotificationsService.UpdateSeen(new Date().toISOString()).catch((e: any) => console.error(e));
-    } else { if (!loadMore) container.innerHTML = '<p>Nenhuma notificação.</p>'; }
+    } else { if (!loadMore) container.innerHTML = `<p>${i18n.t('notif.noNotifs')}</p>`; }
     state.tabStates['notifications'].loaded = true;
     if (!loadMore && state.currentPosts.length > 0) {
         let focused = false;
@@ -240,6 +231,6 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
             state.currentPosts[0].focus();
         }
     }
-  } catch (err: any) { console.error(err); announceAssertive("Erro ao carregar notificações."); } 
+  } catch (err: any) { console.error(err); announceAssertive(i18n.t('notif.loadError')); } 
   finally { container.setAttribute('aria-busy', 'false'); }
 }

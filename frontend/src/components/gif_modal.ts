@@ -1,4 +1,5 @@
 import { announcePolite } from '../utils/a11y';
+import { i18n } from '../utils/i18n';
 
 const KLIPY_API_KEY = '7RT7Bt5gNsatGnkoxIUjYknENTEBMHtcnup2LeLJQRFDM5JZ37OEN4OlcowrK4eq';
 const BASE_URL = `https://api.klipy.com/api/v1/${KLIPY_API_KEY}/gifs`;
@@ -49,12 +50,12 @@ export function openGifPicker(onSelect: (url: string, alt: string) => void) {
 async function loadTrendingGifs() {
     try {
         const grid = document.getElementById('gif-results-grid');
-        if (grid) grid.innerHTML = '<p>Carregando tendências...</p>';
-        announcePolite('Carregando GIFs em tendência');
+        if (grid) grid.innerHTML = `<p>${i18n.t('gif.loadingTrending')}</p>`;
+        announcePolite(i18n.t('gif.loadingTrendingPolite'));
         
         // Use the Klipy native API endpoints
         const res = await fetch(`${BASE_URL}/trending?limit=20`);
-        if (!res.ok) throw new Error('Falha ao buscar GIFs');
+        if (!res.ok) throw new Error(i18n.t('gif.fetchFailed'));
         const data = await res.json();
         let items = [];
         if (data.data && Array.isArray(data.data.data)) {
@@ -68,18 +69,18 @@ async function loadTrendingGifs() {
     } catch (e) {
         console.error(e);
         const grid = document.getElementById('gif-results-grid');
-        if (grid) grid.innerHTML = '<p>Erro ao carregar GIFs.</p>';
+        if (grid) grid.innerHTML = `<p>${i18n.t('gif.loadError')}</p>`;
     }
 }
 
 async function searchGifs(query: string) {
     try {
         const grid = document.getElementById('gif-results-grid');
-        if (grid) grid.innerHTML = '<p>Buscando...</p>';
-        announcePolite(`Buscando GIFs para ${query}`);
+        if (grid) grid.innerHTML = `<p>${i18n.t('gif.searching')}</p>`;
+        announcePolite(i18n.t('gif.searchingFor', { query }));
         
         const res = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(query)}&limit=20`);
-        if (!res.ok) throw new Error('Falha ao buscar GIFs');
+        if (!res.ok) throw new Error(i18n.t('gif.fetchFailed'));
         const data = await res.json();
         let items = [];
         if (data.data && Array.isArray(data.data.data)) {
@@ -93,7 +94,7 @@ async function searchGifs(query: string) {
     } catch (e) {
         console.error(e);
         const grid = document.getElementById('gif-results-grid');
-        if (grid) grid.innerHTML = '<p>Erro ao buscar GIFs.</p>';
+        if (grid) grid.innerHTML = `<p>${i18n.t('gif.searchError')}</p>`;
     }
 }
 
@@ -103,7 +104,7 @@ function renderGifs(items: any[]) {
     grid.innerHTML = '';
     
     if (!items || items.length === 0) {
-        grid.innerHTML = '<p>Nenhum GIF encontrado.</p>';
+        grid.innerHTML = `<p>${i18n.t('gif.notFound')}</p>`;
         return;
     }
 
@@ -143,7 +144,7 @@ function renderGifs(items: any[]) {
         btn.style.cursor = 'pointer';
         btn.style.borderRadius = '4px';
         btn.style.overflow = 'hidden';
-        btn.setAttribute('aria-label', `Selecionar GIF: ${title}`);
+        btn.setAttribute('aria-label', i18n.t('gif.selectGif', { title }));
         
         const img = document.createElement('img');
         img.src = thumbUrl;
@@ -165,5 +166,5 @@ function renderGifs(items: any[]) {
         grid.appendChild(btn);
     });
     
-    announcePolite(`${items.length} GIFs encontrados.`);
+    announcePolite(i18n.t('gif.gifsFound', { count: items.length.toString() }));
 }

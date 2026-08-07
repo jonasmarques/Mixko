@@ -1,10 +1,11 @@
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
+import { i18n } from '../utils/i18n';
 
 export async function loadTimeline(loadMore = false, keepFocus = false, fetchDepth = 1) {
   if (loadMore && state.timelineCursor === "") {
-    announcePolite("Fim do feed alcançado.");
+    announcePolite(i18n.t('timeline.endOfFeed'));
     return;
   }
   const container = document.getElementById('feed-items') as HTMLDivElement;
@@ -78,7 +79,8 @@ export async function loadTimeline(loadMore = false, keepFocus = false, fetchDep
       }
     }
     state.tabStates['timeline'].loaded = true;
-    announcePolite(`Feed carregado com ${state.currentPosts.length} posts. ${state.hideReplies ? 'Respostas ocultas.' : ''}`);
+    const hiddenRepliesText = state.hideReplies ? i18n.t('timeline.hiddenReplies') : '';
+    announcePolite(i18n.t('timeline.feedLoaded', { count: state.currentPosts.length.toString(), hiddenReplies: hiddenRepliesText }));
     if (!loadMore && state.currentPosts.length > 0) {
         let focused = false;
         if (keepFocus && targetUri) {
@@ -94,6 +96,6 @@ export async function loadTimeline(loadMore = false, keepFocus = false, fetchDep
             state.currentPosts[0].focus();
         }
     }
-  } catch (err: any) { console.error(err); announceAssertive("Erro ao carregar feed."); } 
+  } catch (err: any) { console.error(err); announceAssertive(i18n.t('timeline.loadError')); } 
   finally { container.setAttribute('aria-busy', 'false'); }
 }

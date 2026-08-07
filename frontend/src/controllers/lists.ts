@@ -4,6 +4,7 @@ import { confirmDialog, promptDialog } from '../utils/dialog';
 import { createPostArticle } from '../components/post';
 import { createListArticle } from '../components/list';
 import { loadProfile } from './profile';
+import { i18n } from '../utils/i18n';
 
 export async function loadListsTab(loadMore = false) {
     const container = document.getElementById('panel-lists') as HTMLDivElement;
@@ -14,13 +15,13 @@ export async function loadListsTab(loadMore = false) {
         state.currentPosts = [];
         container.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
-                <h2 style="margin:0;">Gerenciamento de Listas</h2>
+                <h2 style="margin:0;">${i18n.t('lists.management')}</h2>
                 <div style="display:flex; gap:10px;">
-                    <button id="btn-create-list" type="button" style="padding:8px 14px; font-weight:bold;">+ Criar Nova Lista</button>
-                    <button id="btn-create-starter-pack" type="button" style="padding:8px 14px; font-weight:bold;">+ Criar Starter Pack</button>
+                    <button id="btn-create-list" type="button" style="padding:8px 14px; font-weight:bold;">${i18n.t('lists.createNewList')}</button>
+                    <button id="btn-create-starter-pack" type="button" style="padding:8px 14px; font-weight:bold;">${i18n.t('lists.createStarterPack')}</button>
                 </div>
             </div>
-            <div id="lists-items-container" aria-busy="true">Carregando listas...</div>
+            <div id="lists-items-container" aria-busy="true">${i18n.t('lists.loading')}</div>
         `;
         document.getElementById('btn-create-list')?.addEventListener('click', () => showCreateListModal());
         document.getElementById('btn-create-starter-pack')?.addEventListener('click', () => showCreateStarterPackModal());
@@ -49,47 +50,47 @@ export async function loadListsTab(loadMore = false) {
                 itemsContainer.appendChild(article);
                 state.currentPosts.push(article);
             });
-            announcePolite(`${state.currentPosts.length} listas exibidas.`);
+            announcePolite(i18n.t('lists.listsDisplayed', { count: state.currentPosts.length.toString() }));
         } else if (!loadMore) {
-            itemsContainer.innerHTML = '<p>Você ainda não possui nenhuma lista criada.</p>';
-            announcePolite("Nenhuma lista encontrada.");
+            itemsContainer.innerHTML = `<p>${i18n.t('lists.noListsCreated')}</p>`;
+            announcePolite(i18n.t('lists.noListsFound'));
         }
         state.tabStates['lists'].loaded = true;
     } catch (err: unknown) {
         console.error(err);
         itemsContainer.setAttribute('aria-busy', 'false');
-        announceAssertive("Erro ao carregar listas.");
+        announceAssertive(i18n.t('lists.loadError'));
     }
 }
 
 export async function showCreateListModal() {
-    const name = await promptDialog("Nome da nova lista:", "", "Criar Lista");
+    const name = await promptDialog(i18n.t('lists.newListName'), "", i18n.t('lists.createListTitle'));
     if (!name) return;
 
-    const desc = await promptDialog("Descrição da lista (opcional):", "", "Criar Lista - Descrição") || "";
-    const isMod = await confirmDialog("Esta lista será para fins de MODERAÇÃO? (Clique 'Cancelar' para Curadoria)", "Tipo de Lista");
+    const desc = await promptDialog(i18n.t('lists.listDesc'), "", i18n.t('lists.createListDescTitle')) || "";
+    const isMod = await confirmDialog(i18n.t('lists.isModList'), i18n.t('lists.listTypeTitle'));
     const purpose = isMod ? "app.bsky.graph.defs#modlist" : "app.bsky.graph.defs#curatelist";
 
     try {
-        announcePolite("Criando lista...");
+        announcePolite(i18n.t('lists.creatingList'));
         await window.go.services.SocialService.CreateList(name, purpose, desc);
-        announceAssertive(`Lista "${name}" criada com sucesso.`);
+        announceAssertive(i18n.t('lists.listCreated', { name }));
         loadListsTab(false);
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        announceAssertive("Erro ao criar lista: " + msg);
+        announceAssertive(i18n.t('lists.createListError', { msg }));
     }
 }
 
 export async function showEditListModal(list: any, onRefresh?: () => void) {
-    const newName = await promptDialog("Novo nome da lista:", list.name, "Editar Lista");
+    const newName = await promptDialog(i18n.t('lists.newListNamePrompt'), list.name, i18n.t('lists.editListTitle'));
     if (!newName) return;
 
-    const newDesc = await promptDialog("Nova descrição:", list.description || "", "Editar Lista") || "";
+    const newDesc = await promptDialog(i18n.t('lists.newListDesc'), list.description || "", i18n.t('lists.editListTitle')) || "";
     try {
-        announcePolite("Atualizando lista...");
+        announcePolite(i18n.t('lists.updatingList'));
         await window.go.services.SocialService.EditList(list.uri, newName, list.purpose, newDesc);
-        announceAssertive("Lista atualizada com sucesso.");
+        announceAssertive(i18n.t('lists.listUpdated'));
         if (onRefresh) {
             onRefresh();
         } else {
@@ -97,13 +98,13 @@ export async function showEditListModal(list: any, onRefresh?: () => void) {
         }
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        announceAssertive("Erro ao editar lista: " + msg);
+        announceAssertive(i18n.t('lists.editListError', { msg }));
     }
 }
 
 export async function viewListMembers(listUri: string, listName: string) {
     try {
-        announcePolite(`Carregando membros da lista "${listName}"...`);
+        announcePolite(i18n.t('lists.loadingMembers', { name: listName }));
         const res = await window.go.services.SocialService.GetListMembers(listUri, "");
         
         const dialog = document.createElement('dialog');
@@ -120,23 +121,23 @@ export async function viewListMembers(listUri: string, listName: string) {
                         <strong>${p.displayName || p.handle}</strong>
                         <small style="display:block; color:#aaa;">@${p.handle}</small>
                     </div>
-                    <button type="button" class="btn-open-member-profile" data-handle="${p.handle}" style="padding:4px 10px;">Ver Perfil</button>
+                    <button type="button" class="btn-open-member-profile" data-handle="${p.handle}" style="padding:4px 10px;">${i18n.t('lists.viewProfile')}</button>
                 </div>
             `).join('');
         } else {
-            membersHtml = '<p>Nenhum membro nesta lista.</p>';
+            membersHtml = `<p>${i18n.t('lists.noMembers')}</p>`;
         }
 
         dialog.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;">
-                <h3 id="list-members-title" style="margin:0;">Membros da Lista "${listName}"</h3>
-                <button type="button" id="btn-close-members-modal" style="padding:4px 10px;">Fechar</button>
+                <h3 id="list-members-title" style="margin:0;">${i18n.t('lists.listMembersTitle', { name: listName })}</h3>
+                <button type="button" id="btn-close-members-modal" style="padding:4px 10px;">${i18n.t('lists.close')}</button>
             </div>
             <div id="members-list-body">${membersHtml}</div>
         `;
 
         document.body.appendChild(dialog);
-        announcePolite(`Membros da lista "${listName}" carregados.`);
+        announcePolite(i18n.t('lists.membersLoaded', { name: listName }));
 
         const closeBtn = dialog.querySelector('#btn-close-members-modal') as HTMLButtonElement;
         const cleanup = () => {
@@ -158,7 +159,7 @@ export async function viewListMembers(listUri: string, listName: string) {
                     cleanup();
                     state.currentHandle = handle;
                     state.profileTabMode = 'posts';
-                    announcePolite(`Abrindo perfil de @${handle}`);
+                    announcePolite(i18n.t('lists.openingProfile', { handle }));
                     loadProfile();
                 }
             });
@@ -168,7 +169,7 @@ export async function viewListMembers(listUri: string, listName: string) {
         closeBtn?.focus();
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        announceAssertive("Erro ao carregar membros da lista: " + msg);
+        announceAssertive(i18n.t('lists.loadMembersError', { msg }));
     }
 }
 
@@ -178,10 +179,10 @@ export async function viewListFeed(listUri: string, listName: string, targetCont
 
     container.innerHTML = `
         <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
-            <button id="btn-back-lists" type="button" style="padding:6px 14px; font-weight:bold;">Voltar</button>
-            <h3 style="margin:0;">Feed da Lista: ${listName}</h3>
+            <button id="btn-back-lists" type="button" style="padding:6px 14px; font-weight:bold;">${i18n.t('lists.back')}</button>
+            <h3 style="margin:0;">${i18n.t('lists.listFeedTitle', { name: listName })}</h3>
         </div>
-        <div id="list-feed-container" aria-busy="true">Carregando feed da lista...</div>
+        <div id="list-feed-container" aria-busy="true">${i18n.t('lists.loadingListFeed')}</div>
     `;
 
     document.getElementById('btn-back-lists')?.addEventListener('click', () => {
@@ -205,15 +206,15 @@ export async function viewListFeed(listUri: string, listName: string, targetCont
                 feedContainer.appendChild(article);
                 state.currentPosts.push(article);
             });
-            announcePolite(`${res.posts.length} postagens carregadas do feed da lista.`);
+            announcePolite(i18n.t('lists.listFeedLoaded', { count: res.posts.length.toString() }));
         } else {
-            feedContainer.innerHTML = '<p>Nenhuma publicação recente nesta lista.</p>';
-            announcePolite("Nenhuma publicação encontrada no feed da lista.");
+            feedContainer.innerHTML = `<p>${i18n.t('lists.noRecentPosts')}</p>`;
+            announcePolite(i18n.t('lists.noPostsFound'));
         }
     } catch (err: unknown) {
         console.error(err);
         feedContainer.setAttribute('aria-busy', 'false');
-        announceAssertive("Erro ao carregar feed da lista.");
+        announceAssertive(i18n.t('lists.listFeedError'));
     }
 }
 
@@ -222,30 +223,30 @@ export async function showCreateStarterPackModal() {
         const handle = state.loggedInHandle || state.currentHandle;
         const listsRes = await window.go.services.SocialService.GetActorLists(handle, "");
         if (!listsRes || !listsRes.lists || listsRes.lists.length === 0) {
-            announceAssertive("Você precisa ter pelo menos uma lista de curadoria criada para gerar um Starter Pack.");
+            announceAssertive(i18n.t('lists.needCurateListForStarterPack'));
             return;
         }
 
-        const name = await promptDialog("Nome do seu Starter Pack:", "", "Criar Starter Pack");
+        const name = await promptDialog(i18n.t('lists.starterPackName'), "", i18n.t('lists.createStarterPackTitle'));
         if (!name) return;
 
-        const desc = await promptDialog("Descrição do Starter Pack:", "", "Criar Starter Pack - Descrição") || "";
+        const desc = await promptDialog(i18n.t('lists.starterPackDesc'), "", i18n.t('lists.createStarterPackDescTitle')) || "";
         const options = listsRes.lists.map((l: any, i: number) => `${i + 1}. ${l.name}`).join("\n");
-        const chosen = await promptDialog(`Escolha o número da lista base para este Starter Pack:\n\n${options}`, "1", "Selecionar Lista");
+        const chosen = await promptDialog(i18n.t('lists.chooseBaseList', { options }), "1", i18n.t('lists.selectListTitle'));
         if (!chosen) return;
 
         const idx = parseInt(chosen, 10) - 1;
         if (idx >= 0 && idx < listsRes.lists.length) {
             const selectedList = listsRes.lists[idx];
-            announcePolite("Criando Starter Pack...");
+            announcePolite(i18n.t('lists.creatingStarterPack'));
             await window.go.services.SocialService.CreateStarterPack(name, desc, selectedList.uri);
-            announceAssertive(`Starter Pack "${name}" criado com sucesso!`);
+            announceAssertive(i18n.t('lists.starterPackCreated', { name }));
             loadListsTab(false);
         } else {
-            announceAssertive("Opção de lista inválida.");
+            announceAssertive(i18n.t('lists.invalidListOption'));
         }
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        announceAssertive("Erro ao criar Starter Pack: " + msg);
+        announceAssertive(i18n.t('lists.createStarterPackError', { msg }));
     }
 }

@@ -78,6 +78,7 @@ func (s *SearchService) SearchProfiles(query string, cursor string) (*ProfileLis
 				Handle:          actor.Handle,
 				DisplayName:     displayName,
 				Description:     description,
+				Avatar:          safeString(actor.Avatar),
 				ViewerFollowing: following,
 			})
 		}
@@ -113,6 +114,7 @@ func (s *SearchService) SearchProfilesTypeahead(query string) (*ProfileListDTO, 
 				Handle:          actor.Handle,
 				DisplayName:     displayName,
 				Description:     description,
+				Avatar:          safeString(actor.Avatar),
 				ViewerFollowing: following,
 			})
 		}
