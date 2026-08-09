@@ -4,7 +4,7 @@ import { confirmDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
 import { i18n } from '../utils/i18n';
 
-const STANDARD_LABELS = ['porn', 'sexual', 'graphic-media', 'gore', 'spam'];
+const STANDARD_LABELS = ['nsfw', 'porn', 'sexual', 'nudity', 'graphic-media', 'gore', 'spam'];
 
 export function renderMutedWords(listElement: HTMLUListElement) {
     listElement.innerHTML = '';
@@ -24,14 +24,24 @@ export function renderMutedWords(listElement: HTMLUListElement) {
     });
 }
 
-function renderContentFilters(container: HTMLDivElement, filters: any[]) {
+function renderContentFilters(container: HTMLDivElement, filters: Array<{ label: string; visibility: string; labelerDid?: string }>) {
     container.innerHTML = '';
     // Map existing filters by label
     const filterMap = new Map<string, string>();
-    filters.forEach(f => filterMap.set(f.label, f.visibility));
+    filters.forEach(f => {
+        if (f && f.label) {
+            filterMap.set(f.label, f.visibility);
+        }
+    });
 
-    STANDARD_LABELS.forEach(label => {
-        const currentVis = filterMap.get(label) || 'hide';
+    const allLabels = Array.from(new Set([...STANDARD_LABELS, ...Array.from(filterMap.keys())]));
+
+    allLabels.forEach(label => {
+        const rawVis = filterMap.get(label) || 'warn';
+        const isIgnore = rawVis === 'ignore' || rawVis === 'show';
+        const isWarn = rawVis === 'warn';
+        const isHide = rawVis === 'hide';
+
         const div = document.createElement('div');
         div.style.display = 'flex';
         div.style.justifyContent = 'space-between';
@@ -41,9 +51,9 @@ function renderContentFilters(container: HTMLDivElement, filters: any[]) {
         div.innerHTML = `
             <span><strong>${label}</strong></span>
             <select class="content-filter-select" data-label="${label}">
-                <option value="hide" ${currentVis === 'hide' ? 'selected' : ''}>${i18n.t('settingsMsgs.filterHide')}</option>
-                <option value="warn" ${currentVis === 'warn' ? 'selected' : ''}>${i18n.t('settingsMsgs.filterWarn')}</option>
-                <option value="show" ${currentVis === 'show' ? 'selected' : ''}>${i18n.t('settingsMsgs.filterShow')}</option>
+                <option value="ignore" ${isIgnore ? 'selected' : ''}>${i18n.t('settingsMsgs.filterShow')}</option>
+                <option value="warn" ${isWarn ? 'selected' : ''}>${i18n.t('settingsMsgs.filterWarn')}</option>
+                <option value="hide" ${isHide ? 'selected' : ''}>${i18n.t('settingsMsgs.filterHide')}</option>
             </select>
         `;
         container.appendChild(div);
@@ -340,10 +350,12 @@ export function setupSettings() {
 
                 // Content Filters
                 const filterSelects = document.querySelectorAll('.content-filter-select');
-                const filtersToSave: any[] = [];
-                filterSelects.forEach((sel: any) => {
+                const filtersToSave: Array<{ label: string; visibility: string; labelerDid: string }> = [];
+                filterSelects.forEach((selElement) => {
+                    const sel = selElement as HTMLSelectElement;
                     const label = sel.dataset.label;
-                    const visibility = sel.value;
+                    let visibility = sel.value;
+                    if (visibility === 'show') visibility = 'ignore';
                     if (label && visibility) {
                         filtersToSave.push({ label, visibility, labelerDid: '' });
                     }

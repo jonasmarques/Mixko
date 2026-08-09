@@ -474,18 +474,35 @@ func (s *FeedService) GetSavedFeeds() ([]*SavedFeedDTO, error) {
 
 		var feedUris []string
 		pinnedMap := map[string]bool{}
+		foundV2 := false
+
 		for _, pref := range res.Preferences {
-			if pref.ActorDefs_SavedFeedsPref != nil {
-				feedUris = pref.ActorDefs_SavedFeedsPref.Saved
-				for _, p := range pref.ActorDefs_SavedFeedsPref.Pinned {
-					pinnedMap[p] = true
-				}
-			} else if pref.ActorDefs_SavedFeedsPrefV2 != nil {
+			if pref.ActorDefs_SavedFeedsPrefV2 != nil {
+				foundV2 = true
 				for _, item := range pref.ActorDefs_SavedFeedsPrefV2.Items {
-					if item.Type == "feed" {
-						feedUris = append(feedUris, item.Value)
-						if item.Pinned {
+					if item != nil && (item.Type == "feed" || strings.Contains(item.Value, "/app.bsky.feed.generator/")) {
+						if item.Value != "" && !containsString(feedUris, item.Value) {
+							feedUris = append(feedUris, item.Value)
+						}
+						if item.Pinned && item.Value != "" {
 							pinnedMap[item.Value] = true
+						}
+					}
+				}
+			}
+		}
+
+		if !foundV2 || len(feedUris) == 0 {
+			for _, pref := range res.Preferences {
+				if pref.ActorDefs_SavedFeedsPref != nil {
+					for _, uri := range pref.ActorDefs_SavedFeedsPref.Saved {
+						if uri != "" && !containsString(feedUris, uri) {
+							feedUris = append(feedUris, uri)
+						}
+					}
+					for _, p := range pref.ActorDefs_SavedFeedsPref.Pinned {
+						if p != "" {
+							pinnedMap[p] = true
 						}
 					}
 				}
@@ -494,24 +511,35 @@ func (s *FeedService) GetSavedFeeds() ([]*SavedFeedDTO, error) {
 
 		if len(feedUris) > 0 {
 			genRes, err := bsky.FeedGetFeedGenerators(ctx, c, feedUris)
-			if err == nil {
+			if err == nil && genRes != nil {
+				genMap := make(map[string]*bsky.FeedDefs_GeneratorView)
 				for _, gen := range genRes.Feeds {
-					creator := ""
-					if gen.Creator != nil {
-						creator = gen.Creator.Handle
+					if gen != nil {
+						genMap[gen.Uri] = gen
 					}
-					out = append(out, &SavedFeedDTO{
-						URI:         gen.Uri,
-						CID:         gen.Cid,
-						DisplayName: gen.DisplayName,
-						Creator:     creator,
-						Pinned:      pinnedMap[gen.Uri],
-					})
+				}
+				for _, uri := range feedUris {
+					if gen, ok := genMap[uri]; ok {
+						creator := ""
+						if gen.Creator != nil {
+							creator = gen.Creator.Handle
+						}
+						out = append(out, &SavedFeedDTO{
+							URI:         gen.Uri,
+							CID:         gen.Cid,
+							DisplayName: gen.DisplayName,
+							Creator:     creator,
+							Pinned:      pinnedMap[gen.Uri],
+						})
+					}
 				}
 			}
 		}
 		return nil
 	})
+	if out == nil {
+		out = []*SavedFeedDTO{}
+	}
 	return out, err
 }
 

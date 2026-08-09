@@ -5,8 +5,24 @@ import { switchTab } from './tabs';
 import { createListArticle } from '../components/list';
 import { i18n } from '../utils/i18n';
 
+interface SavedFeedItem {
+    uri: string;
+    cid?: string;
+    displayName: string;
+    creator?: string;
+    pinned: boolean;
+}
+
 export async function loadFeedsTab() {
     const container = document.getElementById('feed-list') as HTMLDivElement;
+    if (!container) return;
+
+    // Check if search input element exists before resetting innerHTML to preserve typed query
+    const existingInput = document.getElementById('discover-feed-search-input') as HTMLInputElement | null;
+    if (existingInput) {
+        state.discoverFeedSearchQuery = existingInput.value;
+    }
+
     container.setAttribute('aria-busy', 'true');
     container.innerHTML = `<div style="padding: 20px;">${i18n.t('feeds.loading')}</div>`;
     
@@ -29,11 +45,17 @@ export async function loadFeedsTab() {
 
     state.currentPosts = [];
 
+    // Always fetch latest saved feeds first so state.savedFeeds is up-to-date across all sub-tabs
+    try {
+        const savedRes = await window.go.services.FeedService.GetSavedFeeds();
+        state.savedFeeds = savedRes || [];
+    } catch (e) {
+        console.warn("Failed to fetch saved feeds:", e);
+    }
+
     try {
         if (state.feedsTabMode === 'saved') {
-            const res = await window.go.services.FeedService.GetSavedFeeds();
             container.innerHTML = '';
-            state.savedFeeds = res || [];
             
             // Render default "Seguindo" (Following) home timeline feed item
             const followingDiv = document.createElement('article');
@@ -77,7 +99,7 @@ export async function loadFeedsTab() {
             state.currentPosts.push(followingDiv);
 
             if (state.savedFeeds.length > 0) {
-                state.savedFeeds.forEach((feed: any, index: number) => {
+                state.savedFeeds.forEach((feed: SavedFeedItem, index: number) => {
                     const div = document.createElement('article');
                     div.classList.add('post-item');
                     div.setAttribute('role', 'article');
@@ -89,7 +111,7 @@ export async function loadFeedsTab() {
                     const pinBtnLabel = feed.pinned ? i18n.t('feeds.unpin') : i18n.t('feeds.pin');
                     div.innerHTML = `
                         <h3>${feed.displayName}${pinnedBadge}</h3>
-                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}${shortcutBadge}</small>
+                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator || '' })}${shortcutBadge}</small>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn-open-feed" data-uri="${feed.uri}">${i18n.t('feeds.openFeed')}</button>
                             <button class="btn-pin-feed" data-uri="${feed.uri}" data-pinned="${feed.pinned ? '1' : '0'}">${pinBtnLabel}</button>
@@ -105,8 +127,8 @@ export async function loadFeedsTab() {
                     div.querySelector('.btn-pin-feed')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         const isPinned = feed.pinned;
-                        const allSavedUris = state.savedFeeds.map((f: any) => f.uri);
-                        const currentPinned = state.savedFeeds.filter((f: any) => f.pinned && f.uri !== feed.uri).map((f: any) => f.uri);
+                        const allSavedUris = state.savedFeeds.map((f: SavedFeedItem) => f.uri);
+                        const currentPinned = state.savedFeeds.filter((f: SavedFeedItem) => f.pinned && f.uri !== feed.uri).map((f: SavedFeedItem) => f.uri);
                         const newPinned = isPinned ? currentPinned : [...currentPinned, feed.uri];
                         try {
                             await window.go.services.SocialService.UpdateSavedFeeds(newPinned, allSavedUris);
@@ -119,11 +141,15 @@ export async function loadFeedsTab() {
                     div.querySelector('.btn-remove-feed')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         if (await confirmDialog(i18n.t('feeds.confirmRemove', { displayName: feed.displayName }), i18n.t('feeds.removeFeedTitle'))) {
-                            const newSaved = state.savedFeeds.filter((f: any) => f.uri !== feed.uri).map((f: any) => f.uri);
-                            const newPinned = state.savedFeeds.filter((f: any) => f.pinned && f.uri !== feed.uri).map((f: any) => f.uri);
-                            await window.go.services.SocialService.UpdateSavedFeeds(newPinned, newSaved);
-                            announceAssertive(i18n.t('feeds.feedRemoved'));
-                            loadFeedsTab();
+                            const newSaved = state.savedFeeds.filter((f: SavedFeedItem) => f.uri !== feed.uri).map((f: SavedFeedItem) => f.uri);
+                            const newPinned = state.savedFeeds.filter((f: SavedFeedItem) => f.pinned && f.uri !== feed.uri).map((f: SavedFeedItem) => f.uri);
+                            try {
+                                await window.go.services.SocialService.UpdateSavedFeeds(newPinned, newSaved);
+                                announceAssertive(i18n.t('feeds.feedRemoved'));
+                                loadFeedsTab();
+                            } catch (err) {
+                                announceAssertive(i18n.t('feeds.feedUpdateError'));
+                            }
                         }
                     });
                     div.addEventListener('click', () => {
@@ -167,8 +193,7 @@ export async function loadFeedsTab() {
                 container.innerHTML = `<p>${i18n.t('feeds.noListFound')}</p>`;
             }
         } else if (state.feedsTabMode === 'discover') {
-            const queryInput = document.getElementById('discover-feed-search-input') as HTMLInputElement;
-            const query = queryInput ? queryInput.value : "";
+            const query = state.discoverFeedSearchQuery || "";
             const res = await window.go.services.FeedService.GetPopularFeedGenerators("", query);
             container.innerHTML = `
                 <div style="margin-bottom: 15px; display: flex; gap: 10px;">
@@ -178,47 +203,75 @@ export async function loadFeedsTab() {
                 <div id="discover-feeds-list"></div>
             `;
 
-            document.getElementById('btn-search-discover-feeds')?.addEventListener('click', () => loadFeedsTab());
+            const triggerSearch = () => {
+                const searchInput = document.getElementById('discover-feed-search-input') as HTMLInputElement;
+                state.discoverFeedSearchQuery = searchInput ? searchInput.value.trim() : "";
+                loadFeedsTab();
+            };
+
+            document.getElementById('btn-search-discover-feeds')?.addEventListener('click', triggerSearch);
             document.getElementById('discover-feed-search-input')?.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    loadFeedsTab();
+                    triggerSearch();
                 }
             });
 
             const feedsListContainer = document.getElementById('discover-feeds-list') as HTMLDivElement;
             if (res && res.feeds && res.feeds.length > 0) {
                 res.feeds.forEach((feed: any) => {
-                    const alreadySaved = (state.savedFeeds || []).some((f: any) => f.uri === feed.uri);
+                    const savedItem = (state.savedFeeds || []).find((f: SavedFeedItem) => f.uri === feed.uri);
+                    const isSaved = !!savedItem;
+                    const isPinned = savedItem ? savedItem.pinned : false;
+
+                    const statusBadge = isPinned ? i18n.t('feeds.pinnedBadge') : (isSaved ? i18n.t('feeds.savedBadge') : '');
+
                     const div = document.createElement('article');
                     div.classList.add('post-item');
                     div.setAttribute('role', 'article');
                     div.setAttribute('tabindex', '0');
                     div.dataset.index = state.currentPosts.length.toString();
                     div.dataset.uri = feed.uri;
+
+                    let actionButtonsHtml = `<button class="btn-open-feed" data-uri="${feed.uri}">${i18n.t('feeds.openFeed')}</button>`;
+                    if (!isSaved) {
+                        actionButtonsHtml += `
+                            <button class="btn-save-feed" data-uri="${feed.uri}">${i18n.t('feeds.saveFeed')}</button>
+                            <button class="btn-pin-feed" data-uri="${feed.uri}">${i18n.t('feeds.pin')}</button>
+                        `;
+                    } else {
+                        const pinLabel = isPinned ? i18n.t('feeds.unpin') : i18n.t('feeds.pin');
+                        actionButtonsHtml += `
+                            <button class="btn-pin-feed" data-uri="${feed.uri}">${pinLabel}</button>
+                            <button class="btn-remove-feed" data-uri="${feed.uri}" style="background:#d32f2f; color:#fff; border:none; border-radius:4px; padding:4px 8px;">${i18n.t('feeds.remove')}</button>
+                        `;
+                    }
+
                     div.innerHTML = `
-                        <h3>${feed.displayName}</h3>
+                        <h3>${feed.displayName}${statusBadge}</h3>
                         <p>${feed.description || i18n.t('feeds.noDescription')}</p>
                         <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}</small>
-                        <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: feed.likeCount.toString() })}</div>
-                        <div class="actions" style="margin-top: 10px; display:flex; gap:10px;">
-                            <button class="btn-open-feed" data-uri="${feed.uri}">${i18n.t('feeds.openFeed')}</button>
-                            <button class="btn-save-feed" data-uri="${feed.uri}" ${alreadySaved ? 'disabled aria-disabled="true"' : ''}>${alreadySaved ? i18n.t('feeds.alreadySaved') : i18n.t('feeds.saveFeed')}</button>
+                        <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: (feed.likeCount || 0).toString() })}</div>
+                        <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
+                            ${actionButtonsHtml}
                         </div>
                     `;
+
                     div.querySelector('.btn-open-feed')?.addEventListener('click', (e) => {
                         e.stopPropagation();
                         state.currentFeedUri = feed.uri;
                         switchTab('timeline');
                         announcePolite(i18n.t('feeds.feedLoaded', { displayName: feed.displayName }));
                     });
+
                     div.querySelector('.btn-save-feed')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
-                        if (alreadySaved) return;
                         try {
-                            const existingUris = (state.savedFeeds || []).map((f: any) => f.uri);
-                            const pinnedUris = (state.savedFeeds || []).filter((f: any) => f.pinned).map((f: any) => f.uri);
-                            existingUris.push(feed.uri);
+                            const existingUris = (state.savedFeeds || []).map((f: SavedFeedItem) => f.uri);
+                            const pinnedUris = (state.savedFeeds || []).filter((f: SavedFeedItem) => f.pinned).map((f: SavedFeedItem) => f.uri);
+                            if (!existingUris.includes(feed.uri)) {
+                                existingUris.push(feed.uri);
+                            }
                             await window.go.services.SocialService.UpdateSavedFeeds(pinnedUris, existingUris);
                             announceAssertive(i18n.t('feeds.feedSaved', { displayName: feed.displayName }));
                             loadFeedsTab();
@@ -226,6 +279,39 @@ export async function loadFeedsTab() {
                             announceAssertive(i18n.t('feeds.feedSaveError'));
                         }
                     });
+
+                    div.querySelector('.btn-pin-feed')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            const existingUris = (state.savedFeeds || []).map((f: SavedFeedItem) => f.uri);
+                            if (!existingUris.includes(feed.uri)) {
+                                existingUris.push(feed.uri);
+                            }
+                            const currentPinned = (state.savedFeeds || []).filter((f: SavedFeedItem) => f.pinned && f.uri !== feed.uri).map((f: SavedFeedItem) => f.uri);
+                            const newPinned = isPinned ? currentPinned : [...currentPinned, feed.uri];
+                            await window.go.services.SocialService.UpdateSavedFeeds(newPinned, existingUris);
+                            announceAssertive(isPinned ? i18n.t('feeds.feedUnpinned', { displayName: feed.displayName }) : i18n.t('feeds.feedPinned', { displayName: feed.displayName }));
+                            loadFeedsTab();
+                        } catch (err) {
+                            announceAssertive(i18n.t('feeds.feedUpdateError'));
+                        }
+                    });
+
+                    div.querySelector('.btn-remove-feed')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        if (await confirmDialog(i18n.t('feeds.confirmRemove', { displayName: feed.displayName }), i18n.t('feeds.removeFeedTitle'))) {
+                            try {
+                                const newSaved = (state.savedFeeds || []).filter((f: SavedFeedItem) => f.uri !== feed.uri).map((f: SavedFeedItem) => f.uri);
+                                const newPinned = (state.savedFeeds || []).filter((f: SavedFeedItem) => f.pinned && f.uri !== feed.uri).map((f: SavedFeedItem) => f.uri);
+                                await window.go.services.SocialService.UpdateSavedFeeds(newPinned, newSaved);
+                                announceAssertive(i18n.t('feeds.feedRemoved'));
+                                loadFeedsTab();
+                            } catch (err) {
+                                announceAssertive(i18n.t('feeds.feedUpdateError'));
+                            }
+                        }
+                    });
+
                     div.addEventListener('click', () => {
                         state.currentFeedUri = feed.uri;
                         switchTab('timeline');

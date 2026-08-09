@@ -21,6 +21,7 @@ export const state = {
     showOnlyMentions: false,
     savedFeeds: [] as any[],
     currentFeedUri: "",
+    discoverFeedSearchQuery: "",
     feedsTabMode: 'saved' as 'saved' | 'lists' | 'discover',
     profileTabMode: 'posts' as 'posts' | 'replies' | 'media' | 'likes' | 'lists' | 'starterPacks' | 'followers' | 'following',
     mutedWordsCache: [] as string[],

@@ -43,10 +43,14 @@ func (s *SocialService) GetPreferences() (*PreferencesDTO, error) {
 				if pref.ActorDefs_ContentLabelPref.LabelerDid != nil {
 					labeler = *pref.ActorDefs_ContentLabelPref.LabelerDid
 				}
+				vis := pref.ActorDefs_ContentLabelPref.Visibility
+				if vis == "show" {
+					vis = "ignore"
+				}
 				out.ContentFilters = append(out.ContentFilters, ContentFilterDTO{
 					LabelerDid: labeler,
 					Label:      pref.ActorDefs_ContentLabelPref.Label,
-					Visibility: pref.ActorDefs_ContentLabelPref.Visibility,
+					Visibility: vis,
 				})
 			}
 			if pref.ActorDefs_MutedWordsPref != nil {
@@ -61,13 +65,21 @@ func (s *SocialService) GetPreferences() (*PreferencesDTO, error) {
 					})
 				}
 			}
+			foundSavedV2 := false
 			if pref.ActorDefs_SavedFeedsPrefV2 != nil {
+				foundSavedV2 = true
 				for _, f := range pref.ActorDefs_SavedFeedsPrefV2.Items {
-					if f.Pinned {
-						out.PinnedFeeds = append(out.PinnedFeeds, f.Value)
+					if f != nil {
+						if f.Pinned {
+							out.PinnedFeeds = append(out.PinnedFeeds, f.Value)
+						}
+						out.SavedFeeds = append(out.SavedFeeds, f.Value)
 					}
-					out.SavedFeeds = append(out.SavedFeeds, f.Value)
 				}
+			}
+			if !foundSavedV2 && pref.ActorDefs_SavedFeedsPref != nil {
+				out.SavedFeeds = append(out.SavedFeeds, pref.ActorDefs_SavedFeedsPref.Saved...)
+				out.PinnedFeeds = append(out.PinnedFeeds, pref.ActorDefs_SavedFeedsPref.Pinned...)
 			}
 			if pref.ActorDefs_ThreadViewPref != nil {
 				if pref.ActorDefs_ThreadViewPref.Sort != nil {
@@ -179,10 +191,14 @@ func (s *SocialService) UpdateContentFilters(filters []ContentFilterDTO) error {
 				did := filter.LabelerDid
 				labelerDid = &did
 			}
+			vis := filter.Visibility
+			if vis == "show" {
+				vis = "ignore"
+			}
 			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
 				ActorDefs_ContentLabelPref: &bsky.ActorDefs_ContentLabelPref{
 					Label:      filter.Label,
-					Visibility: filter.Visibility,
+					Visibility: vis,
 					LabelerDid: labelerDid,
 				},
 			})
@@ -257,10 +273,14 @@ func (s *SocialService) UpdateAllPreferences(threadSort string, adultContent boo
 				did := filter.LabelerDid
 				labelerDid = &did
 			}
+			vis := filter.Visibility
+			if vis == "show" {
+				vis = "ignore"
+			}
 			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
 				ActorDefs_ContentLabelPref: &bsky.ActorDefs_ContentLabelPref{
 					Label:      filter.Label,
-					Visibility: filter.Visibility,
+					Visibility: vis,
 					LabelerDid: labelerDid,
 				},
 			})
@@ -1250,17 +1270,43 @@ func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string
 			return err
 		}
 
-		items := []*bsky.ActorDefs_SavedFeed{}
-		for _, uri := range savedUris {
-			isPinned := false
-			for _, p := range pinnedUris {
-				if p == uri {
-					isPinned = true
-					break
+		var cleanSaved []string
+		for _, u := range savedUris {
+			if u != "" && !containsString(cleanSaved, u) {
+				cleanSaved = append(cleanSaved, u)
+			}
+		}
+
+		var cleanPinned []string
+		for _, p := range pinnedUris {
+			if p != "" && !containsString(cleanPinned, p) {
+				cleanPinned = append(cleanPinned, p)
+			}
+			if p != "" && !containsString(cleanSaved, p) {
+				cleanSaved = append(cleanSaved, p)
+			}
+		}
+
+		existingIds := make(map[string]string)
+		for _, pref := range res.Preferences {
+			if pref.ActorDefs_SavedFeedsPrefV2 != nil {
+				for _, item := range pref.ActorDefs_SavedFeedsPrefV2.Items {
+					if item != nil && item.Value != "" && item.Id != "" {
+						existingIds[item.Value] = item.Id
+					}
 				}
 			}
+		}
+
+		items := []*bsky.ActorDefs_SavedFeed{}
+		for i, uri := range cleanSaved {
+			isPinned := containsString(cleanPinned, uri)
+			itemId := existingIds[uri]
+			if itemId == "" {
+				itemId = fmt.Sprintf("feed-%d-%d", time.Now().UnixNano(), i)
+			}
 			items = append(items, &bsky.ActorDefs_SavedFeed{
-				Id:     "feed-" + time.Now().Format("20060102150405"),
+				Id:     itemId,
 				Type:   "feed",
 				Value:  uri,
 				Pinned: isPinned,
@@ -1268,19 +1314,33 @@ func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string
 		}
 
 		var newPrefs []bsky.ActorDefs_Preferences_Elem
-		found := false
+		foundV2 := false
+		foundV1 := false
 		for _, pref := range res.Preferences {
 			if pref.ActorDefs_SavedFeedsPrefV2 != nil {
 				pref.ActorDefs_SavedFeedsPrefV2.Items = items
-				found = true
+				foundV2 = true
+			}
+			if pref.ActorDefs_SavedFeedsPref != nil {
+				pref.ActorDefs_SavedFeedsPref.Saved = cleanSaved
+				pref.ActorDefs_SavedFeedsPref.Pinned = cleanPinned
+				foundV1 = true
 			}
 			newPrefs = append(newPrefs, pref)
 		}
 
-		if !found {
+		if !foundV2 {
 			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
 				ActorDefs_SavedFeedsPrefV2: &bsky.ActorDefs_SavedFeedsPrefV2{
 					Items: items,
+				},
+			})
+		}
+		if !foundV1 {
+			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
+				ActorDefs_SavedFeedsPref: &bsky.ActorDefs_SavedFeedsPref{
+					Saved:  cleanSaved,
+					Pinned: cleanPinned,
 				},
 			})
 		}

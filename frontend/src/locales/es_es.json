@@ -250,6 +250,7 @@
         "openFeed": "Abrir Feed",
         "mainFeedLoaded": "Feed principal (Siguiendo) cargado en la timeline.",
         "pinnedBadge": " <em>Fijado</em>",
+        "savedBadge": " <em>Guardado</em>",
         "unpin": "Desfijar",
         "pin": "Fijar",
         "createdBy": "Creado por: @{{creator}}",
