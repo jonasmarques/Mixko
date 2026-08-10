@@ -2127,15 +2127,34 @@ export namespace services {
 	        this.unreadCount = source["unreadCount"];
 	    }
 	}
+	export class ChatReactionDTO {
+	    value: string;
+	    senderDid: string;
+	    isMine: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatReactionDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.value = source["value"];
+	        this.senderDid = source["senderDid"];
+	        this.isMine = source["isMine"];
+	    }
+	}
 	export class ChatMessageDTO {
 	    id: string;
 	    rev: string;
 	    sender: string;
+	    senderDid: string;
 	    text: string;
 	    sentAt: string;
 	    embedUri?: string;
+	    replyToMessageId?: string;
 	    replyToMessageText?: string;
 	    replyToSender?: string;
+	    reactions?: ChatReactionDTO[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ChatMessageDTO(source);
@@ -2146,12 +2165,33 @@ export namespace services {
 	        this.id = source["id"];
 	        this.rev = source["rev"];
 	        this.sender = source["sender"];
+	        this.senderDid = source["senderDid"];
 	        this.text = source["text"];
 	        this.sentAt = source["sentAt"];
 	        this.embedUri = source["embedUri"];
+	        this.replyToMessageId = source["replyToMessageId"];
 	        this.replyToMessageText = source["replyToMessageText"];
 	        this.replyToSender = source["replyToSender"];
+	        this.reactions = this.convertValues(source["reactions"], ChatReactionDTO);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ChatMessagesDTO {
 	    cursor: string;
@@ -2185,6 +2225,7 @@ export namespace services {
 		    return a;
 		}
 	}
+	
 	export class ContentFilterDTO {
 	    labelerDid: string;
 	    label: string;

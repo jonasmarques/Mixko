@@ -596,7 +596,21 @@
         "attachedLink": "Attached link:",
         "startingConvo": "Starting conversation with {{title}}",
         "defaultUser": "user",
-        "openingChat": "Opening chat with @{{handle}}..."
+        "openingChat": "Opening chat with @{{handle}}...",
+        "replyBtn": "Reply",
+        "cancelReply": "Cancel reply",
+        "replyingToMsg": "↩ {{sender}}: {{text}}",
+        "reactBtn": "React",
+        "reactionsAria": "Reactions: {{summary}}",
+        "addReactionError": "Error adding reaction.",
+        "removeReactionError": "Error removing reaction.",
+        "replyError": "Error sending reply: {{err}}",
+        "cancelReplyAria": "Cancel reply",
+        "replyBtnAria": "Reply to {{sender}}'s message",
+        "reactBtnAria": "Add reaction to {{sender}}'s message",
+        "actionsAria": "Message actions",
+        "deleteMsgAria": "Delete {{sender}}'s message",
+        "chatReplyMode": "Chat reply mode activated. Type your message."
     },
     "gif": {
         "loadingTrending": "Loading trending...",

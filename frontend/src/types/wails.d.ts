@@ -86,6 +86,10 @@ declare global {
           ListConvos(cursor: string): Promise<any[]>;
           GetMessages(convoId: string, cursor: string): Promise<any>;
           SendMessage(convoId: string, text: string): Promise<void>;
+          SendMessageWithGif(convoId: string, text: string, gifUrl: string): Promise<void>;
+          SendReply(convoId: string, replyToMessageId: string, text: string, gifUrl: string): Promise<void>;
+          AddReaction(convoId: string, messageId: string, emoji: string): Promise<void>;
+          RemoveReaction(convoId: string, messageId: string, emoji: string): Promise<void>;
           GetConvoForMembers(members: string[]): Promise<any>;
           UpdateReadStatus(convoId: string, messageId: string): Promise<void>;
           DeleteMessage(convoId: string, messageId: string): Promise<void>;

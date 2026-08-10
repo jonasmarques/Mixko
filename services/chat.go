@@ -77,7 +77,7 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 			Cursor   string                   `json:"cursor"`
 			Messages []map[string]interface{} `json:"messages"`
 		}
-		
+
 		params := map[string]interface{}{
 			"convoId": convoId,
 			"limit":   100,
@@ -85,21 +85,28 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 		if cursor != "" {
 			params["cursor"] = cursor
 		}
-		
+
 		if err := chatClient.Do(ctx, xrpc.Query, "", "chat.bsky.convo.getMessages", params, nil, &rawRes); err != nil {
 			return err
 		}
-		
+
 		out = &ChatMessagesDTO{Cursor: safeString(&rawRes.Cursor)}
-		
+
 		// First pass: map message IDs to text for resolving replies within the same batch
-		msgTextMap := make(map[string]string)
+		type msgMeta struct {
+			text      string
+			senderDid string
+		}
+		msgMap := make(map[string]msgMeta)
 		for _, rawMsg := range rawRes.Messages {
 			if typeVal, ok := rawMsg["$type"].(string); ok && typeVal == "chat.bsky.convo.defs#messageView" {
 				if id, ok := rawMsg["id"].(string); ok {
-					if text, ok := rawMsg["text"].(string); ok {
-						msgTextMap[id] = text
+					text, _ := rawMsg["text"].(string)
+					senderDid := ""
+					if sMap, ok := rawMsg["sender"].(map[string]interface{}); ok {
+						senderDid, _ = sMap["did"].(string)
 					}
+					msgMap[id] = msgMeta{text: text, senderDid: senderDid}
 				}
 			}
 		}
@@ -111,7 +118,7 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 				text, _ := rawMsg["text"].(string)
 				sentAt, _ := rawMsg["sentAt"].(string)
 
-				senderName := "Desconhecido"
+				senderName := "Unknown"
 				senderDid := ""
 				if senderMap, ok := rawMsg["sender"].(map[string]interface{}); ok {
 					if did, ok := senderMap["did"].(string); ok {
@@ -120,7 +127,7 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 						if name, ok := memberMap[senderDid]; ok {
 							senderName = name
 						} else if senderDid == c.Auth.Did {
-							senderName = "Você"
+							senderName = "Me"
 						}
 					}
 				}
@@ -141,25 +148,49 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 						}
 					}
 				}
-				
+
+				// Native replyTo field (official API)
+				replyToMessageId := ""
 				replyToText := ""
 				replyToSender := ""
-				if facets, ok := rawMsg["facets"].([]interface{}); ok {
-					for _, f := range facets {
-						if facetMap, ok := f.(map[string]interface{}); ok {
-							if features, ok := facetMap["features"].([]interface{}); ok {
-								for _, feat := range features {
-									if featMap, ok := feat.(map[string]interface{}); ok {
-										if featType, ok := featMap["$type"].(string); ok && featType == "chat.bsky.convo.defs#messageRef" {
-											if parentId, ok := featMap["messageId"].(string); ok {
-												replyToText = msgTextMap[parentId]
-												if replyToText == "" {
-													replyToText = "Mensagem anterior"
-												}
-											}
-										}
-									}
+				if replyToMap, ok := rawMsg["replyTo"].(map[string]interface{}); ok {
+					if parentId, ok := replyToMap["id"].(string); ok {
+						replyToMessageId = parentId
+						if parentText, ok := replyToMap["text"].(string); ok {
+							replyToText = parentText
+						} else if meta, found := msgMap[parentId]; found {
+							replyToText = meta.text
+						}
+						if sMap, ok := replyToMap["sender"].(map[string]interface{}); ok {
+							if did, ok := sMap["did"].(string); ok {
+								if name, found := memberMap[did]; found {
+									replyToSender = name
+								} else if did == c.Auth.Did {
+									replyToSender = "Me"
+								} else {
+									replyToSender = did
 								}
+							}
+						}
+					}
+				}
+
+				// Parse reactions
+				var reactions []ChatReactionDTO
+				if rawReactions, ok := rawMsg["reactions"].([]interface{}); ok {
+					for _, r := range rawReactions {
+						if rMap, ok := r.(map[string]interface{}); ok {
+							value, _ := rMap["value"].(string)
+							senderDidR := ""
+							if sMap, ok := rMap["sender"].(map[string]interface{}); ok {
+								senderDidR, _ = sMap["did"].(string)
+							}
+							if value != "" {
+								reactions = append(reactions, ChatReactionDTO{
+									Value:     value,
+									SenderDID: senderDidR,
+									IsMine:    senderDidR == c.Auth.Did,
+								})
 							}
 						}
 					}
@@ -169,11 +200,14 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 					ID:                 id,
 					Rev:                rev,
 					Sender:             senderName,
+					SenderDID:          senderDid,
 					Text:               text,
 					SentAt:             sentAt,
 					EmbedURI:           embedUri,
+					ReplyToMessageID:   replyToMessageId,
 					ReplyToMessageText: replyToText,
 					ReplyToSender:      replyToSender,
+					Reactions:          reactions,
 				})
 			}
 		}
@@ -181,6 +215,7 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 	})
 	return out, err
 }
+
 
 func (s *ChatService) SendMessage(convoId string, text string) error {
 	ctx := context.Background()
@@ -194,7 +229,6 @@ func (s *ChatService) SendMessage(convoId string, text string) error {
 		msg := &chat.ConvoDefs_MessageInput{
 			Text: text,
 		}
-		// ConvoSendMessage requires a *chat.ConvoDefs_MessageInput
 		_, err := chat.ConvoSendMessage(ctx, chatClient, &chat.ConvoSendMessage_Input{
 			ConvoId: convoId,
 			Message: msg,
@@ -205,6 +239,14 @@ func (s *ChatService) SendMessage(convoId string, text string) error {
 }
 
 func (s *ChatService) SendMessageWithGif(convoId string, text string, gifUrl string) error {
+	return s.sendMessageRaw(convoId, text, gifUrl, "")
+}
+
+func (s *ChatService) SendReply(convoId string, replyToMessageId string, text string, gifUrl string) error {
+	return s.sendMessageRaw(convoId, text, gifUrl, replyToMessageId)
+}
+
+func (s *ChatService) sendMessageRaw(convoId string, text string, gifUrl string, replyToMessageId string) error {
 	ctx := context.Background()
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
@@ -222,18 +264,60 @@ func (s *ChatService) SendMessageWithGif(convoId string, text string, gifUrl str
 			}
 		}
 
-		msg := &chat.ConvoDefs_MessageInput{
-			Text: finalText,
+		msgPayload := map[string]interface{}{
+			"text": finalText,
+		}
+		if replyToMessageId != "" {
+			msgPayload["replyTo"] = map[string]interface{}{
+				"messageId": replyToMessageId,
+			}
 		}
 
-		_, err := chat.ConvoSendMessage(ctx, chatClient, &chat.ConvoSendMessage_Input{
-			ConvoId: convoId,
-			Message: msg,
-		})
-		return err
+		input := map[string]interface{}{
+			"convoId": convoId,
+			"message": msgPayload,
+		}
+
+		var out interface{}
+		return chatClient.Do(ctx, xrpc.Procedure, "application/json", "chat.bsky.convo.sendMessage", nil, input, &out)
 	})
 	return err
 }
+
+func (s *ChatService) AddReaction(convoId string, messageId string, emoji string) error {
+	ctx := context.Background()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		chatClient := &xrpc.Client{
+			Client: c.Client,
+			Host:   "https://api.bsky.chat",
+			Auth:   c.Auth,
+		}
+		_, err := chat.ConvoAddReaction(ctx, chatClient, &chat.ConvoAddReaction_Input{
+			ConvoId:   convoId,
+			MessageId: messageId,
+			Value:     emoji,
+		})
+		return err
+	})
+}
+
+func (s *ChatService) RemoveReaction(convoId string, messageId string, emoji string) error {
+	ctx := context.Background()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		chatClient := &xrpc.Client{
+			Client: c.Client,
+			Host:   "https://api.bsky.chat",
+			Auth:   c.Auth,
+		}
+		_, err := chat.ConvoRemoveReaction(ctx, chatClient, &chat.ConvoRemoveReaction_Input{
+			ConvoId:   convoId,
+			MessageId: messageId,
+			Value:     emoji,
+		})
+		return err
+	})
+}
+
 
 func (s *ChatService) UpdateReadStatus(convoId string, messageId string) error {
 	ctx := context.Background()

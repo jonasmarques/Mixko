@@ -72,13 +72,13 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
     }
   } catch (err) {
     container.setAttribute('aria-busy', 'false');
-    const errText = `Erro ao carregar salvos online: ${String(err)}`;
+    const errText = i18n.t('saved.savedError', { err: String(err) });
     container.innerHTML = `
-      <div role="alert" tabindex="0" style="padding:1rem; border:1px solid red; border-radius:6px; margin:1rem 0;">
-        <p><strong>Erro no servidor:</strong> ${String(err)}</p>
+      <div role="alert" tabindex="0" style="padding:1rem; border:1px solid var(--border-color, #444); border-radius:6px; margin:1rem 0;">
+        <p><strong>${errText}</strong></p>
       </div>
     `;
-    console.error('[DEBUG loadSavedPosts error]', err);
+    console.error('[loadSavedPosts]', err);
     announceAssertive(errText);
   }
 }

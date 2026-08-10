@@ -98,6 +98,12 @@ export async function openChatConvo(convoId: string, members: string, silent = f
       <h3>${i18n.t('chat.convoWithTitle', { members })}</h3>
       <div id="chat-messages" aria-live="polite">${i18n.t('chat.loading')}</div>
       
+      <div id="chat-reply-preview-container" class="hidden" style="margin-top: 10px; border-left: 3px solid var(--primary-bg, #0085ff); padding: 8px; background: rgba(0, 133, 255, 0.08); border-radius: 4px; position: relative;">
+        <button type="button" id="btn-chat-cancel-reply" style="position: absolute; top: 5px; right: 5px; background: transparent; border: none; font-size: 1.1em; cursor: pointer;" data-i18n-aria="chat.cancelReplyAria">✕</button>
+        <div style="font-size: 0.85em; font-weight: bold; color: var(--primary-bg, #0085ff);" id="chat-reply-sender"></div>
+        <div style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="chat-reply-text"></div>
+      </div>
+
       <div id="chat-selected-gif-container" class="hidden" style="margin-top: 10px; border: 1px solid #ccc; padding: 10px; border-radius: 4px; position: relative; max-width: 300px;">
         <button type="button" id="btn-chat-remove-gif" style="position: absolute; top: 5px; right: 5px; background: #d32f2f; color: #fff; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer;">X</button>
         <video id="chat-selected-gif-preview" autoplay loop muted playsinline style="max-width: 100%; max-height: 150px; border-radius: 4px; display: block; margin: 0 auto;"></video>
@@ -111,10 +117,34 @@ export async function openChatConvo(convoId: string, members: string, silent = f
     `;
     
     let chatSelectedGifUrl = "";
+    let replyingToMessageId = "";
 
     const gifContainer = document.getElementById('chat-selected-gif-container') as HTMLDivElement;
     const gifPreview = document.getElementById('chat-selected-gif-preview') as HTMLVideoElement;
+    const replyContainer = document.getElementById('chat-reply-preview-container') as HTMLDivElement;
+    const replySenderEl = document.getElementById('chat-reply-sender') as HTMLDivElement;
+    const replyTextEl = document.getElementById('chat-reply-text') as HTMLDivElement;
     const chatInput = document.getElementById('chat-input') as HTMLInputElement;
+
+    const setReplyingTo = (msgId: string, sender: string, text: string) => {
+      replyingToMessageId = msgId;
+      if (replyContainer && replySenderEl && replyTextEl) {
+        replySenderEl.textContent = `↩ ${sender}`;
+        replyTextEl.textContent = text;
+        replyContainer.classList.remove('hidden');
+      }
+      chatInput?.focus();
+    };
+    (window as any).__chatSetReplyingTo = setReplyingTo;
+
+    const clearReplyingTo = () => {
+      replyingToMessageId = "";
+      if (replyContainer) {
+        replyContainer.classList.add('hidden');
+      }
+    };
+
+    document.getElementById('btn-chat-cancel-reply')?.addEventListener('click', clearReplyingTo);
 
     document.getElementById('btn-back-chat')?.addEventListener('click', () => loadChat(false));
     document.getElementById('btn-mute-chat')?.addEventListener('click', async () => {
@@ -165,10 +195,15 @@ export async function openChatConvo(convoId: string, members: string, silent = f
        if (!text && !chatSelectedGifUrl) return;
        announcePolite(i18n.t('chat.sending'));
        try {
-         await (window as any).go.services.ChatService.SendMessageWithGif(convoId, text, chatSelectedGifUrl);
+         if (replyingToMessageId) {
+           await (window as any).go.services.ChatService.SendReply(convoId, replyingToMessageId, text, chatSelectedGifUrl);
+         } else {
+           await (window as any).go.services.ChatService.SendMessageWithGif(convoId, text, chatSelectedGifUrl);
+         }
          announceAssertive(i18n.t('chat.sent'));
          chatInput.value = "";
          chatSelectedGifUrl = "";
+         clearReplyingTo();
          if (gifContainer && gifPreview) {
              gifContainer.classList.add('hidden');
              gifPreview.src = "";
@@ -191,6 +226,8 @@ export async function openChatConvo(convoId: string, members: string, silent = f
       if (res.messages.length > 0) {
           window.go.services.ChatService.UpdateReadStatus(convoId, res.messages[0].id).catch((e: any) => console.error(e));
       }
+      const EMOJI_PALETTE = ['❤️', '👍', '😂', '😮', '😢', '🔥', '👏', '🎉'];
+
       res.messages.slice().reverse().forEach((msg: any) => {
         const div = document.createElement('div');
         div.classList.add('post-item');
@@ -222,26 +259,131 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         const senderPrefix = msg.sender ? `${msg.sender}${msgDateFormatted ? `, ${msgDateFormatted}` : ""}: ` : "";
         let accessibleLabel = `${senderPrefix}${msg.text || ""}`;
 
-        if (msg.replyToMessageText) {
-            replyInfo = `<div style="border-left: 3px solid var(--brand-color, #1da1f2); padding-left: 10px; margin-bottom: 10px; font-size: 0.9em; opacity: 0.8; background: rgba(29, 161, 242, 0.1); padding: 8px; border-radius: 4px;">
-                <strong>${i18n.t('chat.replyingTo')}</strong> ${linkify(msg.replyToMessageText)}
+        if (msg.replyToMessageText || msg.replyToSender) {
+            const replySenderLabel = msg.replyToSender || i18n.t('chat.replyingTo');
+            replyInfo = `<div style="border-left: 3px solid var(--brand-color, #1da1f2); padding-left: 10px; margin-bottom: 10px; font-size: 0.9em; opacity: 0.85; background: rgba(29, 161, 242, 0.08); padding: 6px 10px; border-radius: 4px;">
+                <strong>↩ ${replySenderLabel}:</strong> ${linkify(msg.replyToMessageText || "")}
             </div>`;
-            accessibleLabel = i18n.t('chat.replyingToAccessible', { msg: msg.replyToMessageText, rest: accessibleLabel });
+            accessibleLabel = i18n.t('chat.replyingToAccessible', { msg: msg.replyToMessageText || "", rest: accessibleLabel });
         }
         
+        // Group reactions by emoji value
+        const reactionCounts: Record<string, { count: number; isMine: boolean }> = {};
+        if (msg.reactions && Array.isArray(msg.reactions)) {
+          msg.reactions.forEach((r: any) => {
+            if (!reactionCounts[r.value]) {
+              reactionCounts[r.value] = { count: 0, isMine: false };
+            }
+            reactionCounts[r.value].count++;
+            if (r.isMine) reactionCounts[r.value].isMine = true;
+          });
+        }
+
+        let reactionsHtml = '';
+        Object.entries(reactionCounts).forEach(([emoji, data]) => {
+          const bgStyle = data.isMine ? 'background: var(--primary-bg, #0085ff); color: white; border-color: var(--primary-bg, #0085ff);' : 'background: rgba(255,255,255,0.1); border: 1px solid var(--border-color, #444);';
+          reactionsHtml += `<button type="button" class="btn-chat-reaction" data-msg-id="${msg.id}" data-emoji="${emoji}" data-is-mine="${data.isMine}" style="padding: 2px 6px; border-radius: 12px; font-size: 0.85em; cursor: pointer; margin-right: 4px; margin-top: 4px; ${bgStyle}">${emoji} ${data.count}</button>`;
+        });
+
+        // Emoji picker html
+        let emojiPickerButtons = EMOJI_PALETTE.map(emoji => 
+          `<button type="button" class="btn-add-emoji" data-msg-id="${msg.id}" data-emoji="${emoji}" style="border: none; background: transparent; font-size: 1.2em; cursor: pointer; padding: 2px 4px; border-radius: 4px;">${emoji}</button>`
+        ).join('');
+
+        let emojiPickerHtml = `<div class="chat-emoji-picker" id="emoji-picker-${msg.id}" style="display: none; position: absolute; right: 0; top: -35px; background: var(--card-bg, #1e2732); border: 1px solid var(--border-color, #38444d); border-radius: 20px; padding: 4px 8px; gap: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10;">
+          ${emojiPickerButtons}
+        </div>`;
+
         div.dataset.text = accessibleLabel;
         div.setAttribute('aria-label', div.dataset.text);
+        div.style.position = 'relative';
         div.innerHTML = `
-          <div aria-hidden="true">
-            ${replyInfo}
-            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-              <div><strong>${msg.sender}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${msgDateFormatted}</small>` : ''}</div>
-              <button class="btn-delete-msg" data-id="${msg.id}" style="padding:2px 6px; font-size:0.8em;">${i18n.t('chat.delete')}</button>
-            </div>
+          ${replyInfo}
+          <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div><strong>${msg.sender}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${msgDateFormatted}</small>` : ''}</div>
+          </header>
+          <div class="post-content">
             <p style="margin:4px 0;">${msgContent}</p>
             ${embedInfo}
           </div>
+          <div class="chat-msg-actions" aria-label="${i18n.t('chat.actionsAria')}">
+            <button type="button" class="btn-reply-msg" data-id="${msg.id}" data-sender="${msg.sender}" data-text="${msg.text ? msg.text.replace(/"/g, '&quot;') : ''}" aria-label="${i18n.t('chat.replyBtnAria', { sender: msg.sender })}" title="${i18n.t('chat.replyBtn')}">↩ ${i18n.t('chat.replyBtn')}</button>
+            <button type="button" class="btn-show-reactions" data-msg-id="${msg.id}" aria-label="${i18n.t('chat.reactBtnAria', { sender: msg.sender })}" title="${i18n.t('chat.reactBtn')}">😀 ${i18n.t('chat.reactBtn')}</button>
+            ${emojiPickerHtml}
+            <button type="button" class="btn-delete-msg" data-id="${msg.id}" aria-label="${i18n.t('chat.deleteMsgAria', { sender: msg.sender })}" title="${i18n.t('chat.delete')}">🗑️ ${i18n.t('chat.delete')}</button>
+          </div>
+          <div class="chat-reactions-container">
+            ${reactionsHtml}
+          </div>
         `;
+
+        // Toggle emoji picker visibility
+        const pickerEl = div.querySelector(`#emoji-picker-${msg.id}`) as HTMLDivElement;
+        div.querySelector('.btn-show-reactions')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (pickerEl) {
+            const isHidden = pickerEl.style.display === 'none';
+            pickerEl.style.display = isHidden ? 'flex' : 'none';
+            if (isHidden) {
+              const firstEmojiBtn = pickerEl.querySelector('.btn-add-emoji') as HTMLButtonElement;
+              firstEmojiBtn?.focus();
+            }
+          }
+        });
+
+        // Add reaction from picker
+        div.querySelectorAll('.btn-add-emoji').forEach((btn) => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const emoji = (btn as HTMLElement).dataset.emoji || "";
+            if (pickerEl) pickerEl.style.display = 'none';
+            try {
+              await (window as any).go.services.ChatService.AddReaction(convoId, msg.id, emoji);
+              openChatConvo(convoId, members, true);
+            } catch (err) {
+              announceAssertive(i18n.t('chat.addReactionError'));
+            }
+          });
+        });
+
+        // Toggle existing reaction click (add/remove)
+        div.querySelectorAll('.btn-chat-reaction').forEach((btn) => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const emoji = (btn as HTMLElement).dataset.emoji || "";
+            const isMine = (btn as HTMLElement).dataset.isMine === "true";
+            try {
+              if (isMine) {
+                await (window as any).go.services.ChatService.RemoveReaction(convoId, msg.id, emoji);
+              } else {
+                await (window as any).go.services.ChatService.AddReaction(convoId, msg.id, emoji);
+              }
+              openChatConvo(convoId, members, true);
+            } catch (err) {
+              announceAssertive(isMine ? i18n.t('chat.removeReactionError') : i18n.t('chat.addReactionError'));
+            }
+          });
+        });
+
+        // Reply button listener
+        div.querySelector('.btn-reply-msg')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const target = e.currentTarget as HTMLElement;
+          const msgId = target.dataset.id || msg.id;
+          const sender = target.dataset.sender || msg.sender;
+          const text = target.dataset.text || msg.text || "";
+          // Populate reply bar
+          const setReplyFn = (window as any).__chatSetReplyingTo;
+          if (setReplyFn) {
+            setReplyFn(msgId, sender, text);
+          } else {
+            const input = document.getElementById('chat-input') as HTMLInputElement;
+            if (input) {
+              input.value = `↩ @${sender}: `;
+              input.focus();
+            }
+          }
+        });
         
         div.querySelector('.btn-delete-msg')?.addEventListener('click', async (e) => {
           e.stopPropagation();

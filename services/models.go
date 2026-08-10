@@ -219,15 +219,24 @@ type ChatConvoDTO struct {
 	UnreadCount   int64  `json:"unreadCount"`
 }
 
+type ChatReactionDTO struct {
+	Value     string `json:"value"`
+	SenderDID string `json:"senderDid"`
+	IsMine    bool   `json:"isMine"`
+}
+
 type ChatMessageDTO struct {
-	ID                 string `json:"id"`
-	Rev                string `json:"rev"`
-	Sender             string `json:"sender"`
-	Text               string `json:"text"`
-	SentAt             string `json:"sentAt"`
-	EmbedURI           string `json:"embedUri,omitempty"`
-	ReplyToMessageText string `json:"replyToMessageText,omitempty"`
-	ReplyToSender      string `json:"replyToSender,omitempty"`
+	ID                 string             `json:"id"`
+	Rev                string             `json:"rev"`
+	Sender             string             `json:"sender"`
+	SenderDID          string             `json:"senderDid"`
+	Text               string             `json:"text"`
+	SentAt             string             `json:"sentAt"`
+	EmbedURI           string             `json:"embedUri,omitempty"`
+	ReplyToMessageID   string             `json:"replyToMessageId,omitempty"`
+	ReplyToMessageText string             `json:"replyToMessageText,omitempty"`
+	ReplyToSender      string             `json:"replyToSender,omitempty"`
+	Reactions          []ChatReactionDTO  `json:"reactions,omitempty"`
 }
 
 type ChatMessagesDTO struct {

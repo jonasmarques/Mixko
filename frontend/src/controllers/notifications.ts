@@ -77,8 +77,11 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
       if (notif.reason === 'like') {
         verb = count === 1 ? i18n.t('notif.likedYourPost') : i18n.t('notif.likedYourPostPlural');
       } else {
-        const targetNoun = group.isRepostOfRepost ? i18n.t('notif.yourRepost') : i18n.t('notif.yourPost');
-        verb = count === 1 ? `${i18n.t('notif.reposted')} ${targetNoun}` : `${i18n.t('notif.reposted')} ${targetNoun}`;
+        if (group.isRepostOfRepost) {
+          verb = count === 1 ? i18n.t('notif.repostedYourRepost') : i18n.t('notif.repostedYourRepostPlural');
+        } else {
+          verb = count === 1 ? i18n.t('notif.repostedYourPost') : i18n.t('notif.repostedYourPostPlural');
+        }
       }
 
       let cleanOrig = group.origText;

@@ -557,4 +557,107 @@ kbd {
   font-weight: 500;
 }
 
+/* Chat Message Actions & Reactions */
+.chat-msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  position: relative;
+}
+
+.chat-msg-actions button {
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: calc(0.95rem * var(--font-scale));
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn-reply-msg {
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  border: 1px solid var(--border-color);
+}
+
+.btn-reply-msg:hover {
+  background-color: var(--button-hover);
+}
+
+.btn-show-reactions {
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  border: 1px solid var(--border-color);
+}
+
+.btn-show-reactions:hover {
+  background-color: var(--button-hover);
+}
+
+.btn-delete-msg {
+  background-color: var(--danger-bg, rgba(211, 47, 47, 0.1));
+  color: var(--danger-text, #ff5252);
+  border: 1px solid var(--danger-border, #d32f2f);
+}
+
+.btn-delete-msg:hover {
+  opacity: 0.85;
+}
+
+.chat-emoji-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background-color: var(--bg-panel, #1e2732);
+  border: 1px solid var(--border-color, #38444d);
+  border-radius: 24px;
+  padding: 6px 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  z-index: 100;
+}
+
+.chat-emoji-picker button.btn-add-emoji {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  font-size: 1.35em;
+  border-radius: 50%;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-emoji-picker button.btn-add-emoji:hover,
+.chat-emoji-picker button.btn-add-emoji:focus {
+  background-color: rgba(255, 255, 255, 0.15);
+  transform: scale(1.2);
+}
+
+.chat-reactions-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.btn-chat-reaction {
+  min-height: 30px !important;
+  padding: 2px 10px !important;
+  border-radius: 16px !important;
+  font-size: calc(0.9rem * var(--font-scale)) !important;
+  font-weight: 600 !important;
+}
+
 

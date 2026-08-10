@@ -789,6 +789,13 @@ export function setupShortcuts() {
             }
             if (state.focusedPostIndex >= 0 && state.currentPosts[state.focusedPostIndex]) {
                 const p = state.currentPosts[state.focusedPostIndex];
+                if (state.currentTab === 'chat') {
+                    const reactBtn = p.querySelector('.btn-show-reactions') as HTMLButtonElement;
+                    if (reactBtn) {
+                        reactBtn.click();
+                        break;
+                    }
+                }
                 const targetUri = p.dataset.uri;
                 if (targetUri) {
                     announcePolite(i18n.t('shortcuts.expandingTree'));
@@ -997,11 +1004,17 @@ export function setupShortcuts() {
             case 'r':
                 e.preventDefault();
                 if (state.currentTab === 'chat') {
-                    if (document.getElementById('chat-input')) {
-                        const input = document.getElementById('chat-message-input') as HTMLTextAreaElement;
-                        input?.focus();
-                        announcePolite(i18n.t('shortcuts.chatReplyMode'));
+                    if (state.focusedPostIndex >= 0 && state.currentPosts[state.focusedPostIndex]) {
+                        const postEl = state.currentPosts[state.focusedPostIndex];
+                        const replyBtn = postEl.querySelector('.btn-reply-msg') as HTMLButtonElement;
+                        if (replyBtn) {
+                            replyBtn.click();
+                            break;
+                        }
                     }
+                    const input = document.getElementById('chat-input') as HTMLInputElement;
+                    input?.focus();
+                    announcePolite(i18n.t('shortcuts.chatReplyMode'));
                     break;
                 }
                 if (state.currentTab === 'settings') break;
