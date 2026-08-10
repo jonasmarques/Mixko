@@ -1,3 +1,5 @@
+**Idioma / Language:** 🇧🇷 Português | [🇺🇸 English](shortcuts.md) | [🇪🇸 Español](atajos.md)
+
 # Guia Completo de Atalhos de Teclado - Mixko
 
 O **Mixko** foi projetado com foco total em acessibilidade e produtividade por meio do uso do teclado. Praticamente todas as ações da aplicação possuem atalhos dedicados.

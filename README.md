@@ -1,3 +1,5 @@
+ **Idioma / Language:** 🇧🇷 Português | [🇺🇸 English](README-en.md) | [🇪🇸 Español](README-es.md)
+
 # Mixko
 
 Mixko é um aplicativo multiplataforma alternativo para o Bluesky cujo foco principal é a acessibilidade para pessoas cegas e com baixa visão.
