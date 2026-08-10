@@ -174,7 +174,8 @@ func ProcessAndCompressImage(r io.Reader, maxWidth, maxHeight int, maxSizeBytes 
 	img, _, err := image.Decode(bytes.NewReader(rawBytes))
 	if err != nil {
 		if len(rawBytes) > 0 && len(rawBytes) <= maxSizeBytes {
-			return bytes.NewReader(rawBytes), "image/jpeg", nil
+			detectedMime := http.DetectContentType(rawBytes)
+			return bytes.NewReader(rawBytes), detectedMime, nil
 		}
 		return nil, "", fmt.Errorf("failed to decode image: %w", err)
 	}
