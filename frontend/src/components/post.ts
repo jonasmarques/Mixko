@@ -1,14 +1,76 @@
 import Hls from 'hls.js';
-import { linkify } from '../utils/helpers';
+import { linkify, esc, escUrl } from '../utils/helpers';
 import { formatPostDate } from '../utils/format';
 import { announcePolite, announceAssertive, getPostAccessibleLabel, formatAuthor } from '../utils/a11y';
 import { confirmDialog } from '../utils/dialog';
 import { state } from '../config/state';
+import type { PostView, ImageDTO } from '../types/dto';
 // TODO: extract openComposeModal to controllers/compose
 import { openComposeModal } from '../controllers/compose';
 import { i18n } from '../utils/i18n';
 
-export function createPostArticle(post: any, index: number, isNotification = false, notifReason = ""): HTMLElement {
+/** Notification reasons that carry no post, so reply/like counts are meaningless. */
+const POSTLESS_NOTIF_REASONS = ['follow', 'starterpack-joined', 'verified', 'unverified', 'contact-match'];
+
+/** Reasons rendered as a plain record of what someone did, with no post to act on. */
+const ACTIONLESS_NOTIF_REASONS = [...POSTLESS_NOTIF_REASONS, 'like', 'repost', 'like-via-repost', 'repost-via-repost'];
+
+/**
+ * Joins image descriptions for display, substituting a translated placeholder
+ * for images the author left undescribed.
+ */
+function formatAltList(alts: string[]): string {
+  return alts.map(alt => alt && alt.trim() !== '' ? alt : i18n.t('post.noImageDescription')).join(' | ');
+}
+
+/**
+ * Live HLS players, keyed by the video element they drive.
+ *
+ * Switching tabs or reloading a feed replaces whole subtrees of the DOM. Any
+ * player left attached to a discarded element keeps its buffers and network
+ * requests alive, so they are tracked here and disposed of once their element
+ * is gone.
+ */
+const activePlayers = new Map<HTMLVideoElement, Hls>();
+
+/** One observer for all players; one per video would be far more expensive. */
+let playerObserver: MutationObserver | null = null;
+
+function reapDetachedPlayers(): void {
+  for (const [video, hls] of activePlayers) {
+    if (!video.isConnected) {
+      hls.destroy();
+      activePlayers.delete(video);
+    }
+  }
+
+  if (activePlayers.size === 0 && playerObserver) {
+    playerObserver.disconnect();
+    playerObserver = null;
+  }
+}
+
+/** Attaches an HLS stream and registers the player for cleanup. */
+function attachHlsStream(video: HTMLVideoElement, playlist: string): void {
+  if (!Hls.isSupported()) {
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = playlist;
+    }
+    return;
+  }
+
+  const hls = new Hls();
+  hls.loadSource(playlist);
+  hls.attachMedia(video);
+  activePlayers.set(video, hls);
+
+  if (!playerObserver) {
+    playerObserver = new MutationObserver(reapDetachedPlayers);
+    playerObserver.observe(document.body, { childList: true, subtree: true });
+  }
+}
+
+export function createPostArticle(post: PostView, index: number, isNotification = false, notifReason = ""): HTMLElement {
   const article = document.createElement('article');
   article.setAttribute('role', 'article');
   article.setAttribute('tabindex', '0');
@@ -42,10 +104,10 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     const isDidRoot = post.rootAuthor ? post.rootAuthor.startsWith('did:') : false;
     if (!isDidReply) {
       if (post.rootAuthor && !isDidRoot && post.rootAuthor !== post.replyToAuthor && post.rootAuthor !== state.currentHandle) {
-          replyContext = `<div class="reply-context"><small>${i18n.t('post.inReplyTo', { handle: post.replyToAuthor })} (${i18n.t('post.threadOf', { handle: post.rootAuthor })}):</small></div>`;
+          replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyTo', { handle: post.replyToAuthor }))} (${esc(i18n.t('post.threadOf', { handle: post.rootAuthor }))}):</small></div>`;
           article.dataset.rootAuthor = post.rootAuthor;
       } else {
-          replyContext = `<div class="reply-context"><small>${i18n.t('post.inReplyTo', { handle: post.replyToAuthor })}:</small></div>`;
+          replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyTo', { handle: post.replyToAuthor }))}:</small></div>`;
       }
     }
   }
@@ -56,26 +118,26 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     if (post.repostedByHandle) {
       article.dataset.repostedByHandle = post.repostedByHandle;
     }
-    repostContext = `<div class="repost-context"><small>${i18n.t('post.repostedBy', { handle: post.repostedBy })}</small></div>`;
+    repostContext = `<div class="repost-context"><small>${esc(i18n.t('post.repostedBy', { handle: post.repostedBy }))}</small></div>`;
   }
 
   let altsContext = "";
   if (post.imageAlts && post.imageAlts.length > 0) {
       article.dataset.hasImage = "true";
       article.dataset.alts = post.imageAlts.join(" | ");
-      altsContext = `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${post.imageAlts.join(" | ")}</small></div>`;
+      altsContext = `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${esc(formatAltList(post.imageAlts))}</small></div>`;
   }
 
   let imagesHtml = "";
   if (post.images && post.images.length > 0) {
       const count = post.images.length;
       const layoutClass = count === 1 ? 'single-image' : (count === 2 ? 'two-images' : (count === 3 ? 'three-images' : 'four-images'));
-      const imgElements = post.images.map((img: any) => {
+      const imgElements = post.images.map((img: ImageDTO) => {
           const src = img.thumb || img.fullsize;
           const alt = img.alt || i18n.t('post.attachedImageAlt');
           return `<div class="post-image-item">
-            <a href="${img.fullsize || src}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${i18n.t('post.openFullImage', { alt })}">
-              <img src="${src}" alt="${alt}" loading="lazy" class="post-image-img" />
+            <a href="${escUrl(img.fullsize || src)}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${esc(i18n.t('post.openFullImage', { alt }))}">
+              <img src="${escUrl(src)}" alt="${esc(alt)}" loading="lazy" class="post-image-img" />
             </a>
           </div>`;
       }).join('');
@@ -108,48 +170,48 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     if (post.quotePost.images && post.quotePost.images.length > 0) {
       const count = post.quotePost.images.length;
       const layoutClass = count === 1 ? 'single-image' : 'two-images';
-      const qImgElements = post.quotePost.images.map((img: any) => {
+      const qImgElements = post.quotePost.images.map((img: ImageDTO) => {
         const src = img.thumb || img.fullsize;
         const alt = img.alt || i18n.t('post.quoteImageAlt');
         return `<div class="post-image-item">
-          <a href="${img.fullsize || src}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${i18n.t('post.openFullImage', { alt })}">
-            <img src="${src}" alt="${alt}" loading="lazy" class="post-image-img" />
+          <a href="${escUrl(img.fullsize || src)}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${esc(i18n.t('post.openFullImage', { alt }))}">
+            <img src="${escUrl(src)}" alt="${esc(alt)}" loading="lazy" class="post-image-img" />
           </a>
         </div>`;
       }).join('');
       quoteMediaHtml += `<div class="post-images-grid ${layoutClass}" style="margin-top: 8px;">${qImgElements}</div>`;
     }
     if (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0) {
-      quoteMediaHtml += `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${post.quotePost.imageAlts.join(" | ")}</small></div>`;
+      quoteMediaHtml += `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${esc(formatAltList(post.quotePost.imageAlts))}</small></div>`;
     }
     if (post.quotePost.video) {
       const isGif = post.quotePost.video.presentation === 'gif';
       const altText = post.quotePost.video.alt || i18n.t('post.noAlt');
-      const posterAttr = post.quotePost.video.thumbnail ? `poster="${post.quotePost.video.thumbnail}"` : '';
+      const posterAttr = post.quotePost.video.thumbnail ? `poster="${escUrl(post.quotePost.video.thumbnail)}"` : '';
       quoteMediaHtml += `
         <div class="video-context quoted-video-context" style="margin-top: 10px;">
           <video class="post-video quoted-post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls'} ${posterAttr}>
               ${i18n.t('post.videoNoSupport')}
           </video>
-          <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${altText}</small></div>
+          <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${esc(altText)}</small></div>
         </div>
       `;
     }
     if (post.quotePost.external) {
       quoteMediaHtml += `<div class="external-card" style="border:1px solid #ddd;padding:6px;margin-top:6px;border-radius:4px;font-size:0.85em;">
-        <strong>${post.quotePost.external.title || post.quotePost.external.uri}</strong>
-        ${post.quotePost.external.description ? `<p style="margin:2px 0 0 0;">${post.quotePost.external.description}</p>` : ""}
+        <strong>${esc(post.quotePost.external.title || post.quotePost.external.uri)}</strong>
+        ${post.quotePost.external.description ? `<p style="margin:2px 0 0 0;">${esc(post.quotePost.external.description)}</p>` : ""}
       </div>`;
     }
 
     quoteContext = `
       <div class="quote-context" style="border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 5px;">
         <header>
-          <strong>${post.quotePost.authorName || post.quotePost.authorHandle}</strong>
-          <span>@${post.quotePost.authorHandle}</span>
+          <strong>${esc(post.quotePost.authorName || post.quotePost.authorHandle)}</strong>
+          <span>@${esc(post.quotePost.authorHandle)}</span>
         </header>
         <div class="post-content">
-          <p>${post.quotePost.text || (post.quotePost.hasMedia ? i18n.t('post.mediaAttached') : i18n.t('post.contentNotAvailable'))}</p>
+          <p>${post.quotePost.text ? linkify(post.quotePost.text) : i18n.t(post.quotePost.hasMedia ? 'post.mediaAttached' : 'post.contentNotAvailable')}</p>
           ${quoteMediaHtml}
         </div>
       </div>
@@ -159,7 +221,9 @@ export function createPostArticle(post: any, index: number, isNotification = fal
 
   let notifContext = "";
   if (isNotification) {
-    let tReason = notifReason;
+    // Never fall back to notifReason itself: an unmapped reason would surface
+    // its raw lexicon value ("starterpack-joined") in the interface.
+    let tReason = i18n.t('post.notifGeneric');
     if (notifReason === 'repost') {
       const isRepostOfRepost = Boolean(post.isRepostOfRepost);
       tReason = isRepostOfRepost ? i18n.t('post.notifRepostOfRepost') : i18n.t('post.notifRepost');
@@ -169,6 +233,13 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     else if (notifReason === 'quote') tReason = i18n.t('post.notifQuote');
     else if (notifReason === 'mention') tReason = i18n.t('post.notifMention');
     else if (notifReason === 'follow') tReason = i18n.t('post.notifFollow');
+    else if (notifReason === 'repost-via-repost') tReason = i18n.t('post.notifRepostViaRepost');
+    else if (notifReason === 'like-via-repost') tReason = i18n.t('post.notifLikeViaRepost');
+    else if (notifReason === 'starterpack-joined') tReason = i18n.t('post.notifStarterPack');
+    else if (notifReason === 'verified') tReason = i18n.t('post.notifVerified');
+    else if (notifReason === 'unverified') tReason = i18n.t('post.notifUnverified');
+    else if (notifReason === 'subscribed-post') tReason = i18n.t('post.notifSubscribedPost');
+    else if (notifReason === 'contact-match') tReason = i18n.t('post.notifContactMatch');
     notifContext = `<div class="notif-context" aria-hidden="true"><strong>${i18n.t('post.newNotification')} ${tReason}</strong></div>`;
   }
 
@@ -180,9 +251,9 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     
     externalContext = `
       <div class="external-card" style="border: 1px solid #ddd; padding: 8px; margin-top: 8px; border-radius: 4px;">
-        ${post.external.thumb ? `<img src="${post.external.thumb}" alt="${i18n.t('post.linkThumbAlt')}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
-        <strong><a href="${post.external.uri}" target="_blank" rel="noopener noreferrer">${post.external.title || post.external.uri}</a></strong>
-        ${post.external.description ? `<p style="font-size: 0.85em; margin: 4px 0 0 0; color: var(--text-muted, #666);">${post.external.description}</p>` : ''}
+        ${post.external.thumb ? `<img src="${escUrl(post.external.thumb)}" alt="${esc(i18n.t('post.linkThumbAlt'))}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
+        <strong><a href="#" data-external-url="${escUrl(post.external.uri)}">${esc(post.external.title || post.external.uri)}</a></strong>
+        ${post.external.description ? `<p style="font-size: 0.85em; margin: 4px 0 0 0; color: var(--text-muted, #666);">${esc(post.external.description)}</p>` : ''}
       </div>
     `;
   }
@@ -195,14 +266,14 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     if (isGif) article.dataset.videoIsGif = 'true';
     article.dataset.videoPlaylist = post.video.playlist;
     if (post.video.alt) article.dataset.videoAlt = post.video.alt;
-    const posterAttr = post.video.thumbnail ? `poster="${post.video.thumbnail}"` : '';
+    const posterAttr = post.video.thumbnail ? `poster="${escUrl(post.video.thumbnail)}"` : '';
     
     videoContext = `
       <div class="video-context" style="margin-top: 10px;">
         <video class="post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls playsinline preload="metadata"'} ${posterAttr}>
             ${i18n.t('post.videoNoSupport')}
         </video>
-        <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${post.video.alt ? post.video.alt : i18n.t('post.noAlt')}</small></div>
+        <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${esc(post.video.alt || i18n.t('post.noAlt'))}</small></div>
       </div>
     `;
   }
@@ -211,9 +282,12 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   let likeBtnLabel = post.viewerLike ? i18n.t('post.unlikeBtn') : i18n.t('post.likeBtn');
   let repostBtnLabel = post.viewerRepost ? i18n.t('post.undoRepostBtn') : i18n.t('post.repostBtn');
   let bookmarkBtnLabel = post.viewerBookmark ? i18n.t('post.savedBtn') : i18n.t('post.saveBtn');
-  const isOwner = (post.authorHandle === state.loggedInHandle) || (post.authorDid === state.loggedInHandle) || (post.authorName === state.loggedInHandle);
+  // Only the DID and handle identify an account. Matching on authorName would
+  // let anyone reveal owner-only actions by copying the user's display name.
+  const isOwner = Boolean(post.authorDid && post.authorDid === state.loggedInDid) ||
+    Boolean(post.authorHandle && post.authorHandle === state.loggedInHandle);
   
-  if (!isNotification || notifReason !== 'follow') {
+  if (!isNotification || !POSTLESS_NOTIF_REASONS.includes(notifReason)) {
     footerHtml = `
     <div class="post-metrics" aria-label="${i18n.t('post.metricsAria')}">
       <div class="metric-item metric-replies" aria-label="${i18n.t('post.repliesAria', { count: (post.replyCount || 0).toString() })}">${i18n.t('post.metricRepliesCount', { count: (post.replyCount || 0).toString() })}</div>
@@ -222,10 +296,10 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     </div>
     `;
   }
-  if (!isNotification || !['like', 'repost', 'follow'].includes(notifReason)) {
+  if (!isNotification || !ACTIONLESS_NOTIF_REASONS.includes(notifReason)) {
     footerHtml += `
     <footer aria-label="${i18n.t('post.actionsAria')}">
-      <button class="btn-reply" aria-label="${i18n.t('post.replyAria', { handle: post.authorHandle })}">${i18n.t('post.actionReply')}</button>
+      <button class="btn-reply" aria-label="${esc(i18n.t('post.replyAria', { handle: post.authorHandle }))}">${i18n.t('post.actionReply')}</button>
       <button class="btn-repost" aria-label="${post.viewerRepost ? i18n.t('post.unrepostAria') : i18n.t('post.repostAria')}">${repostBtnLabel}</button>
       <button class="btn-quote" aria-label="${i18n.t('post.quoteAria')}">${i18n.t('post.actionQuote')}</button>
       <button class="btn-like" aria-label="${post.viewerLike ? i18n.t('post.unlikeAria') : i18n.t('post.likeAria')}">${likeBtnLabel}</button>
@@ -311,8 +385,8 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     }
   });
 
-  const formattedTime = formatPostDate(post.createdAt || post.indexedAt);
-  const authorDisplay = formatAuthor(post.authorName, post.authorHandle);
+  const formattedTime = formatPostDate(post.createdAt || post.indexedAt || "");
+  const authorDisplay = formatAuthor(post.authorName ?? '', post.authorHandle);
   const showHandleSpan = (state.nameDisplayFormat !== 'handle') && post.authorHandle && (post.authorHandle !== authorDisplay);
 
   const innerHtmlContent = `
@@ -320,9 +394,9 @@ export function createPostArticle(post: any, index: number, isNotification = fal
     ${repostContext}
     ${replyContext}
     <header>
-      <strong>${authorDisplay}</strong>
-      ${showHandleSpan ? `<span>@${post.authorHandle}</span>` : ''}
-      <small>${formattedTime}</small>
+      <strong>${esc(authorDisplay)}</strong>
+      ${showHandleSpan ? `<span>@${esc(post.authorHandle)}</span>` : ''}
+      <small>${esc(formattedTime)}</small>
     </header>
     <div class="post-content">
       <p>${post.text ? linkify(post.text) : (post.hasMedia ? i18n.t('post.attachedMediaFallback') : (post.quotePost ? i18n.t('post.quotedPostFallback') : i18n.t('post.contentUnavailableFallback')))}</p>
@@ -338,52 +412,36 @@ export function createPostArticle(post: any, index: number, isNotification = fal
   if (postHasMutedWord) {
       article.innerHTML = `
         <div class="muted-warning" style="padding: 15px; background: #fff3cd; color: #856404; border-radius: 5px; text-align: center;">
-            <p>${i18n.t('post.mutedWarning', { word: triggeredMutedWord })}</p>
+            <p>${esc(i18n.t('post.mutedWarning', { word: triggeredMutedWord }))}</p>
             <button class="btn-show-muted" style="background: transparent; border: 1px solid #856404; color: #856404; padding: 5px 10px; border-radius: 3px; cursor: pointer;">${i18n.t('post.showAnyway')}</button>
         </div>
         <div class="muted-content" style="display: none;">
             ${innerHtmlContent}
         </div>
       `;
-      setTimeout(() => {
-          article.querySelector('.btn-show-muted')?.addEventListener('click', (e) => {
-              e.stopPropagation();
-              const contentDiv = article.querySelector('.muted-content') as HTMLElement;
-              const warningDiv = article.querySelector('.muted-warning') as HTMLElement;
-              if (contentDiv) contentDiv.style.display = 'block';
-              if (warningDiv) warningDiv.style.display = 'none';
-              announcePolite(i18n.t('post.contentShown'));
-          });
-      }, 0);
+      // The markup above is already in the DOM, so the button can be wired up
+      // directly.
+      article.querySelector('.btn-show-muted')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const contentDiv = article.querySelector('.muted-content') as HTMLElement;
+          const warningDiv = article.querySelector('.muted-warning') as HTMLElement;
+          if (contentDiv) contentDiv.style.display = 'block';
+          if (warningDiv) warningDiv.style.display = 'none';
+          announcePolite(i18n.t('post.contentShown'));
+      });
   } else {
       article.innerHTML = innerHtmlContent;
   }
-  
+
   // HLS binding
-  if (post.video) {
-     const vid = (article.querySelector('.root-post-video') || article.querySelector('.post-video:not(.quoted-post-video)')) as HTMLVideoElement;
-     if (vid && post.video.playlist) {
-         if (Hls.isSupported()) {
-             const hls = new Hls();
-             hls.loadSource(post.video.playlist);
-             hls.attachMedia(vid);
-         } else if (vid.canPlayType('application/vnd.apple.mpegurl')) {
-             vid.src = post.video.playlist;
-         }
-     }
+  if (post.video?.playlist) {
+     const vid = (article.querySelector('.root-post-video') || article.querySelector('.post-video:not(.quoted-post-video)')) as HTMLVideoElement | null;
+     if (vid) attachHlsStream(vid, post.video.playlist);
   }
 
-  if (post.quotePost && post.quotePost.video) {
-     const qVid = article.querySelector('.quoted-post-video') as HTMLVideoElement;
-     if (qVid && post.quotePost.video.playlist) {
-         if (Hls.isSupported()) {
-             const hls = new Hls();
-             hls.loadSource(post.quotePost.video.playlist);
-             hls.attachMedia(qVid);
-         } else if (qVid.canPlayType('application/vnd.apple.mpegurl')) {
-             qVid.src = post.quotePost.video.playlist;
-         }
-     }
+  if (post.quotePost?.video?.playlist) {
+     const qVid = article.querySelector('.quoted-post-video') as HTMLVideoElement | null;
+     if (qVid) attachHlsStream(qVid, post.quotePost.video.playlist);
   }
 
   // Interactions

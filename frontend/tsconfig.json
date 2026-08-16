@@ -20,5 +20,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Unit tests compile through tsconfig.test.json, which targets node.
+  "exclude": ["src/**/*.test.ts", "src/utils/node-test.d.ts"]
 }

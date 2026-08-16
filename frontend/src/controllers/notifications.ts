@@ -3,13 +3,16 @@ import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
 import { i18n } from '../utils/i18n';
 
+/** Reasons whose post lives in reasonSubject, so several of them collapse into one row. */
+const GROUPABLE_REASONS = ['like', 'repost', 'like-via-repost', 'repost-via-repost'];
+
 function groupNotificationsList(notifications: any[], hydratedMap: Record<string, any> = {}): any[] {
   const result: any[] = [];
   const groupMap = new Map<string, { main: any; authors: string[]; origText: string; isRepostOfRepost: boolean }>();
   const groupOrder: string[] = [];
 
   notifications.forEach((notif: any) => {
-    if ((notif.reason === 'like' || notif.reason === 'repost') && notif.reasonSubject) {
+    if (GROUPABLE_REASONS.includes(notif.reason) && notif.reasonSubject) {
       const key = `${notif.reason}:${notif.reasonSubject}`;
       const authorLabel = formatAuthor(notif.authorName, notif.authorHandle);
       
@@ -17,9 +20,9 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
       const hydrated = hydratedMap[notif.uri] || hydratedMap[postUri];
       let isRepostOfRepost = false;
       if (notif.reason === 'repost' && hydrated) {
-        const isMyPost = (hydrated.authorHandle === state.loggedInHandle) ||
-                         (hydrated.authorDid === state.loggedInHandle) ||
-                         (hydrated.authorName === state.loggedInHandle);
+        // Identity is the DID or the handle; a display name proves nothing.
+        const isMyPost = Boolean(hydrated.authorDid && hydrated.authorDid === state.loggedInDid) ||
+                         Boolean(hydrated.authorHandle && hydrated.authorHandle === state.loggedInHandle);
         if (!isMyPost) {
           isRepostOfRepost = true;
         }
@@ -73,15 +76,18 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
 
       notif.authorName = combinedAuthorName;
 
+      const plural = count > 1;
       let verb = "";
       if (notif.reason === 'like') {
-        verb = count === 1 ? i18n.t('notif.likedYourPost') : i18n.t('notif.likedYourPostPlural');
+        verb = plural ? i18n.t('notif.likedYourPostPlural') : i18n.t('notif.likedYourPost');
+      } else if (notif.reason === 'like-via-repost') {
+        verb = plural ? i18n.t('notif.likedViaYourRepostPlural') : i18n.t('notif.likedViaYourRepost');
+      } else if (notif.reason === 'repost-via-repost') {
+        verb = plural ? i18n.t('notif.repostedViaYourRepostPlural') : i18n.t('notif.repostedViaYourRepost');
+      } else if (group.isRepostOfRepost) {
+        verb = plural ? i18n.t('notif.repostedYourRepostPlural') : i18n.t('notif.repostedYourRepost');
       } else {
-        if (group.isRepostOfRepost) {
-          verb = count === 1 ? i18n.t('notif.repostedYourRepost') : i18n.t('notif.repostedYourRepostPlural');
-        } else {
-          verb = count === 1 ? i18n.t('notif.repostedYourPost') : i18n.t('notif.repostedYourPostPlural');
-        }
+        verb = plural ? i18n.t('notif.repostedYourPostPlural') : i18n.t('notif.repostedYourPost');
       }
 
       let cleanOrig = group.origText;
@@ -120,9 +126,9 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
         let itemsToRender = res.notifications;
         
         const hydratedMap: Record<string, any> = {};
-        res.notifications.forEach((n: any) => {
+        res.notifications.forEach((n) => {
             if (n.hydratedPost) {
-                const key = (n.reason === 'like' || n.reason === 'repost') && n.reasonSubject ? n.reasonSubject : n.uri;
+                const key = GROUPABLE_REASONS.includes(n.reason) && n.reasonSubject ? n.reasonSubject : n.uri;
                 hydratedMap[key] = n.hydratedPost;
             }
         });
@@ -132,16 +138,16 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
         }
 
         itemsToRender.forEach((notif: any, idx: number) => {
-          const postUri = (notif.reason === 'like' || notif.reason === 'repost') && notif.reasonSubject
+          const postUri = GROUPABLE_REASONS.includes(notif.reason) && notif.reasonSubject
               ? notif.reasonSubject
               : notif.uri;
           const hydrated = notif.hydratedPost || hydratedMap[postUri];
 
-        let isRepostOfRepost = false;
+        // The "-via-repost" reasons are, by definition, about a post we reposted.
+        let isRepostOfRepost = notif.reason.endsWith('-via-repost');
         if (notif.reason === 'repost' && hydrated) {
-            const isMyPost = (hydrated.authorHandle === state.loggedInHandle) ||
-                             (hydrated.authorDid === state.loggedInHandle) ||
-                             (hydrated.authorName === state.loggedInHandle);
+            const isMyPost = Boolean(hydrated.authorDid && hydrated.authorDid === state.loggedInDid) ||
+                             Boolean(hydrated.authorHandle && hydrated.authorHandle === state.loggedInHandle);
             if (!isMyPost) {
                 isRepostOfRepost = true;
             }
@@ -155,9 +161,17 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
             if (notif.reason === 'like') {
                 notifText = notif.text ? i18n.t('notif.likedYourPostText', { text: notif.text }) : i18n.t('notif.likedYourPost');
             } else if (notif.reason === 'repost') {
-                notifText = notif.text 
+                notifText = notif.text
                     ? (isRepostOfRepost ? i18n.t('notif.repostedYourRepostText', { text: notif.text }) : i18n.t('notif.repostedYourPostText', { text: notif.text }))
                     : (isRepostOfRepost ? i18n.t('notif.repostedYourRepost') : i18n.t('notif.repostedYourPost'));
+            } else if (notif.reason === 'repost-via-repost') {
+                notifText = notif.text
+                    ? i18n.t('notif.repostedViaYourRepostText', { text: notif.text })
+                    : i18n.t('notif.repostedViaYourRepost');
+            } else if (notif.reason === 'like-via-repost') {
+                notifText = notif.text
+                    ? i18n.t('notif.likedViaYourRepostText', { text: notif.text })
+                    : i18n.t('notif.likedViaYourRepost');
             }
         }
 
@@ -169,12 +183,22 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
             notifText = i18n.t('notif.repliedYourPost', { text: notif.text || i18n.t('notif.replyNoText') });
         } else if (notif.reason === 'mention') {
             notifText = i18n.t('notif.mentionedYou', { text: notif.text || i18n.t('notif.mentionNoText') });
+        } else if (notif.reason === 'starterpack-joined') {
+            notifText = i18n.t('notif.joinedStarterPack');
+        } else if (notif.reason === 'verified') {
+            notifText = i18n.t('notif.verifiedYou');
+        } else if (notif.reason === 'unverified') {
+            notifText = i18n.t('notif.unverifiedYou');
+        } else if (notif.reason === 'contact-match') {
+            notifText = i18n.t('notif.contactMatch');
+        } else if (notif.reason === 'subscribed-post') {
+            notifText = i18n.t('notif.subscribedPost', { text: notif.text || i18n.t('notif.postNoText') });
         }
 
         if (!notifText || notifText.trim() === "") {
-            if (notif.reason === 'repost') {
+            if (notif.reason === 'repost' || notif.reason === 'repost-via-repost') {
                 notifText = `${i18n.t('notif.reposted')} ${repostNoun}`;
-            } else if (notif.reason === 'like') {
+            } else if (notif.reason === 'like' || notif.reason === 'like-via-repost') {
                 notifText = i18n.t('notif.likedYourPost');
             } else {
                 notifText = i18n.t('notif.notificationFrom', { author: authorFormatted });
@@ -184,8 +208,10 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
         const mockPost = {
            uri: postUri,
            cid: notif.cid,
+           authorDid: notif.authorDid,
            authorName: notif.authorName,
            authorHandle: notif.authorHandle,
+           isRepostOfRepost,
            text: notifText,
            hasMedia: hydrated ? hydrated.hasMedia : notif.hasMedia,
            video: hydrated ? hydrated.video : notif.video,

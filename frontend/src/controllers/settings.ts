@@ -1,3 +1,4 @@
+import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive, getPostAccessibleLabel } from '../utils/a11y';
 import { confirmDialog } from '../utils/dialog';
@@ -12,8 +13,8 @@ export function renderMutedWords(listElement: HTMLUListElement) {
         const li = document.createElement('li');
         li.style.marginBottom = '5px';
         li.innerHTML = `
-            <span>${word}</span>
-            <button type="button" aria-label="${i18n.t('app.remove')} ${word}" data-index="${index}" style="margin-left: 10px;">${i18n.t('app.remove')}</button>
+            <span>${esc(word)}</span>
+            <button type="button" aria-label="${esc(i18n.t('app.remove') + ' ' + word)}" data-index="${index}" style="margin-left: 10px;">${i18n.t('app.remove')}</button>
         `;
         li.querySelector('button')?.addEventListener('click', () => {
             state.mutedWordsCache.splice(index, 1);
@@ -49,8 +50,8 @@ function renderContentFilters(container: HTMLDivElement, filters: Array<{ label:
         div.style.padding = '5px 0';
         div.style.borderBottom = '1px solid #eee';
         div.innerHTML = `
-            <span><strong>${label}</strong></span>
-            <select class="content-filter-select" data-label="${label}">
+            <span><strong>${esc(label)}</strong></span>
+            <select class="content-filter-select" data-label="${esc(label)}">
                 <option value="ignore" ${isIgnore ? 'selected' : ''}>${i18n.t('settingsMsgs.filterShow')}</option>
                 <option value="warn" ${isWarn ? 'selected' : ''}>${i18n.t('settingsMsgs.filterWarn')}</option>
                 <option value="hide" ${isHide ? 'selected' : ''}>${i18n.t('settingsMsgs.filterHide')}</option>
@@ -138,7 +139,7 @@ export async function loadSettings() {
                 const div = document.createElement('div');
                 div.style.padding = '5px';
                 div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>@${p.handle}</span> <button class="btn-unmute" style="float: right;" data-did="${p.did}" data-handle="${p.handle}">${i18n.t('settingsMsgs.btnUnmute')}</button>`;
+                div.innerHTML = `<span>@${esc(p.handle)}</span> <button class="btn-unmute" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnmute')}</button>`;
                 mutedListDiv.appendChild(div);
             });
             mutedListDiv.querySelectorAll('.btn-unmute').forEach(btn => {
@@ -167,7 +168,7 @@ export async function loadSettings() {
                 const div = document.createElement('div');
                 div.style.padding = '5px';
                 div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>@${p.handle}</span> <button class="btn-unblock" style="float: right;" data-did="${p.did}" data-handle="${p.handle}">${i18n.t('settingsMsgs.btnUnblock')}</button>`;
+                div.innerHTML = `<span>@${esc(p.handle)}</span> <button class="btn-unblock" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnblock')}</button>`;
                 blockedListDiv.appendChild(div);
             });
             blockedListDiv.querySelectorAll('.btn-unblock').forEach(btn => {
@@ -205,9 +206,9 @@ export async function loadSettings() {
                         div.style.borderLeft = '3px solid #3b82f6';
                         div.innerHTML = `
                             <div>
-                                <strong><a href="#" class="open-labeler-profile" data-handle="${l.handle}" style="color: #60a5fa; text-decoration: none;">${l.displayName || l.handle}</a></strong>
-                                <span style="font-size: 0.85em; color: #aaa;">(@${l.handle})</span>
-                                ${l.description ? `<p style="margin: 2px 0 0 0; font-size: 0.85em; color: #ccc;">${l.description}</p>` : ''}
+                                <strong><a href="#" class="open-labeler-profile" data-handle="${esc(l.handle)}" style="color: #60a5fa; text-decoration: none;">${esc(l.displayName || l.handle)}</a></strong>
+                                <span style="font-size: 0.85em; color: #aaa;">(@${esc(l.handle)})</span>
+                                ${l.description ? `<p style="margin: 2px 0 0 0; font-size: 0.85em; color: #ccc;">${esc(l.description)}</p>` : ''}
                             </div>
                             <button type="button" class="btn-unsubscribe-setting" data-did="${l.did}" data-handle="${l.handle}" style="background-color: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;">${i18n.t('settingsMsgs.btnUnsub')}</button>
                         `;

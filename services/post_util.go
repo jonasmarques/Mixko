@@ -15,6 +15,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/api/atproto"
@@ -22,6 +23,55 @@ import (
 	"golang.org/x/image/draw"
 	"golang.org/x/net/html"
 )
+
+// maxRemoteBodyBytes caps how much of an untrusted response we will read. Link
+// previews and GIF downloads both follow URLs that come from other users, so an
+// endless or huge body must not be able to exhaust memory or disk.
+const maxRemoteBodyBytes = 8 << 20 // 8 MiB
+
+// remoteFetchTimeout bounds a single fetch of third-party content.
+const remoteFetchTimeout = 15 * time.Second
+
+// remoteClient is used for every request to a URL we did not choose. It has an
+// explicit timeout (http.DefaultClient has none) and refuses to follow long
+// redirect chains.
+var remoteClient = &http.Client{
+	Timeout: remoteFetchTimeout,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("stopped after %d redirects", len(via))
+		}
+		return nil
+	},
+}
+
+// fetchRemote performs a bounded GET against untrusted content. The caller owns
+// closing the returned body.
+func fetchRemote(ctx context.Context, rawURL string) (*http.Response, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("unsupported URL scheme %q", parsed.Scheme)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mixko")
+
+	resp, err := remoteClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("request to %s returned status %d", parsed.Host, resp.StatusCode)
+	}
+	return resp, nil
+}
 
 // ParseFacets parses mentions, links, and tags from text and generates Facets.
 func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.RichtextFacet {
@@ -79,21 +129,13 @@ func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.Richt
 
 // GenerateLinkPreview fetches the link and returns a card embed.
 func GenerateLinkPreview(ctx context.Context, c *xrpc.Client, linkUrl string) (*bsky.EmbedExternal, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", linkUrl, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fetchRemote(ctx, linkUrl)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch link")
-	}
-
-	doc, err := html.Parse(resp.Body)
+	doc, err := html.Parse(io.LimitReader(resp.Body, maxRemoteBodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -143,18 +185,16 @@ func GenerateLinkPreview(ctx context.Context, c *xrpc.Client, linkUrl string) (*
 			}
 		}
 		
-		imgReq, err := http.NewRequestWithContext(ctx, "GET", imageUrl, nil)
-		if err == nil {
-			imgResp, err := http.DefaultClient.Do(imgReq)
-			if err == nil && imgResp.StatusCode == 200 {
-				defer imgResp.Body.Close()
-				thumbBuf, mimeType, err := ProcessAndCompressImage(imgResp.Body, 1200, 1200, 950000)
-				if err == nil && thumbBuf != nil {
-					blobRes, err := atproto.RepoUploadBlob(ctx, c, thumbBuf)
-					if err == nil {
-						blobRes.Blob.MimeType = mimeType
-						external.Thumb = blobRes.Blob
-					}
+		// A missing or unreachable thumbnail is not fatal: the card is still
+		// worth embedding without it.
+		if imgResp, err := fetchRemote(ctx, imageUrl); err == nil {
+			defer imgResp.Body.Close()
+			thumbBuf, mimeType, err := ProcessAndCompressImage(io.LimitReader(imgResp.Body, maxRemoteBodyBytes), 1200, 1200, 950000)
+			if err == nil && thumbBuf != nil {
+				blobRes, err := atproto.RepoUploadBlob(ctx, c, thumbBuf)
+				if err == nil {
+					blobRes.Blob.MimeType = mimeType
+					external.Thumb = blobRes.Blob
 				}
 			}
 		}
@@ -240,7 +280,7 @@ func ResolvePathOrDataURL(pathOrData string) (string, func(), error) {
 	if strings.HasPrefix(pathOrData, "data:") {
 		parts := strings.SplitN(pathOrData, ",", 2)
 		if len(parts) != 2 {
-			return "", nil, fmt.Errorf("formato de data URL inválido")
+			return "", nil, codedError(ErrCodeInvalidDataURL)
 		}
 		header := parts[0]
 		dataStr := parts[1]
@@ -260,7 +300,7 @@ func ResolvePathOrDataURL(pathOrData string) (string, func(), error) {
 			}
 			data, err = base64.StdEncoding.DecodeString(padded)
 			if err != nil {
-				return "", nil, fmt.Errorf("falha ao decodificar base64: %w", err)
+				return "", nil, codedErrorWrap(ErrCodeDecodeBase64, err)
 			}
 		} else {
 			data = []byte(dataStr)
@@ -287,13 +327,13 @@ func ResolvePathOrDataURL(pathOrData string) (string, func(), error) {
 
 		tmpFile, err := os.CreateTemp("", "mixko_upload_*"+ext)
 		if err != nil {
-			return "", nil, fmt.Errorf("falha ao criar arquivo temporário: %w", err)
+			return "", nil, codedErrorWrap(ErrCodeTempFileCreate, err)
 		}
 		defer tmpFile.Close()
 
 		if _, err := tmpFile.Write(data); err != nil {
 			os.Remove(tmpFile.Name())
-			return "", nil, fmt.Errorf("falha ao gravar arquivo temporário: %w", err)
+			return "", nil, codedErrorWrap(ErrCodeTempFileWrite, err)
 		}
 
 		cleanup := func() {

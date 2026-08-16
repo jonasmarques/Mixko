@@ -1,3 +1,4 @@
+import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
@@ -63,7 +64,7 @@ export function setupSearch() {
                             div.classList.add('post-item');
                             div.setAttribute('tabindex', '0');
                             div.dataset.text = i18n.t('search.profileAria', { name: prof.displayName || prof.handle, desc: prof.description || "" });
-                            div.innerHTML = `<h3>${prof.displayName} <small>(@${prof.handle})</small></h3><p>${prof.description}</p>`;
+                            div.innerHTML = `<h3>${esc(prof.displayName)} <small>(@${esc(prof.handle)})</small></h3><p>${esc(prof.description || '')}</p>`;
                             
                             div.dataset.index = state.currentPosts.length.toString();
                             div.addEventListener('focus', () => {

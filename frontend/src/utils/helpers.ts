@@ -1,16 +1,64 @@
-const BSKY_HOST = /^https?:\/\/(?:www\.)?bsky\.app/i;
+/**
+ * Hosts whose links the app opens internally.
+ *
+ * Compared against `URL.hostname` exactly. A prefix match would accept
+ * `bsky.app.evil.com`, letting an attacker-chosen host drive internal routing.
+ */
+const INTERNAL_HOSTS = new Set(['bsky.app', 'www.bsky.app']);
 
-interface BskyRoute {
+/**
+ * Escapes text for interpolation into HTML.
+ *
+ * Everything the app renders comes from other users: post text, display names,
+ * alt text, link titles, chat messages. Interpolating any of it into innerHTML
+ * unescaped lets a crafted post run script inside the webview, which has access
+ * to the Go bindings on `window.go`. Every dynamic value in a template literal
+ * must go through this.
+ */
+export function esc(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    return String(value).replace(/[&<>"']/g, (c) => {
+        switch (c) {
+            case '&': return '&amp;';
+            case '<': return '&lt;';
+            case '>': return '&gt;';
+            case '"': return '&quot;';
+            default: return '&#39;';
+        }
+    });
+}
+
+/**
+ * Returns the URL only if it uses a scheme that is safe to put in an `href` or
+ * `src`. Anything else (notably `javascript:`) collapses to `#`.
+ */
+export function safeUrl(url: unknown): string {
+    const raw = String(url ?? '').trim();
+    if (/^(https?:|data:image\/)/i.test(raw)) return raw;
+    return '#';
+}
+
+/** Escapes a URL for use inside an HTML attribute, rejecting unsafe schemes. */
+export function escUrl(url: unknown): string {
+    return esc(safeUrl(url));
+}
+
+interface AppRoute {
     type: 'profile' | 'post' | 'feed' | 'list' | 'starterpack';
     handle: string;
     rkey?: string;
 }
 
-function parseBskyUrl(url: string): BskyRoute | null {
+/**
+ * Recognises the bsky.app URLs the app can open internally instead of handing
+ * off to the system browser.
+ */
+export function parseAppUrl(url: string): AppRoute | null {
     try {
         const u = new URL(url);
-        if (!BSKY_HOST.test(u.origin + u.pathname.slice(0, 0) + url.split('?')[0].split('#')[0])) return null;
-        if (!BSKY_HOST.test(url)) return null;
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+        if (!INTERNAL_HOSTS.has(u.hostname.toLowerCase())) return null;
+
         const parts = u.pathname.replace(/^\//, '').split('/');
 
         // /profile/{handle}
@@ -36,37 +84,55 @@ function parseBskyUrl(url: string): BskyRoute | null {
     }
 }
 
-function bskyRouteAttrs(route: BskyRoute, url: string): string {
-    const base = `data-bsky-route="${route.type}" data-handle="${route.handle}"`;
-    const rkey = route.rkey ? ` data-rkey="${route.rkey}"` : '';
-    return `${base}${rkey} data-original-url="${url}"`;
+function routeAttrs(route: AppRoute, url: string): string {
+    const rkey = route.rkey ? ` data-rkey="${esc(route.rkey)}"` : '';
+    return `data-route="${esc(route.type)}" data-handle="${esc(route.handle)}"${rkey} data-original-url="${escUrl(url)}"`;
 }
 
-function bskyRoutLabel(url: string): string {
-    return url;
-}
+const LINK_STYLE = 'color: var(--brand-color, #0066cc);';
 
+/**
+ * Turns URLs and hashtags in plain text into anchors.
+ *
+ * The text is tokenised first and each piece is escaped as it is appended, so
+ * markup in the source text is rendered literally and never interpreted.
+ */
 export function linkify(text: string): string {
     if (!text) return '';
 
     const tokenRegex = /(https?:\/\/[^\s<>"]+)|(#[\p{L}\p{N}_]+)/gu;
 
-    return text.replace(tokenRegex, (_match, urlMatch: string | undefined, hashMatch: string | undefined) => {
+    let out = '';
+    let cursor = 0;
+
+    for (const match of text.matchAll(tokenRegex)) {
+        const index = match.index ?? 0;
+        out += esc(text.slice(cursor, index));
+
+        const [token, urlMatch, hashMatch] = match;
+
         if (hashMatch) {
             const tag = hashMatch.slice(1);
-            return `<a href="#" class="bsky-link bsky-hashtag" data-bsky-route="hashtag" data-tag="${tag}" style="color: var(--brand-color, #0066cc);">${hashMatch}</a>`;
+            out += `<a href="#" class="app-link link-hashtag" data-route="hashtag" data-tag="${esc(tag)}" style="${LINK_STYLE}">${esc(hashMatch)}</a>`;
+        } else {
+            const url = urlMatch;
+            const route = parseAppUrl(url);
+
+            if (route) {
+                out += `<a href="#" class="app-link link-internal" ${routeAttrs(route, url)} style="${LINK_STYLE}">${esc(url)}</a>`;
+            } else {
+                // Opened through the Go runtime by the delegated handler in
+                // link_router.ts; an inline onclick would be both fragile and
+                // an injection point.
+                out += `<a href="#" class="app-link link-external" data-external-url="${escUrl(url)}" style="${LINK_STYLE}">${esc(url)}</a>`;
+            }
         }
 
-        const url = urlMatch!;
-        const route = parseBskyUrl(url);
+        cursor = index + token.length;
+    }
 
-        if (route) {
-            return `<a href="#" class="bsky-link bsky-internal" ${bskyRouteAttrs(route, url)} style="color: var(--brand-color, #0066cc);">${bskyRoutLabel(url)}</a>`;
-        }
-
-        const safeUrl = url.replace(/'/g, '%27');
-        return `<a href="#" class="bsky-link bsky-external" onclick="(window as any).runtime.BrowserOpenURL('${safeUrl}'); return false;" style="color: var(--brand-color, #0066cc);">${url}</a>`;
-    });
+    out += esc(text.slice(cursor));
+    return out;
 }
 
 export function getFilePathOrDataUrl(file: File): Promise<string> {
@@ -82,4 +148,3 @@ export function getFilePathOrDataUrl(file: File): Promise<string> {
         }
     });
 }
-

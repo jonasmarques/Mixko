@@ -1,3 +1,4 @@
+import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
@@ -75,7 +76,7 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
     const errText = i18n.t('saved.savedError', { err: String(err) });
     container.innerHTML = `
       <div role="alert" tabindex="0" style="padding:1rem; border:1px solid var(--border-color, #444); border-radius:6px; margin:1rem 0;">
-        <p><strong>${errText}</strong></p>
+        <p><strong>${esc(errText)}</strong></p>
       </div>
     `;
     console.error('[loadSavedPosts]', err);

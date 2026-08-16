@@ -1,6 +1,6 @@
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
-import { linkify } from '../utils/helpers';
+import { linkify, esc, escUrl } from '../utils/helpers';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { createPostArticle } from '../components/post';
 import { formatPostDate } from '../utils/format';
@@ -59,8 +59,8 @@ export async function loadChat(loadMore = false) {
         div.setAttribute('aria-label', div.dataset.text);
         div.innerHTML = `
           <div aria-hidden="true">
-            <header><strong>${i18n.t('chat.convoWith')}</strong> ${convo.members}</header>
-            <div class="post-content"><p><strong>${i18n.t('chat.lastMessage')}</strong> ${convo.lastMessage}</p></div>
+            <header><strong>${i18n.t('chat.convoWith')}</strong> ${esc(convo.members)}</header>
+            <div class="post-content"><p><strong>${i18n.t('chat.lastMessage')}</strong> ${esc(convo.lastMessage)}</p></div>
             <footer><small>${convo.unreadCount > 0 ? i18n.t('chat.unreadCount', { count: convo.unreadCount.toString() }) : ''}</small></footer>
           </div>
         `;
@@ -95,7 +95,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
           <button id="btn-leave-chat" style="padding:4px 8px; background:#d32f2f; color:#fff; border:none; border-radius:4px;">${i18n.t('chat.leaveChat')}</button>
         </div>
       </div>
-      <h3>${i18n.t('chat.convoWithTitle', { members })}</h3>
+      <h3>${esc(i18n.t('chat.convoWithTitle', { members }))}</h3>
       <div id="chat-messages" aria-live="polite">${i18n.t('chat.loading')}</div>
       
       <div id="chat-reply-preview-container" class="hidden" style="margin-top: 10px; border-left: 3px solid var(--primary-bg, #0085ff); padding: 8px; background: rgba(0, 133, 255, 0.08); border-radius: 4px; position: relative;">
@@ -239,7 +239,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         let inlineVideo = "";
         const klipyRegex = /(https?:\/\/[^\s]+?klipy[^\s]+?\.mp4|(?:https?:\/\/[^\s]+\.mp4))/g;
         rawText = rawText.replace(klipyRegex, (match: string) => {
-            inlineVideo += `<video src="${match}" autoplay loop muted playsinline style="max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 8px; display: block;"></video>`;
+            inlineVideo += `<video src="${escUrl(match)}" autoplay loop muted playsinline style="max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 8px; display: block;"></video>`;
             return ""; // Remove the URL from the text since it's now a video
         }).trim();
 
@@ -252,8 +252,8 @@ export async function openChatConvo(convoId: string, members: string, silent = f
             targetEmbedUri = `at://${match[1]}/app.bsky.feed.post/${match[2]}`;
           }
         }
-        let embedContainerId = `chat-embed-${msg.id}`;
-        let embedInfo = targetEmbedUri ? `<div id="${embedContainerId}" style="border: 1px solid var(--border-color, #38444d); padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9em;">${i18n.t('chat.loadingAttachedPost')}</div>` : "";
+        let embedContainerId = `chat-embed-${esc(msg.id)}`;
+        let embedInfo = targetEmbedUri ? `<div id="${esc(embedContainerId)}" style="border: 1px solid var(--border-color, #38444d); padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9em;">${i18n.t('chat.loadingAttachedPost')}</div>` : "";
         let replyInfo = "";
         const msgDateFormatted = msg.sentAt ? formatPostDate(msg.sentAt, undefined, true) : "";
         const senderPrefix = msg.sender ? `${msg.sender}${msgDateFormatted ? `, ${msgDateFormatted}` : ""}: ` : "";
@@ -262,7 +262,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         if (msg.replyToMessageText || msg.replyToSender) {
             const replySenderLabel = msg.replyToSender || i18n.t('chat.replyingTo');
             replyInfo = `<div style="border-left: 3px solid var(--brand-color, #1da1f2); padding-left: 10px; margin-bottom: 10px; font-size: 0.9em; opacity: 0.85; background: rgba(29, 161, 242, 0.08); padding: 6px 10px; border-radius: 4px;">
-                <strong>↩ ${replySenderLabel}:</strong> ${linkify(msg.replyToMessageText || "")}
+                <strong>↩ ${esc(replySenderLabel)}:</strong> ${linkify(msg.replyToMessageText || "")}
             </div>`;
             accessibleLabel = i18n.t('chat.replyingToAccessible', { msg: msg.replyToMessageText || "", rest: accessibleLabel });
         }
@@ -282,15 +282,15 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         let reactionsHtml = '';
         Object.entries(reactionCounts).forEach(([emoji, data]) => {
           const bgStyle = data.isMine ? 'background: var(--primary-bg, #0085ff); color: white; border-color: var(--primary-bg, #0085ff);' : 'background: rgba(255,255,255,0.1); border: 1px solid var(--border-color, #444);';
-          reactionsHtml += `<button type="button" class="btn-chat-reaction" data-msg-id="${msg.id}" data-emoji="${emoji}" data-is-mine="${data.isMine}" style="padding: 2px 6px; border-radius: 12px; font-size: 0.85em; cursor: pointer; margin-right: 4px; margin-top: 4px; ${bgStyle}">${emoji} ${data.count}</button>`;
+          reactionsHtml += `<button type="button" class="btn-chat-reaction" data-msg-id="${esc(msg.id)}" data-emoji="${esc(emoji)}" data-is-mine="${data.isMine}" style="padding: 2px 6px; border-radius: 12px; font-size: 0.85em; cursor: pointer; margin-right: 4px; margin-top: 4px; ${bgStyle}">${esc(emoji)} ${data.count}</button>`;
         });
 
         // Emoji picker html
         let emojiPickerButtons = EMOJI_PALETTE.map(emoji => 
-          `<button type="button" class="btn-add-emoji" data-msg-id="${msg.id}" data-emoji="${emoji}" style="border: none; background: transparent; font-size: 1.2em; cursor: pointer; padding: 2px 4px; border-radius: 4px;">${emoji}</button>`
+          `<button type="button" class="btn-add-emoji" data-msg-id="${esc(msg.id)}" data-emoji="${esc(emoji)}" style="border: none; background: transparent; font-size: 1.2em; cursor: pointer; padding: 2px 4px; border-radius: 4px;">${esc(emoji)}</button>`
         ).join('');
 
-        let emojiPickerHtml = `<div class="chat-emoji-picker" id="emoji-picker-${msg.id}" style="display: none; position: absolute; right: 0; top: -35px; background: var(--card-bg, #1e2732); border: 1px solid var(--border-color, #38444d); border-radius: 20px; padding: 4px 8px; gap: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10;">
+        let emojiPickerHtml = `<div class="chat-emoji-picker" id="emoji-picker-${esc(msg.id)}" style="display: none; position: absolute; right: 0; top: -35px; background: var(--card-bg, #1e2732); border: 1px solid var(--border-color, #38444d); border-radius: 20px; padding: 4px 8px; gap: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10;">
           ${emojiPickerButtons}
         </div>`;
 
@@ -300,17 +300,17 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         div.innerHTML = `
           ${replyInfo}
           <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <div><strong>${msg.sender}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${msgDateFormatted}</small>` : ''}</div>
+            <div><strong>${esc(msg.sender)}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${esc(msgDateFormatted)}</small>` : ''}</div>
           </header>
           <div class="post-content">
             <p style="margin:4px 0;">${msgContent}</p>
             ${embedInfo}
           </div>
           <div class="chat-msg-actions" aria-label="${i18n.t('chat.actionsAria')}">
-            <button type="button" class="btn-reply-msg" data-id="${msg.id}" data-sender="${msg.sender}" data-text="${msg.text ? msg.text.replace(/"/g, '&quot;') : ''}" aria-label="${i18n.t('chat.replyBtnAria', { sender: msg.sender })}" title="${i18n.t('chat.replyBtn')}">↩ ${i18n.t('chat.replyBtn')}</button>
-            <button type="button" class="btn-show-reactions" data-msg-id="${msg.id}" aria-label="${i18n.t('chat.reactBtnAria', { sender: msg.sender })}" title="${i18n.t('chat.reactBtn')}">😀 ${i18n.t('chat.reactBtn')}</button>
+            <button type="button" class="btn-reply-msg" data-id="${esc(msg.id)}" data-sender="${esc(msg.sender)}" data-text="${esc(msg.text || '')}" aria-label="${esc(i18n.t('chat.replyBtnAria', { sender: msg.sender }))}" title="${i18n.t('chat.replyBtn')}">↩ ${i18n.t('chat.replyBtn')}</button>
+            <button type="button" class="btn-show-reactions" data-msg-id="${esc(msg.id)}" aria-label="${esc(i18n.t('chat.reactBtnAria', { sender: msg.sender }))}" title="${i18n.t('chat.reactBtn')}">😀 ${i18n.t('chat.reactBtn')}</button>
             ${emojiPickerHtml}
-            <button type="button" class="btn-delete-msg" data-id="${msg.id}" aria-label="${i18n.t('chat.deleteMsgAria', { sender: msg.sender })}" title="${i18n.t('chat.delete')}">🗑️ ${i18n.t('chat.delete')}</button>
+            <button type="button" class="btn-delete-msg" data-id="${esc(msg.id)}" aria-label="${esc(i18n.t('chat.deleteMsgAria', { sender: msg.sender }))}" title="${i18n.t('chat.delete')}">🗑️ ${i18n.t('chat.delete')}</button>
           </div>
           <div class="chat-reactions-container">
             ${reactionsHtml}

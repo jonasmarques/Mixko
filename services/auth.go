@@ -3,44 +3,51 @@ package services
 import (
 	"context"
 	"fmt"
+
 	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
 type AuthService struct {
-	clientMgr *BSkyClient
+	clientMgr *ATClient
 }
 
-func NewAuthService(clientMgr *BSkyClient) *AuthService {
+func NewAuthService(clientMgr *ATClient) *AuthService {
 	return &AuthService{
 		clientMgr: clientMgr,
 	}
 }
 
-// CheckSession tries to load the session from the DB and initialize the client
+// CheckSession loads the stored session and verifies it against the PDS,
+// refreshing the token if needed.
 func (s *AuthService) CheckSession(ctx context.Context) (bool, error) {
-	did, handle, accessJwt, refreshJwt, err := s.clientMgr.db.GetSession()
+	session, err := s.clientMgr.db.GetSession()
 	if err != nil {
 		return false, err
 	}
 
-	if accessJwt == "" {
+	if session.AccessJwt == "" {
 		return false, nil
 	}
 
+	// Sessions saved before PDS discovery have no host recorded.
+	host := session.PDSHost
+	if host == "" {
+		host = s.clientMgr.ResolvePDSHost(ctx, session.DID)
+	}
+
 	client := &xrpc.Client{
-		Host: "https://bsky.social", // Default PDS host
+		Host: host,
 		Auth: &xrpc.AuthInfo{
-			Did:        did,
-			Handle:     handle,
-			AccessJwt:  accessJwt,
-			RefreshJwt: refreshJwt,
+			Did:        session.DID,
+			Handle:     session.Handle,
+			AccessJwt:  session.AccessJwt,
+			RefreshJwt: session.RefreshJwt,
 		},
 	}
 
 	s.clientMgr.SetClient(client)
 
-	// Try a simple API call to verify the token, if it fails, try to refresh
 	err = s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		_, err := atproto.ServerGetSession(ctx, c)
 		return err
@@ -54,7 +61,9 @@ func (s *AuthService) CheckSession(ctx context.Context) (bool, error) {
 }
 
 func (s *AuthService) RestoreSession() (string, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
 	ok, err := s.CheckSession(ctx)
 	if err != nil {
 		return "", err
@@ -62,15 +71,20 @@ func (s *AuthService) RestoreSession() (string, error) {
 	if !ok {
 		return "", nil
 	}
-	_, handle, _, _, err := s.clientMgr.db.GetSession()
-	return handle, err
+
+	session, err := s.clientMgr.db.GetSession()
+	return session.Handle, err
 }
 
 func (s *AuthService) Login(identifier, appPassword string, remember bool) error {
-	ctx := context.Background()
-	client := &xrpc.Client{
-		Host: "https://bsky.social",
-	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	// Resolve where this account actually lives instead of assuming the
+	// flagship PDS, so self-hosted accounts can log in.
+	host := s.clientMgr.ResolvePDSHost(ctx, identifier)
+
+	client := &xrpc.Client{Host: host}
 
 	input := &atproto.ServerCreateSession_Input{
 		Identifier: identifier,
@@ -92,7 +106,7 @@ func (s *AuthService) Login(identifier, appPassword string, remember bool) error
 	s.clientMgr.SetClient(client)
 
 	if remember {
-		err = s.clientMgr.db.SaveSession(output.Did, output.Handle, output.AccessJwt, output.RefreshJwt)
+		err = s.clientMgr.db.SaveSession(output.Did, output.Handle, output.AccessJwt, output.RefreshJwt, host)
 		if err != nil {
 			return fmt.Errorf("failed to save session to DB: %w", err)
 		}
@@ -104,12 +118,15 @@ func (s *AuthService) Login(identifier, appPassword string, remember bool) error
 }
 
 func (s *AuthService) Logout() error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	// A failure here just means the server already dropped the session; the
+	// local state is cleared either way.
 	_ = s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		return atproto.ServerDeleteSession(ctx, c)
 	})
-	
-	// Ignore server error for delete session if they are already logged out
+
 	s.clientMgr.SetClient(nil)
 	return s.clientMgr.db.ClearSession()
 }

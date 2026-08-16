@@ -5,6 +5,9 @@ export const state = {
     currentPosts: [] as HTMLElement[],
     focusedPostIndex: -1,
     loggedInHandle: "",
+    // The DID is the stable identity; display names and handles are not
+    // trustworthy for ownership checks.
+    loggedInDid: "",
     currentHandle: "",
     currentTab: 'timeline' as 'timeline' | 'notifications' | 'profile' | 'chat' | 'feeds' | 'saved' | 'search' | 'settings' | 'lists',
     composeMode: 'post' as 'post' | 'reply' | 'quote',
@@ -22,7 +25,7 @@ export const state = {
     savedFeeds: [] as any[],
     currentFeedUri: "",
     discoverFeedSearchQuery: "",
-    feedsTabMode: 'saved' as 'saved' | 'lists' | 'discover',
+    feedsTabMode: 'saved' as 'saved' | 'lists' | 'discover' | 'trending',
     profileTabMode: 'posts' as 'posts' | 'replies' | 'media' | 'likes' | 'lists' | 'starterPacks' | 'followers' | 'following',
     mutedWordsCache: [] as string[],
     adultContentCache: false,

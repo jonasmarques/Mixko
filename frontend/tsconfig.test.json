@@ -1,0 +1,20 @@
+{
+  // Compiles the pure-logic unit tests to plain JS so they can run on node's
+  // built-in test runner. Keeping this separate means the app build stays
+  // emit-free and no test framework has to be installed.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-test",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": false,
+    "types": [],
+    "skipLibCheck": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  // The base config excludes tests; this project is only tests.
+  "exclude": [],
+  "include": ["src/utils/helpers.ts", "src/utils/helpers.test.ts", "src/utils/node-test.d.ts"]
+}

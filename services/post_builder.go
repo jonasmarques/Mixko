@@ -20,20 +20,20 @@ import (
 	"golang.org/x/net/html"
 )
 
+// postWithMediaTimeout bounds a post that may carry a video: upload plus up to
+// three minutes of transcode polling, with headroom for a slow connection.
+const postWithMediaTimeout = 10 * time.Minute
+
 type PostBuilderService struct {
-	clientMgr *BSkyClient
+	clientMgr *ATClient
 }
 
-func downloadTempFile(url string) (string, error) {
-	resp, err := http.Get(url)
+func downloadTempFile(ctx context.Context, url string) (string, error) {
+	resp, err := fetchRemote(ctx, url)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("failed to download file: %d", resp.StatusCode)
-	}
 
 	ext := ".mp4"
 	if strings.Contains(url, ".gif") {
@@ -45,8 +45,10 @@ func downloadTempFile(url string) (string, error) {
 	}
 	defer tmpFile.Close()
 
-	_, err = io.Copy(tmpFile, resp.Body)
-	if err != nil {
+	// Cap the copy: the URL comes from a third-party GIF provider and an
+	// unbounded body would fill the disk.
+	if _, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxRemoteBodyBytes)); err != nil {
+		os.Remove(tmpFile.Name())
 		return "", err
 	}
 
@@ -61,7 +63,7 @@ func truncatePath(p string) string {
 	return p
 }
 
-func NewPostBuilderService(clientMgr *BSkyClient) *PostBuilderService {
+func NewPostBuilderService(clientMgr *ATClient) *PostBuilderService {
 	return &PostBuilderService{
 		clientMgr: clientMgr,
 	}
@@ -69,7 +71,10 @@ func NewPostBuilderService(clientMgr *BSkyClient) *PostBuilderService {
 
 // CreatePost handles creating a new post with optional reply info, images, video, and link preview
 func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string) (*atproto.RepoCreateRecord_Output, error) {
-	ctx := context.Background()
+	// Posting can include a video upload plus transcode polling, which runs far
+	// longer than a plain API call.
+	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
+	defer cancel()
 	if len(imagePaths) != len(altTexts) {
 		return nil, fmt.Errorf("length of imagePaths and altTexts must be identical")
 	}
@@ -137,7 +142,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 			for i, path := range imagePaths {
 				altText := altTexts[i]
 				if altText == "" {
-					return fmt.Errorf("Acessibilidade OBRIGATÓRIA: O Alt text (texto alternativo) não pode estar vazio para a imagem %d", i+1)
+					return codedErrorArg(ErrCodeAltTextRequiredImage, i+1)
 				}
 
 				blobRef, err := s.uploadBlob(ctx, c, path)
@@ -160,7 +165,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 		} else if videoPath != "" || gifUrl != "" {
 			altText := videoAlt
 			if gifUrl != "" {
-				tmpPath, err := downloadTempFile(gifUrl)
+				tmpPath, err := downloadTempFile(ctx, gifUrl)
 				if err != nil {
 					return fmt.Errorf("failed to download GIF: %w", err)
 				}
@@ -169,7 +174,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 			}
 			
 			if altText == "" {
-				return fmt.Errorf("Acessibilidade OBRIGATÓRIA: O Alt text não pode estar vazio para o vídeo")
+				return codedError(ErrCodeAltTextRequiredVideo)
 			}
 			// Use native video API
 			blobRef, err := s.uploadVideo(ctx, c, videoPath)
@@ -386,7 +391,14 @@ func (s *PostBuilderService) uploadVideo(ctx context.Context, c *xrpc.Client, pa
 
 	// Poll until complete
 	for i := 0; i < 60; i++ { // wait up to 3 minutes
-		time.Sleep(3 * time.Second)
+		// Sleeping on the context means a shutdown or cancelled post aborts the
+		// wait instead of blocking for the full interval.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+
 		statusRes, err := bsky.VideoGetJobStatus(ctx, videoClient, jobId)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get job status: %w", err)
@@ -408,7 +420,8 @@ func (s *PostBuilderService) uploadVideo(ctx context.Context, c *xrpc.Client, pa
 
 // LikePost handles liking a post
 func (s *PostBuilderService) LikePost(uri, cid string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var likeUri string
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoCreateRecord_Input{
@@ -436,7 +449,8 @@ func (s *PostBuilderService) LikePost(uri, cid string) (string, error) {
 
 // UnlikePost handles unliking a post
 func (s *PostBuilderService) UnlikePost(likeUri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		parts := strings.Split(likeUri, "/")
 		if len(parts) < 2 {
@@ -456,7 +470,8 @@ func (s *PostBuilderService) UnlikePost(likeUri string) error {
 
 // Repost handles reposting a post
 func (s *PostBuilderService) Repost(uri, cid string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var retUri string
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoCreateRecord_Input{
@@ -484,7 +499,10 @@ func (s *PostBuilderService) Repost(uri, cid string) (string, error) {
 
 // QuotePost handles quoting a post
 func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string) (*atproto.RepoCreateRecord_Output, error) {
-	ctx := context.Background()
+	// Posting can include a video upload plus transcode polling, which runs far
+	// longer than a plain API call.
+	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
+	defer cancel()
 	if len(imagePaths) != len(altTexts) {
 		return nil, fmt.Errorf("length of imagePaths and altTexts must be identical")
 	}
@@ -510,7 +528,7 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 			for i, path := range imagePaths {
 				altText := altTexts[i]
 				if altText == "" {
-					return fmt.Errorf("Acessibilidade OBRIGATÓRIA: O Alt text não pode estar vazio")
+					return codedError(ErrCodeAltTextRequired)
 				}
 				blobRef, err := s.uploadBlob(ctx, c, path)
 				if err != nil {
@@ -531,7 +549,7 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 			altText := videoAlt
 			if gifUrl != "" {
 				altText = "GIF"
-				tmpPath, err := downloadTempFile(gifUrl)
+				tmpPath, err := downloadTempFile(ctx, gifUrl)
 				if err != nil {
 					return fmt.Errorf("failed to download GIF: %w", err)
 				}
@@ -539,7 +557,7 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 				videoPath = tmpPath
 			}
 			if altText == "" {
-				return fmt.Errorf("Acessibilidade OBRIGATÓRIA: O Alt text não pode estar vazio para o vídeo")
+				return codedError(ErrCodeAltTextRequiredVideo)
 			}
 			blobRef, err := s.uploadVideo(ctx, c, videoPath)
 			if err != nil {
@@ -604,7 +622,8 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 
 // DeletePost handles deleting a post
 func (s *PostBuilderService) DeletePost(uri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		parts := strings.Split(uri, "/")
 		if len(parts) < 5 {
@@ -623,7 +642,8 @@ func (s *PostBuilderService) DeletePost(uri string) error {
 
 // DeleteRepost handles deleting a repost
 func (s *PostBuilderService) DeleteRepost(repostUri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		parts := strings.Split(repostUri, "/")
 		if len(parts) < 5 {
@@ -641,7 +661,8 @@ func (s *PostBuilderService) DeleteRepost(repostUri string) error {
 }
 
 func (s *PostBuilderService) CheckVideoStatus(jobId string) (*VideoJobStatusDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *VideoJobStatusDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.VideoGetJobStatus(ctx, c, jobId)
@@ -671,7 +692,8 @@ func (s *PostBuilderService) CheckVideoStatus(jobId string) (*VideoJobStatusDTO,
 }
 
 func (s *PostBuilderService) HideReply(postUri string, replyUri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		parts := strings.Split(postUri, "/")
 		if len(parts) < 3 {

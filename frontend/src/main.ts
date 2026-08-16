@@ -7,7 +7,7 @@ import { setupSettings, loadSettings } from './controllers/settings';
 import { setupCompose, openComposeModal } from './controllers/compose';
 import { setupProfile } from './controllers/profile';
 import { switchTab } from './controllers/tabs';
-import { setupBskyLinkDelegation } from './controllers/bsky_router';
+import { setupLinkDelegation } from './controllers/link_router';
 import { i18n } from './utils/i18n';
 
 // Translate the DOM initially
@@ -45,7 +45,7 @@ setupSearch();
 setupSettings();
 setupCompose();
 setupProfile();
-setupBskyLinkDelegation();
+setupLinkDelegation();
 
 // Load initial settings and initialize app
 loadSettings().then(() => {

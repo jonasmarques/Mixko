@@ -15,6 +15,7 @@
 | `Alt` + `3` | Ir a la pestaña **Perfil** (su propio perfil) |
 | `Alt` + `4` | Ir a la pestaña **DMs** (Mensajes Directos / Chat) |
 | `Alt` + `5` | Ir a la pestaña **Feeds y Listas** |
+| `Alt` + `T` | Ir a la subpestaña **Tendencias** (lo que está en tendencia en la red) |
 | `Alt` + `6` | Ir a la pestaña **Publicaciones Guardadas** (Marcadores) |
 | `Ctrl` + `F` o `Alt` + `7` | Ir a la pestaña **Búsqueda** y enfocar el campo de búsqueda |
 | `Alt` + `S` o `Alt` + `8` | Ir a la pestaña **Configuración** |
@@ -72,7 +73,8 @@
 | `Shift` + `O` | Visualizar la publicación original de una cita (*Quote*) en un modal |
 | `Shift` + `F` | Fijar la publicación enfocada en su perfil |
 | `Shift` + `M` | Silenciar el hilo de la publicación enfocada |
-| `Alt` + `H` | Ocultar la respuesta enfocada |
+| `Alt` + `O` | Ocultar la respuesta enfocada |
+| `Alt` + `H` | Abrir las **opciones de silenciar** del autor (todo, solo reposts, solo citas o desmutear) |
 | `Alt` + `R` | Ocultar o mostrar respuestas en la Línea de Tiempo (alternar preferencia) |
 | `Alt` + `D` | Denunciar la publicación enfocada o el perfil en pantalla |
 

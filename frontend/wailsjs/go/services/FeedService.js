@@ -57,3 +57,7 @@ export function GetThread(arg1, arg2) {
 export function GetTimeline(arg1, arg2) {
   return window['go']['services']['FeedService']['GetTimeline'](arg1, arg2);
 }
+
+export function GetTrends(arg1) {
+  return window['go']['services']['FeedService']['GetTrends'](arg1);
+}

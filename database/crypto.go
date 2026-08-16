@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -23,23 +22,10 @@ type CipherManager struct {
 }
 
 func newCipherManager(dbPath string) (*CipherManager, error) {
-	dir := filepath.Dir(dbPath)
-	keyPath := filepath.Join(dir, ".secret.key")
-
-	var key []byte
-	data, err := os.ReadFile(keyPath)
-	if err == nil && len(data) == keySize {
-		key = data
-	} else {
-		key = make([]byte, keySize)
-		if _, err := io.ReadFull(rand.Reader, key); err != nil {
-			return nil, fmt.Errorf("failed to generate encryption key: %w", err)
-		}
-		if err := os.WriteFile(keyPath, key, 0600); err != nil {
-			return nil, fmt.Errorf("failed to save encryption key: %w", err)
-		}
+	key, err := loadOrCreateKey(filepath.Dir(dbPath))
+	if err != nil {
+		return nil, err
 	}
-
 	return &CipherManager{key: key}, nil
 }
 

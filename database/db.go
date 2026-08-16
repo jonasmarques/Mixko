@@ -14,7 +14,11 @@ type DB struct {
 }
 
 func InitDB(dbPath string) (*DB, error) {
-	conn, err := sql.Open("sqlite", dbPath)
+	// WAL lets the background sync read while the UI writes; busy_timeout keeps
+	// those two from surfacing as "database is locked" to the user.
+	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+
+	conn, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -43,7 +47,8 @@ func (db *DB) migrate() error {
 			did TEXT NOT NULL,
 			handle TEXT NOT NULL,
 			access_jwt TEXT NOT NULL,
-			refresh_jwt TEXT NOT NULL
+			refresh_jwt TEXT NOT NULL,
+			pds_host TEXT NOT NULL DEFAULT ''
 		);`,
 		`CREATE TABLE IF NOT EXISTS cache (
 			key TEXT PRIMARY KEY,
@@ -57,10 +62,16 @@ func (db *DB) migrate() error {
 			return fmt.Errorf("failed to execute migration: %w", err)
 		}
 	}
+
+	// Databases created before PDS discovery existed lack this column. SQLite
+	// has no "ADD COLUMN IF NOT EXISTS", and re-adding it is the expected
+	// failure here, so the error is deliberately ignored.
+	_, _ = db.conn.Exec(`ALTER TABLE session_info ADD COLUMN pds_host TEXT NOT NULL DEFAULT ''`)
+
 	return nil
 }
 
-func (db *DB) SaveSession(did, handle, accessJwt, refreshJwt string) error {
+func (db *DB) SaveSession(did, handle, accessJwt, refreshJwt, pdsHost string) error {
 	encAccess, err := db.cm.Encrypt(accessJwt)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt access token: %w", err)
@@ -71,45 +82,57 @@ func (db *DB) SaveSession(did, handle, accessJwt, refreshJwt string) error {
 	}
 
 	query := `
-		INSERT INTO session_info (id, did, handle, access_jwt, refresh_jwt)
-		VALUES (1, ?, ?, ?, ?)
+		INSERT INTO session_info (id, did, handle, access_jwt, refresh_jwt, pds_host)
+		VALUES (1, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			did=excluded.did,
 			handle=excluded.handle,
 			access_jwt=excluded.access_jwt,
-			refresh_jwt=excluded.refresh_jwt;
+			refresh_jwt=excluded.refresh_jwt,
+			pds_host=excluded.pds_host;
 	`
-	_, err = db.conn.Exec(query, did, handle, encAccess, encRefresh)
+	_, err = db.conn.Exec(query, did, handle, encAccess, encRefresh, pdsHost)
 	return err
 }
 
-func (db *DB) GetSession() (did, handle, accessJwt, refreshJwt string, err error) {
-	query := `SELECT did, handle, access_jwt, refresh_jwt FROM session_info WHERE id = 1`
+// Session is a stored login, as returned by GetSession.
+type Session struct {
+	DID        string
+	Handle     string
+	AccessJwt  string
+	RefreshJwt string
+	PDSHost    string
+}
+
+// GetSession returns the saved session, or a zero Session when none exists.
+func (db *DB) GetSession() (Session, error) {
+	query := `SELECT did, handle, access_jwt, refresh_jwt, pds_host FROM session_info WHERE id = 1`
+	var s Session
 	var rawAccess, rawRefresh string
-	err = db.conn.QueryRow(query).Scan(&did, &handle, &rawAccess, &rawRefresh)
+	err := db.conn.QueryRow(query).Scan(&s.DID, &s.Handle, &rawAccess, &rawRefresh, &s.PDSHost)
 	if err == sql.ErrNoRows {
-		return "", "", "", "", nil
+		return Session{}, nil
 	}
 	if err != nil {
-		return "", "", "", "", err
+		return Session{}, err
 	}
 
-	accessJwt, err = db.cm.Decrypt(rawAccess)
+	s.AccessJwt, err = db.cm.Decrypt(rawAccess)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to decrypt access token: %w", err)
+		return Session{}, fmt.Errorf("failed to decrypt access token: %w", err)
 	}
-	refreshJwt, err = db.cm.Decrypt(rawRefresh)
+	s.RefreshJwt, err = db.cm.Decrypt(rawRefresh)
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("failed to decrypt refresh token: %w", err)
+		return Session{}, fmt.Errorf("failed to decrypt refresh token: %w", err)
 	}
 
 	if !strings.HasPrefix(rawAccess, encPrefix) || !strings.HasPrefix(rawRefresh, encPrefix) {
-		if saveErr := db.SaveSession(did, handle, accessJwt, refreshJwt); saveErr != nil {
+		if saveErr := db.SaveSession(s.DID, s.Handle, s.AccessJwt, s.RefreshJwt, s.PDSHost); saveErr != nil {
 			fmt.Printf("warning: failed to re-encrypt legacy session: %v\n", saveErr)
 		}
 	}
 
-	return did, handle, accessJwt, refreshJwt, nil
+	return s, nil
 }
 
 func (db *DB) ClearSession() error {

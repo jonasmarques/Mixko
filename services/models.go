@@ -102,6 +102,7 @@ type FeedDTO struct {
 type NotificationDTO struct {
 	URI          string `json:"uri"`
 	CID          string `json:"cid"`
+	AuthorDID    string `json:"authorDid"`
 	AuthorName   string `json:"authorName"`
 	AuthorHandle string `json:"authorHandle"`
 	Reason        string `json:"reason"`
@@ -424,6 +425,28 @@ type FeedGeneratorDTO struct {
 type FeedGeneratorResponseDTO struct {
 	Cursor string              `json:"cursor"`
 	Feeds  []*FeedGeneratorDTO `json:"feeds"`
+}
+
+type TrendDTO struct {
+	Topic       string   `json:"topic"`
+	DisplayName string   `json:"displayName"`
+	Description string   `json:"description"`
+	Link        string   `json:"link"`
+	Category    string   `json:"category"`
+	Status      string   `json:"status"`
+	PostCount   int64    `json:"postCount"`
+	StartedAt   string   `json:"startedAt"`
+	Actors      []string `json:"actors"`
+}
+
+type TrendListDTO struct {
+	Trends []*TrendDTO `json:"trends"`
+}
+
+type MuteScopeDTO struct {
+	Muted               bool `json:"muted"`
+	MutedOnlyReposts    bool `json:"mutedOnlyReposts"`
+	MutedOnlyQuoteposts bool `json:"mutedOnlyQuoteposts"`
 }
 
 type UpdateInfoDTO struct {

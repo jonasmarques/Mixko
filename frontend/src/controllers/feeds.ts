@@ -1,9 +1,13 @@
+import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
+import { openTrendLink } from './link_router';
 import { createListArticle } from '../components/list';
+import { formatPostDate } from '../utils/format';
 import { i18n } from '../utils/i18n';
+import { TrendDTO } from '../types/dto';
 
 interface SavedFeedItem {
     uri: string;
@@ -27,7 +31,7 @@ export async function loadFeedsTab() {
     container.innerHTML = `<div style="padding: 20px;">${i18n.t('feeds.loading')}</div>`;
     
     // Setup tabs
-    ['saved', 'lists', 'discover'].forEach(mode => {
+    ['saved', 'lists', 'discover', 'trending'].forEach(mode => {
         const btn = document.getElementById(`ftab-${mode}`);
         if (btn) {
             const isActive = state.feedsTabMode === mode;
@@ -36,7 +40,7 @@ export async function loadFeedsTab() {
             btn.style.fontWeight = isActive ? 'bold' : 'normal';
             btn.onclick = () => {
                 if (state.feedsTabMode !== mode) {
-                    state.feedsTabMode = mode as 'saved' | 'lists' | 'discover';
+                    state.feedsTabMode = mode as 'saved' | 'lists' | 'discover' | 'trending';
                     loadFeedsTab();
                 }
             };
@@ -110,7 +114,7 @@ export async function loadFeedsTab() {
                     const pinnedBadge = feed.pinned ? i18n.t('feeds.pinnedBadge') : '';
                     const pinBtnLabel = feed.pinned ? i18n.t('feeds.unpin') : i18n.t('feeds.pin');
                     div.innerHTML = `
-                        <h3>${feed.displayName}${pinnedBadge}</h3>
+                        <h3>${esc(feed.displayName)}${pinnedBadge}</h3>
                         <small>${i18n.t('feeds.createdBy', { creator: feed.creator || '' })}${shortcutBadge}</small>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn-open-feed" data-uri="${feed.uri}">${i18n.t('feeds.openFeed')}</button>
@@ -242,13 +246,13 @@ export async function loadFeedsTab() {
                     } else {
                         const pinLabel = isPinned ? i18n.t('feeds.unpin') : i18n.t('feeds.pin');
                         actionButtonsHtml += `
-                            <button class="btn-pin-feed" data-uri="${feed.uri}">${pinLabel}</button>
+                            <button class="btn-pin-feed" data-uri="${esc(feed.uri)}">${esc(pinLabel)}</button>
                             <button class="btn-remove-feed" data-uri="${feed.uri}" style="background:#d32f2f; color:#fff; border:none; border-radius:4px; padding:4px 8px;">${i18n.t('feeds.remove')}</button>
                         `;
                     }
 
                     div.innerHTML = `
-                        <h3>${feed.displayName}${statusBadge}</h3>
+                        <h3>${esc(feed.displayName)}${statusBadge}</h3>
                         <p>${feed.description || i18n.t('feeds.noDescription')}</p>
                         <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}</small>
                         <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: (feed.likeCount || 0).toString() })}</div>
@@ -337,6 +341,60 @@ export async function loadFeedsTab() {
             } else {
                 if (feedsListContainer) feedsListContainer.innerHTML = `<p>${i18n.t('feeds.noPopularFeedFound')}</p>`;
                 else container.innerHTML = `<p>${i18n.t('feeds.noPopularFeedFound')}</p>`;
+            }
+        } else if (state.feedsTabMode === 'trending') {
+            const res = await window.go.services.FeedService.GetTrends(25);
+            container.innerHTML = '';
+
+            if (res && res.trends && res.trends.length > 0) {
+                res.trends.forEach((trend: TrendDTO) => {
+                    const name = trend.displayName || trend.topic;
+                    const startedAt = trend.startedAt ? formatPostDate(trend.startedAt) : "";
+
+                    const details: string[] = [i18n.t('feeds.trendPosts', { count: (trend.postCount || 0).toString() })];
+                    if (trend.category && trend.category !== 'other') details.push(trend.category);
+                    if (startedAt) details.push(i18n.t('feeds.trendStartedAt', { date: startedAt }));
+
+                    const div = document.createElement('article');
+                    div.classList.add('post-item');
+                    div.setAttribute('role', 'article');
+                    div.setAttribute('tabindex', '0');
+                    div.dataset.index = state.currentPosts.length.toString();
+                    div.dataset.text = i18n.t('feeds.trendAria', {
+                        name,
+                        description: trend.description || i18n.t('feeds.trendNoDescription'),
+                        details: details.join(', ')
+                    });
+
+                    const hotBadge = trend.status === 'hot' ? ` <small>${i18n.t('feeds.trendHot')}</small>` : '';
+                    div.innerHTML = `
+                        <h3>${esc(name)}${hotBadge}</h3>
+                        ${trend.description ? `<p>${esc(trend.description)}</p>` : ''}
+                        <div style="font-size: 0.85em; margin-top: 5px;">${esc(details.join(' · '))}</div>
+                    `;
+
+                    const openTrend = () => openTrendLink(trend.link, name);
+                    div.addEventListener('click', openTrend);
+                    div.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            openTrend();
+                        }
+                    });
+                    div.addEventListener('focus', () => {
+                        const idx = parseInt(div.dataset.index || "-1");
+                        if (!isNaN(idx) && idx >= 0) {
+                            state.focusedPostIndex = idx;
+                        }
+                    });
+
+                    container.appendChild(div);
+                    state.currentPosts.push(div);
+                });
+                announcePolite(i18n.t('feeds.trendsLoaded', { count: res.trends.length.toString() }));
+            } else {
+                container.innerHTML = `<p>${i18n.t('feeds.noTrendsFound')}</p>`;
+                announcePolite(i18n.t('feeds.noTrendsFound'));
             }
         }
     } catch (err) {

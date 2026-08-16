@@ -1,3 +1,4 @@
+import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog } from '../utils/dialog';
@@ -45,15 +46,15 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
     <div>
       <header style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
         <div>
-          <strong style="font-size:1.1em; color:var(--text-color, #fff);">${list.name}</strong>
-          ${creatorHandle ? `<small style="display:block; color:#aaa;">${i18n.t('list.byHandle', { handle: creatorHandle })}</small>` : ''}
+          <strong style="font-size:1.1em; color:var(--text-color, #fff);">${esc(list.name)}</strong>
+          ${creatorHandle ? `<small style="display:block; color:#aaa;">${esc(i18n.t('list.byHandle', { handle: creatorHandle }))}</small>` : ''}
         </div>
         <div style="display:flex; gap:6px; align-items:center;">
           ${list.listItemCount !== undefined ? `<small style="background:#333; padding:2px 8px; border-radius:10px;">${i18n.t('list.memberCount', { count: list.listItemCount.toString() })}</small>` : ''}
           <small style="background:${isMod ? '#d32f2f' : '#1976d2'}; color:#fff; padding:2px 8px; border-radius:10px;">${purposeText}</small>
         </div>
       </header>
-      ${list.description ? `<p style="margin:8px 0; color:#ddd;">${list.description}</p>` : ''}
+      ${list.description ? `<p style="margin:8px 0; color:#ddd;">${esc(list.description)}</p>` : ''}
       <footer style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <button type="button" class="btn-view-list-feed" style="padding:6px 12px; font-weight:bold;">${i18n.t('list.viewFeed')}</button>
         <button type="button" class="btn-view-list-members" style="padding:6px 12px;">${i18n.t('list.viewMembers')}</button>

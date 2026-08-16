@@ -24,6 +24,8 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
   if (postsModal && postsModal.open) postsModal.close();
   const profilesModal = document.getElementById('profiles-list-modal') as HTMLDialogElement;
   if (profilesModal && profilesModal.open) profilesModal.close();
+  const muteOptionsModal = document.getElementById('mute-options-modal') as HTMLDialogElement;
+  if (muteOptionsModal && muteOptionsModal.open) muteOptionsModal.close();
 
   if (state.currentTab === tabId && tabId === 'timeline') {
       state.currentFeedUri = "";

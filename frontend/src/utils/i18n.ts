@@ -138,3 +138,32 @@ export class I18n {
 // Export a singleton instance
 export const i18n = new I18n();
 export const t = i18n.t.bind(i18n);
+
+/** Prefix the Go services use for machine-readable, translatable errors. */
+const ERROR_CODE_PREFIX = 'mixko.err.';
+
+/**
+ * Converts an error raised by the Go bindings into a message in the user's
+ * language.
+ *
+ * The backend returns codes such as `mixko.err.altTextRequiredImage:2` rather
+ * than a sentence, because it has no idea which of the three languages the UI
+ * is showing. Anything that is not a recognised code is returned as-is.
+ */
+export function translateError(err: unknown): string {
+    const raw = err instanceof Error ? err.message : String(err ?? '');
+
+    const start = raw.indexOf(ERROR_CODE_PREFIX);
+    if (start === -1) return raw;
+
+    // The code runs to the first separator; an optional ":<arg>" may follow.
+    const rest = raw.slice(start + ERROR_CODE_PREFIX.length);
+    const match = rest.match(/^([A-Za-z0-9_]+)(?::([^\s:]+))?/);
+    if (!match) return raw;
+
+    const [, name, arg] = match;
+    const translated = i18n.t(`errors.${name}`, arg ? { arg } : undefined);
+
+    // t() returns the key itself when there is no entry for it.
+    return translated === `errors.${name}` ? raw : translated;
+}

@@ -12,8 +12,49 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.22'
+          check-latest: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go test
+        # -race catches the data races that the background sync poller can hit.
+        run: go test -race ./...
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci || npm install
+
+      - name: Typecheck frontend
+        run: |
+          cd frontend
+          npm run typecheck
+
+      - name: Test frontend
+        run: |
+          cd frontend
+          npm test
+
   build:
     name: Build (${{ matrix.build_name }})
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

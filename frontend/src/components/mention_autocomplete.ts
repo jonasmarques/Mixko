@@ -1,3 +1,4 @@
+import { esc, escUrl } from '../utils/helpers';
 import { announcePolite } from '../utils/a11y';
 import { i18n } from '../utils/i18n';
 
@@ -125,8 +126,8 @@ export class MentionAutocomplete {
 
             const name = profile.displayName || profile.handle;
             const avatarHtml = profile.avatar
-                ? `<img src="${profile.avatar}" alt="" class="mention-avatar" />`
-                : `<div class="mention-avatar-placeholder">${name.charAt(0).toUpperCase()}</div>`;
+                ? `<img src="${escUrl(profile.avatar)}" alt="" class="mention-avatar" />`
+                : `<div class="mention-avatar-placeholder">${esc(name.charAt(0).toUpperCase())}</div>`;
             
             const followingBadgeHtml = profile.viewerFollowing
                 ? `<span class="mention-following-badge">${i18n.t('compose.followingBadge')}</span>`
@@ -136,10 +137,10 @@ export class MentionAutocomplete {
                 ${avatarHtml}
                 <div class="mention-user-info">
                     <div class="mention-names">
-                        <strong class="mention-display-name">${name}</strong>
+                        <strong class="mention-display-name">${esc(name)}</strong>
                         ${followingBadgeHtml}
                     </div>
-                    <span class="mention-handle">@${profile.handle}</span>
+                    <span class="mention-handle">@${esc(profile.handle)}</span>
                 </div>
             `;
 

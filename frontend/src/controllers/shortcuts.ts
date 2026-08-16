@@ -1,9 +1,12 @@
+import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab, reloadCurrentTab } from './tabs';
-import { i18n } from '../utils/i18n';
+import { i18n, translateError } from '../utils/i18n';
+import { MuteScopeDTO } from '../types/dto';
+import { loadFeedsTab } from './feeds';
 import { loadTimeline } from './timeline';
 import { loadProfile } from './profile';
 import { loadChat, openChatConvo } from './chat';
@@ -34,7 +37,7 @@ function showProfilesModal(title: string, profiles: any[]) {
             div.style.padding = '10px';
             div.style.borderBottom = '1px solid #ccc';
             div.style.cursor = 'pointer';
-            div.innerHTML = `<strong>${p.displayName || p.handle}</strong> <small>@${p.handle}</small>`;
+            div.innerHTML = `<strong>${esc(p.displayName || p.handle)}</strong> <small>@${esc(p.handle)}</small>`;
             div.setAttribute('aria-label', `${i18n.t('app.profile')}: ${p.displayName || p.handle}, @${p.handle}`);
             
             const selectProfile = () => {
@@ -166,6 +169,174 @@ function showPostsModal(title: string, posts: any[]) {
         setTimeout(() => modalPosts[0].focus(), 0);
     } else {
         setTimeout(() => closeBtn.focus(), 0);
+    }
+}
+
+interface MuteMenuOption {
+    label: string;
+    run: () => Promise<void>;
+}
+
+/**
+ * Bluesky mutes can cover a whole account or only its reposts or quote posts,
+ * so the shortcut opens a menu instead of applying one fixed action.
+ */
+export async function showMuteMenu(did: string, handle: string) {
+    const modal = document.getElementById('mute-options-modal') as HTMLDialogElement;
+    const titleEl = document.getElementById('mute-options-title');
+    const container = document.getElementById('mute-options-container');
+    const closeBtn = document.getElementById('btn-close-mute-options') as HTMLButtonElement;
+
+    if (!modal || !titleEl || !container || !closeBtn) return;
+
+    let scope: MuteScopeDTO = { muted: false, mutedOnlyReposts: false, mutedOnlyQuoteposts: false };
+    try {
+        scope = await window.go.services.ModerationService.GetMuteScope(did);
+    } catch (err) {
+        announceAssertive(i18n.t('shortcuts.muteScopeError', { msg: translateError(err) }));
+    }
+
+    let currentState = i18n.t('shortcuts.muteStateNone');
+    if (scope.muted) currentState = i18n.t('shortcuts.muteStateAll');
+    else if (scope.mutedOnlyReposts) currentState = i18n.t('shortcuts.muteStateReposts');
+    else if (scope.mutedOnlyQuoteposts) currentState = i18n.t('shortcuts.muteStateQuotes');
+
+    const moderation = window.go.services.ModerationService;
+    const options: MuteMenuOption[] = [
+        {
+            label: i18n.t('shortcuts.muteOptionAll'),
+            run: async () => {
+                await moderation.MuteActor(did);
+                announceAssertive(i18n.t('shortcuts.muteSuccess', { handle }));
+            }
+        },
+        {
+            label: i18n.t('shortcuts.muteOptionReposts'),
+            run: async () => {
+                await moderation.MuteActorScoped(did, true, false);
+                announceAssertive(i18n.t('shortcuts.muteRepostsSuccess', { handle }));
+            }
+        },
+        {
+            label: i18n.t('shortcuts.muteOptionQuotes'),
+            run: async () => {
+                await moderation.MuteActorScoped(did, false, true);
+                announceAssertive(i18n.t('shortcuts.muteQuotesSuccess', { handle }));
+            }
+        }
+    ];
+
+    if (scope.muted || scope.mutedOnlyReposts || scope.mutedOnlyQuoteposts) {
+        options.push({
+            label: i18n.t('shortcuts.muteOptionRemove'),
+            run: async () => {
+                await moderation.UnmuteActor(did);
+                announceAssertive(i18n.t('shortcuts.unmuteSuccess', { handle }));
+            }
+        });
+    }
+
+    const title = i18n.t('shortcuts.muteMenuTitle', { handle });
+    titleEl.textContent = `${title} — ${currentState}`;
+    container.innerHTML = '';
+
+    options.forEach((option, i) => {
+        const div = document.createElement('div');
+        div.setAttribute('role', 'listitem');
+        div.setAttribute('tabindex', i === 0 ? '0' : '-1');
+        div.classList.add('mute-option-item');
+        div.style.padding = '10px';
+        div.style.borderBottom = '1px solid #ccc';
+        div.style.cursor = 'pointer';
+        div.textContent = option.label;
+        div.setAttribute('aria-label', option.label);
+
+        const activate = () => {
+            modal.close();
+            announcePolite(i18n.t('shortcuts.mutingUser', { handle }));
+            option.run().catch((err: unknown) => {
+                announceAssertive(i18n.t('shortcuts.errorMuteUser', { msg: translateError(err) }));
+            });
+        };
+
+        div.addEventListener('click', activate);
+        div.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                activate();
+            } else if (ev.key === 'ArrowDown' || ev.key.toLowerCase() === 'j') {
+                ev.preventDefault();
+                const next = div.nextElementSibling as HTMLElement;
+                if (next && next.classList.contains('mute-option-item')) {
+                    div.setAttribute('tabindex', '-1');
+                    next.setAttribute('tabindex', '0');
+                    next.focus();
+                }
+            } else if (ev.key === 'ArrowUp' || ev.key.toLowerCase() === 'k') {
+                ev.preventDefault();
+                const prev = div.previousElementSibling as HTMLElement;
+                if (prev && prev.classList.contains('mute-option-item')) {
+                    div.setAttribute('tabindex', '-1');
+                    prev.setAttribute('tabindex', '0');
+                    prev.focus();
+                } else {
+                    div.setAttribute('tabindex', '-1');
+                    closeBtn.focus();
+                }
+            }
+        });
+        container.appendChild(div);
+    });
+
+    closeBtn.onclick = () => modal.close();
+    closeBtn.onkeydown = (ev) => {
+        if (ev.key === 'ArrowDown' || ev.key.toLowerCase() === 'j') {
+            ev.preventDefault();
+            const firstItem = container.querySelector('.mute-option-item') as HTMLElement;
+            if (firstItem) {
+                firstItem.setAttribute('tabindex', '0');
+                firstItem.focus();
+            }
+        } else if (ev.key === 'ArrowUp' || ev.key.toLowerCase() === 'k') {
+            ev.preventDefault();
+            const items = container.querySelectorAll('.mute-option-item');
+            if (items.length > 0) {
+                const lastItem = items[items.length - 1] as HTMLElement;
+                lastItem.setAttribute('tabindex', '0');
+                lastItem.focus();
+            }
+        }
+    };
+
+    modal.showModal();
+    announceAssertive(i18n.t('shortcuts.muteMenuOpen', { handle, state: currentState }));
+    const firstItem = container.querySelector('.mute-option-item') as HTMLElement;
+    setTimeout(() => (firstItem || closeBtn).focus(), 0);
+}
+
+/**
+ * Resolves the account a moderation shortcut should act on: the author of the
+ * focused post, or the profile currently on screen.
+ */
+function resolveTargetActor(): { did?: string; handle?: string } {
+    const focused = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex] : null;
+    let did = focused?.dataset.authorDid;
+    let handle = focused?.dataset.authorHandle;
+    if (!did && state.currentTab === 'profile') {
+        const muteBtn = document.getElementById('btn-mute') as HTMLButtonElement | null;
+        const muteOptionsBtn = document.getElementById('btn-mute-options') as HTMLButtonElement | null;
+        did = muteBtn?.dataset.did || muteOptionsBtn?.dataset.did;
+        handle = muteBtn?.dataset.handle || muteOptionsBtn?.dataset.handle || state.currentHandle || undefined;
+    }
+    return { did, handle };
+}
+
+export function openMuteMenuForTarget() {
+    const { did, handle } = resolveTargetActor();
+    if (did && handle) {
+        showMuteMenu(did, handle);
+    } else {
+        announceAssertive(i18n.t('shortcuts.noUserFocused'));
     }
 }
 
@@ -313,6 +484,16 @@ export function setupShortcuts() {
             return;
         }
 
+        // Claimed explicitly because the unmodified `case 't'` further down does
+        // not check altKey and would otherwise repost the focused post.
+        if (e.altKey && !e.shiftKey && !e.ctrlKey && e.key.toLowerCase() === 't') {
+            e.preventDefault();
+            state.feedsTabMode = 'trending';
+            if (state.currentTab === 'feeds') loadFeedsTab();
+            else switchTab('feeds');
+            return;
+        }
+
         if (e.altKey && !e.shiftKey && !e.ctrlKey && e.key.toLowerCase() === 'c') {
             e.preventDefault();
             if (state.focusedPostIndex >= 0 && state.currentPosts[state.focusedPostIndex]) {
@@ -321,8 +502,8 @@ export function setupShortcuts() {
                 const authorHandle = p.dataset.authorHandle || p.dataset.author;
                 if (uri && authorHandle) {
                     const rkey = uri.split('/').pop();
-                    const bskyUrl = `https://bsky.app/profile/${authorHandle}/post/${rkey}`;
-                    navigator.clipboard.writeText(bskyUrl).then(() => {
+                    const postUrl = `https://bsky.app/profile/${authorHandle}/post/${rkey}`;
+                    navigator.clipboard.writeText(postUrl).then(() => {
                         announceAssertive(i18n.t('shortcuts.urlCopied'));
                     }).catch(() => {
                         announceAssertive(i18n.t('shortcuts.errorCopyUrl'));
@@ -498,6 +679,12 @@ export function setupShortcuts() {
         }
 
         if (e.altKey && !e.shiftKey && !e.ctrlKey && e.key.toLowerCase() === 'h') {
+            e.preventDefault();
+            openMuteMenuForTarget();
+            return;
+        }
+
+        if (e.altKey && !e.shiftKey && !e.ctrlKey && e.key.toLowerCase() === 'o') {
             e.preventDefault();
             const focusedPost = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex] : null;
             const uri = focusedPost?.dataset.uri;
@@ -873,15 +1060,10 @@ export function setupShortcuts() {
             }
             break;
             case 'm':
+            if (e.altKey) break;
             e.preventDefault();
             {
-                let did = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex]?.dataset.authorDid : undefined;
-                let handle = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex]?.dataset.authorHandle : undefined;
-                if (!did && state.currentTab === 'profile') {
-                    const muteBtn = document.getElementById('btn-mute') as HTMLButtonElement | null;
-                    did = muteBtn?.dataset.did;
-                    handle = muteBtn?.dataset.handle;
-                }
+                const { did, handle } = resolveTargetActor();
                 if (did && handle) {
                     confirmDialog(i18n.t('shortcuts.muteConfirm', { handle }), i18n.t('shortcuts.muteAction')).then(confirmed => {
                         if (confirmed) {

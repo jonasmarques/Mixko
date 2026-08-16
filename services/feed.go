@@ -12,10 +12,10 @@ import (
 
 
 type FeedService struct {
-	clientMgr *BSkyClient
+	clientMgr *ATClient
 }
 
-func NewFeedService(clientMgr *BSkyClient) *FeedService {
+func NewFeedService(clientMgr *ATClient) *FeedService {
 	return &FeedService{
 		clientMgr: clientMgr,
 	}
@@ -23,7 +23,8 @@ func NewFeedService(clientMgr *BSkyClient) *FeedService {
 
 // GetTimeline retrieves the home timeline for the authenticated user
 func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		var algo string = "reverse-chronological"
@@ -110,7 +111,7 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 			if alt != "" {
 				imageAlts = append(imageAlts, alt)
 			} else {
-				imageAlts = append(imageAlts, "(imagem sem descrição)")
+				imageAlts = append(imageAlts, "")
 			}
 			dto := &ImageDTO{
 				Thumb:    img.Thumb,
@@ -163,7 +164,7 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 						if alt != "" {
 							quotePost.ImageAlts = append(quotePost.ImageAlts, alt)
 						} else {
-							quotePost.ImageAlts = append(quotePost.ImageAlts, "(imagem sem descrição)")
+							quotePost.ImageAlts = append(quotePost.ImageAlts, "")
 						}
 						dto := &ImageDTO{
 							Thumb:    img.Thumb,
@@ -311,7 +312,8 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 	if filter == "" {
 		filter = "posts_with_replies"
 	}
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetAuthorFeed(ctx, c, actor, cursor, filter, false, limit)
@@ -353,7 +355,8 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 
 // GetThread retrieves a specific post and its replies
 func (s *FeedService) GetThread(uri string, depth int64) (*bsky.FeedGetPostThread_Output, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *bsky.FeedGetPostThread_Output
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetPostThread(ctx, c, depth, 10, uri)
@@ -367,7 +370,8 @@ func (s *FeedService) GetThread(uri string, depth int64) (*bsky.FeedGetPostThrea
 }
 
 func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetPostThread(ctx, c, depth, 10, uri)
@@ -423,7 +427,8 @@ func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 }
 
 func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetListFeed(ctx, c, cursor, limit, listUri)
@@ -464,7 +469,8 @@ func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*
 }
 
 func (s *FeedService) GetSavedFeeds() ([]*SavedFeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out []*SavedFeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorGetPreferences(ctx, c)
@@ -545,7 +551,8 @@ func (s *FeedService) GetSavedFeeds() ([]*SavedFeedDTO, error) {
 
 
 func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetFeed(ctx, c, cursor, feedUri, limit)
@@ -586,7 +593,8 @@ func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) 
 }
 
 func (s *FeedService) GetLikes(uri string, cid string, cursor string) (*ProfileListDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetLikes(ctx, c, cid, cursor, 100, uri)
@@ -607,7 +615,8 @@ func (s *FeedService) GetLikes(uri string, cid string, cursor string) (*ProfileL
 }
 
 func (s *FeedService) GetRepostedBy(uri string, cid string, cursor string) (*ProfileListDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetRepostedBy(ctx, c, cid, cursor, 100, uri)
@@ -626,7 +635,8 @@ func (s *FeedService) GetRepostedBy(uri string, cid string, cursor string) (*Pro
 }
 
 func (s *FeedService) GetQuotes(uri string, cid string, cursor string) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetQuotes(ctx, c, cid, cursor, 100, uri)
@@ -645,7 +655,8 @@ func (s *FeedService) GetQuotes(uri string, cid string, cursor string) (*FeedDTO
 }
 
 func (s *FeedService) GetPosts(uris []string) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetPosts(ctx, c, uris)
@@ -664,7 +675,8 @@ func (s *FeedService) GetPosts(uris []string) (*FeedDTO, error) {
 }
 
 func (s *FeedService) GetPopularFeedGenerators(cursor string, query string) (*FeedGeneratorResponseDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedGeneratorResponseDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.UnspeccedGetPopularFeedGenerators(ctx, c, cursor, 100, query)
@@ -701,8 +713,68 @@ func (s *FeedService) GetPopularFeedGenerators(cursor string, query string) (*Fe
 	return out, err
 }
 
+// GetTrends lists what is currently trending on the network. The lexicon caps
+// limit at 25, so anything above that is clamped instead of rejected.
+//
+// The response is decoded by hand because the trend description, which is the
+// only part that explains what a topic actually is, is missing from the struct
+// generated for the pinned indigo release.
+func (s *FeedService) GetTrends(limit int64) (*TrendListDTO, error) {
+	if limit <= 0 || limit > 25 {
+		limit = 25
+	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	out := &TrendListDTO{}
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		var res struct {
+			Trends []struct {
+				Topic       string `json:"topic"`
+				DisplayName string `json:"displayName"`
+				Description string `json:"description"`
+				Link        string `json:"link"`
+				Category    string `json:"category"`
+				Status      string `json:"status"`
+				PostCount   int64  `json:"postCount"`
+				StartedAt   string `json:"startedAt"`
+				Actors      []struct {
+					Handle string `json:"handle"`
+				} `json:"actors"`
+			} `json:"trends"`
+		}
+		params := map[string]interface{}{"limit": limit}
+		if err := c.Do(ctx, xrpc.Query, "", "app.bsky.unspecced.getTrends", params, nil, &res); err != nil {
+			return err
+		}
+		out.Trends = nil
+		for _, trend := range res.Trends {
+			var actors []string
+			for _, actor := range trend.Actors {
+				actors = append(actors, actor.Handle)
+			}
+			out.Trends = append(out.Trends, &TrendDTO{
+				Topic:       trend.Topic,
+				DisplayName: trend.DisplayName,
+				Description: trend.Description,
+				Link:        trend.Link,
+				Category:    trend.Category,
+				Status:      trend.Status,
+				PostCount:   trend.PostCount,
+				StartedAt:   trend.StartedAt,
+				Actors:      actors,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *FeedService) GetActorLikes(actor string, cursor string, limit int64) (*FeedDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetActorLikes(ctx, c, actor, cursor, limit)
@@ -838,10 +910,10 @@ func (s *FeedService) GetBookmarks(cursor string, limit int64) (*FeedDTO, error)
 	out := &FeedDTO{Posts: []*PostDTO{}}
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		// Use typed indigo API: bsky.BookmarkGetBookmarks
-		result, errBsky := bsky.BookmarkGetBookmarks(ctx, c, cursor, limit)
+		result, errBookmarks := bsky.BookmarkGetBookmarks(ctx, c, cursor, limit)
 
-		if errBsky != nil {
-			return errBsky
+		if errBookmarks != nil {
+			return errBookmarks
 		}
 
 		if result == nil || len(result.Bookmarks) == 0 {

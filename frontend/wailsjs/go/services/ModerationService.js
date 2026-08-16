@@ -10,12 +10,20 @@ export function GetBlocks(arg1) {
   return window['go']['services']['ModerationService']['GetBlocks'](arg1);
 }
 
+export function GetMuteScope(arg1) {
+  return window['go']['services']['ModerationService']['GetMuteScope'](arg1);
+}
+
 export function GetMutes(arg1) {
   return window['go']['services']['ModerationService']['GetMutes'](arg1);
 }
 
 export function MuteActor(arg1) {
   return window['go']['services']['ModerationService']['MuteActor'](arg1);
+}
+
+export function MuteActorScoped(arg1, arg2, arg3) {
+  return window['go']['services']['ModerationService']['MuteActorScoped'](arg1, arg2, arg3);
 }
 
 export function MuteThread(arg1) {

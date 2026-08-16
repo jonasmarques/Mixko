@@ -1,3 +1,4 @@
+import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog, promptDialog } from '../utils/dialog';
@@ -115,13 +116,13 @@ export async function viewListMembers(listUri: string, listName: string) {
 
         let membersHtml = '';
         if (res && res.profiles && res.profiles.length > 0) {
-            membersHtml = res.profiles.map((p: any) => `
+            membersHtml = res.profiles.map((p) => `
                 <div class="post-item" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px; background:#121212; border-radius:6px;">
                     <div>
-                        <strong>${p.displayName || p.handle}</strong>
-                        <small style="display:block; color:#aaa;">@${p.handle}</small>
+                        <strong>${esc(p.displayName || p.handle)}</strong>
+                        <small style="display:block; color:#aaa;">@${esc(p.handle)}</small>
                     </div>
-                    <button type="button" class="btn-open-member-profile" data-handle="${p.handle}" style="padding:4px 10px;">${i18n.t('lists.viewProfile')}</button>
+                    <button type="button" class="btn-open-member-profile" data-handle="${esc(p.handle)}" style="padding:4px 10px;">${i18n.t('lists.viewProfile')}</button>
                 </div>
             `).join('');
         } else {
@@ -201,7 +202,7 @@ export async function viewListFeed(listUri: string, listName: string, targetCont
         state.currentPosts = [];
 
         if (res && res.posts && res.posts.length > 0) {
-            res.posts.forEach((post: any, idx: number) => {
+            res.posts.forEach((post, idx: number) => {
                 const article = createPostArticle(post, idx);
                 feedContainer.appendChild(article);
                 state.currentPosts.push(article);

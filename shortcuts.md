@@ -15,6 +15,7 @@
 | `Alt` + `3` | Go to the **Profile** tab (your own profile) |
 | `Alt` + `4` | Go to the **DMs** tab (Direct Messages / Chat) |
 | `Alt` + `5` | Go to the **Feeds and Lists** tab |
+| `Alt` + `T` | Go to the **Trending** sub-tab (what is trending on the network) |
 | `Alt` + `6` | Go to the **Saved Posts** tab (Bookmarks) |
 | `Ctrl` + `F` or `Alt` + `7` | Go to the **Search** tab and focus on the search field |
 | `Alt` + `S` or `Alt` + `8` | Go to the **Settings** tab |
@@ -72,7 +73,8 @@
 | `Shift` + `O` | View original post of a quote in a modal |
 | `Shift` + `F` | Pin the focused post on your profile |
 | `Shift` + `M` | Mute focused post thread |
-| `Alt` + `H` | Hide focused reply |
+| `Alt` + `O` | Hide focused reply |
+| `Alt` + `H` | Open the **mute options** for the author (mute everything, only reposts, only quote posts, or unmute) |
 | `Alt` + `R` | Hide or show replies in Timeline (toggle preference) |
 | `Alt` + `D` | Report focused publication or profile on display |
 

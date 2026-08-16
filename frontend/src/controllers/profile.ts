@@ -4,7 +4,8 @@ import { createPostArticle } from '../components/post';
 import { createListArticle } from '../components/list';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
-import { getFilePathOrDataUrl } from '../utils/helpers';
+import { showMuteMenu } from './shortcuts';
+import { getFilePathOrDataUrl, esc, linkify } from '../utils/helpers';
 import { i18n } from '../utils/i18n';
 
 export async function loadProfile(loadMore = false, keepFocus = false) {
@@ -42,6 +43,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
               } else {
                 muteBtn = `<button id="btn-mute" data-handle="${res.handle}" data-did="${res.did}" aria-label="${i18n.t('profile.muteAria')}">${i18n.t('profile.muteBtn')}</button>`;
               }
+              muteBtn += `<button id="btn-mute-options" data-handle="${res.handle}" data-did="${res.did}" aria-label="${i18n.t('profile.muteOptionsAria')}">${i18n.t('profile.muteOptionsBtn')}</button>`;
 
               let blockBtn = "";
               if (res.viewerBlocking) {
@@ -107,8 +109,8 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             if (!res.isMe && window.go.services.SocialService.GetKnownFollowers) {
               const knownRes = await window.go.services.SocialService.GetKnownFollowers(res.did || res.handle, "");
               if (knownRes && knownRes.profiles && knownRes.profiles.length > 0) {
-                const names = knownRes.profiles.map((p: any) => p.displayName || `@${p.handle}`).join(', ');
-                knownFollowersHtml = `<p style="font-size:0.9em; color:#aaa;"><em>${i18n.t('profile.followedByKnown', { names })}</em></p>`;
+                const names = knownRes.profiles.map((p) => p.displayName || `@${p.handle}`).join(', ');
+                knownFollowersHtml = `<p style="font-size:0.9em; color:#aaa;"><em>${esc(i18n.t('profile.followedByKnown', { names }))}</em></p>`;
               }
             }
           } catch (e) {
@@ -126,13 +128,13 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
             labelerBadge = `<div class="labeler-badge" style="display: inline-block; background: #2563eb; color: #fff; font-size: 0.85em; font-weight: bold; padding: 4px 10px; border-radius: 12px; margin-bottom: 8px;">${i18n.t('profile.labelerBadge')}${res.viewerSubscribedLabeler ? i18n.t('profile.subscribedBadge') : ''}</div>`;
             
             if (res.labelerInfo && res.labelerInfo.policies && res.labelerInfo.policies.length > 0) {
-              const policiesList = res.labelerInfo.policies.map((p: any) => {
+              const policiesList = res.labelerInfo.policies.map((p) => {
                 return `
                   <div style="background: rgba(255,255,255,0.05); padding: 8px 12px; margin-top: 6px; border-radius: 6px; border-left: 3px solid #3b82f6;">
-                    <strong>${p.title || p.identifier}</strong> <span style="font-size:0.8em; opacity:0.8;">(${p.identifier})</span>
-                    ${p.description ? `<p style="margin: 4px 0 0 0; font-size: 0.9em; opacity: 0.9;">${p.description}</p>` : ''}
+                    <strong>${esc(p.title || p.identifier)}</strong> <span style="font-size:0.8em; opacity:0.8;">(${esc(p.identifier)})</span>
+                    ${p.description ? `<p style="margin: 4px 0 0 0; font-size: 0.9em; opacity: 0.9;">${esc(p.description)}</p>` : ''}
                     <div style="font-size:0.75em; margin-top:4px; opacity:0.75;">
-                      ${i18n.t('profile.policyDetails', { severity: p.severity || 'padrão', blurs: p.blurs || 'nenhuma', adultOnly: p.adultOnly ? i18n.t('profile.adultContent') : '' })}
+                      ${esc(i18n.t('profile.policyDetails', { severity: p.severity || 'padrão', blurs: p.blurs || 'nenhuma', adultOnly: p.adultOnly ? i18n.t('profile.adultContent') : '' }))}
                     </div>
                   </div>
                 `;
@@ -148,13 +150,13 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
           }
 
           container.innerHTML = `
-            <div class="post-item profile-header" tabindex="0" data-text="${i18n.t('profile.profileAriaDetails', { name: res.displayName, followsYou: res.viewerFollowedBy ? i18n.t('profile.followsYouAria') : '', isLabeler: res.isLabeler ? i18n.t('profile.isLabelerAria') : '', followers: res.followersCount.toString(), following: res.followsCount.toString(), shortcuts: res.isMe ? '' : i18n.t('profile.shortcutsAria') })}">
+            <div class="post-item profile-header" tabindex="0" data-text="${esc(i18n.t('profile.profileAriaDetails', { name: res.displayName, followsYou: res.viewerFollowedBy ? i18n.t('profile.followsYouAria') : '', isLabeler: res.isLabeler ? i18n.t('profile.isLabelerAria') : '', followers: res.followersCount.toString(), following: res.followsCount.toString(), shortcuts: res.isMe ? '' : i18n.t('profile.shortcutsAria') }))}">
               ${blockedNotice}
               ${labelerBadge}
-              <h3>${res.displayName} (@${res.handle})</h3>
+              <h3>${esc(res.displayName)} (@${esc(res.handle)})</h3>
               ${res.viewerFollowedBy ? `<p><em>${i18n.t('profile.followsYouText')}</em></p>` : ''}
               ${knownFollowersHtml}
-              <p>${res.description}</p>
+              <p>${linkify(res.description || '')}</p>
               <p>
                 <strong>${res.followersCount}</strong> ${i18n.t('profile.tabFollowers')} | 
                 <strong>${res.followsCount}</strong> ${i18n.t('profile.tabFollowing')} | 
@@ -269,6 +271,10 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                       loadProfile();
                   }
               });
+              document.getElementById('btn-mute-options')?.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  showMuteMenu(res.did, res.handle);
+              });
               document.getElementById('btn-unmute')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
                   if (await confirmDialog(i18n.t('profile.unmutePrompt', { handle: res.handle }), i18n.t('profile.unmuteTitle'))) {
@@ -372,7 +378,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
 
         let feedRes = await window.go.services.FeedService.GetAuthorFeed(state.currentHandle, state.profileCursor, 100, filter);
         if (feedRes && feedRes.posts) {
-            feedRes.posts.forEach((post: any) => {
+            feedRes.posts.forEach((post) => {
                 if (!state.currentPosts.some(p => p.dataset.uri === post.uri)) {
                     const article = createPostArticle(post, state.currentPosts.length);
                     contentContainer.appendChild(article);
@@ -384,7 +390,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
     } else if (state.profileTabMode === 'likes') {
         let feedRes = await window.go.services.FeedService.GetActorLikes(state.currentHandle, state.profileCursor, 100);
         if (feedRes && feedRes.posts) {
-            feedRes.posts.forEach((post: any) => {
+            feedRes.posts.forEach((post) => {
                 if (!state.currentPosts.some(p => p.dataset.uri === post.uri)) {
                     const article = createPostArticle(post, state.currentPosts.length);
                     contentContainer.appendChild(article);
@@ -407,7 +413,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 div.classList.add('post-item');
                 div.setAttribute('tabindex', '0');
                 div.dataset.text = i18n.t('profile.profileCardAria', { name: prof.displayName || prof.handle, desc: prof.description || '' });
-                div.innerHTML = `<h3>${prof.displayName} <small>(@${prof.handle})</small></h3><p>${prof.description || ''}</p>`;
+                div.innerHTML = `<h3>${esc(prof.displayName)} <small>(@${esc(prof.handle)})</small></h3><p>${esc(prof.description || '')}</p>`;
                 
                 div.dataset.index = state.currentPosts.length.toString();
                 div.addEventListener('focus', () => {
@@ -464,8 +470,8 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                 
                 if (item.listUri) {
                     article.innerHTML = `
-                        <h3>${item.name}</h3>
-                        <p>${item.description || ''}</p>
+                        <h3>${esc(item.name)}</h3>
+                        <p>${esc(item.description || '')}</p>
                         <button class="btn-follow-all-pack" data-list-uri="${item.listUri}" style="margin-top:6px; padding:4px 10px; font-weight:bold;">${i18n.t('profile.followAllBtn')}</button>
                     `;
                     article.querySelector('.btn-follow-all-pack')?.addEventListener('click', async (e) => {
@@ -479,7 +485,7 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
                         }
                     });
                 } else {
-                    article.innerHTML = `<h3>${item.name}</h3><p>${item.description || ''}</p>`;
+                    article.innerHTML = `<h3>${esc(item.name)}</h3><p>${esc(item.description || '')}</p>`;
                 }
                 
                 article.addEventListener('focus', () => {

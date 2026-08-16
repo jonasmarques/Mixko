@@ -1,21 +1,41 @@
 package services
 
 import (
-	"context"
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
 type NotificationsService struct {
-	clientMgr *BSkyClient
+	clientMgr *ATClient
 }
 
-func NewNotificationsService(clientMgr *BSkyClient) *NotificationsService {
+func NewNotificationsService(clientMgr *ATClient) *NotificationsService {
 	return &NotificationsService{clientMgr: clientMgr}
 }
 
+// reasonUsesReasonSubject reports whether the post to show for a notification is
+// the one in reasonSubject. The "-via-repost" reasons fire when someone likes or
+// reposts a post through a repost of ours, and point at the original post too.
+func reasonUsesReasonSubject(reason string) bool {
+	switch reason {
+	case "like", "repost", "like-via-repost", "repost-via-repost":
+		return true
+	}
+	return false
+}
+
+// reasonUsesOwnURI reports whether the notification's own uri is the post to show.
+func reasonUsesOwnURI(reason string) bool {
+	switch reason {
+	case "reply", "quote", "mention", "subscribed-post":
+		return true
+	}
+	return false
+}
+
 func (s *NotificationsService) GetNotifications(cursor string) (*NotificationListDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *NotificationListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.NotificationListNotifications(ctx, c, cursor, 50, false, nil, "")
@@ -27,14 +47,14 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 		
 		var postUris []string
 		for _, item := range res.Notifications {
-			if (item.Reason == "like" || item.Reason == "repost") && item.ReasonSubject != nil {
+			if reasonUsesReasonSubject(item.Reason) && item.ReasonSubject != nil {
 				postUris = append(postUris, *item.ReasonSubject)
 				if item.Record != nil {
 					if subjURI := ParseRepostSubjectURI(item.Record.Val); subjURI != "" {
 						postUris = append(postUris, subjURI)
 					}
 				}
-			} else if item.Reason == "reply" || item.Reason == "quote" || item.Reason == "mention" {
+			} else if reasonUsesOwnURI(item.Reason) {
 				postUris = append(postUris, item.Uri)
 				if item.Reason == "quote" && item.ReasonSubject != nil {
 					postUris = append(postUris, *item.ReasonSubject)
@@ -65,7 +85,7 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 			var video *VideoEmbedDTO
 			var hydratedPost *PostDTO
 			
-			if (item.Reason == "like" || item.Reason == "repost") && item.ReasonSubject != nil {
+			if reasonUsesReasonSubject(item.Reason) && item.ReasonSubject != nil {
 				if view, ok := postViews[*item.ReasonSubject]; ok {
 					hydratedPost = view
 				} else if item.Record != nil {
@@ -75,7 +95,7 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 						}
 					}
 				}
-			} else if item.Reason == "reply" || item.Reason == "quote" || item.Reason == "mention" {
+			} else if reasonUsesOwnURI(item.Reason) {
 				if view, ok := postViews[item.Uri]; ok {
 					hydratedPost = view
 				}
@@ -108,6 +128,7 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 			out.Notifications = append(out.Notifications, &NotificationDTO{
 				URI:               item.Uri,
 				CID:               item.Cid,
+				AuthorDID:         item.Author.Did,
 				AuthorName:        authorName,
 				AuthorHandle:      item.Author.Handle,
 				Reason:            item.Reason,
@@ -130,7 +151,8 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 }
 
 func (s *NotificationsService) UpdateSeen(seenAt string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		return bsky.NotificationUpdateSeen(ctx, c, &bsky.NotificationUpdateSeen_Input{
 			SeenAt: seenAt,
@@ -139,7 +161,8 @@ func (s *NotificationsService) UpdateSeen(seenAt string) error {
 }
 
 func (s *NotificationsService) GetUnreadCount() (int64, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var count int64
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.NotificationGetUnreadCount(ctx, c, false, "")

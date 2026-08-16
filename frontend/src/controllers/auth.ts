@@ -8,6 +8,27 @@ import { loadChat, openChatConvo } from './chat';
 import { checkAppUpdates } from './updater';
 import { i18n } from '../utils/i18n';
 
+/**
+ * Resolves the signed-in account's canonical identity.
+ *
+ * The login form accepts an email or an unnormalised handle, so what the user
+ * typed is not a reliable identifier. Ownership checks (delete, pin) compare
+ * against the DID recorded here.
+ */
+async function captureIdentity(): Promise<void> {
+    try {
+        const profile = await window.go.services.SocialService.GetProfile(state.loggedInHandle);
+        if (profile?.did) state.loggedInDid = profile.did;
+        if (profile?.handle) {
+            state.loggedInHandle = profile.handle;
+            state.currentHandle = profile.handle;
+            localStorage.setItem('lastHandle', profile.handle);
+        }
+    } catch {
+        // Not fatal: ownership checks fall back to comparing handles.
+    }
+}
+
 export function setupAuth() {
     if (DOM.loginForm) {
         DOM.loginForm.addEventListener('submit', async (e) => {
@@ -24,6 +45,7 @@ export function setupAuth() {
                 state.loggedInHandle = idInput.value;
                 state.currentHandle = state.loggedInHandle;
                 localStorage.setItem('lastHandle', state.loggedInHandle);
+                await captureIdentity();
                 announceAssertive(i18n.t('auth.loginSuccess'));
                 DOM.loginSection.classList.add('hidden');
                 DOM.appSections.classList.remove('hidden');
@@ -154,6 +176,7 @@ export async function initApp() {
         if (handle) {
             state.loggedInHandle = handle;
             state.currentHandle = state.loggedInHandle;
+            await captureIdentity();
             announceAssertive(i18n.t('auth.sessionRestored'));
             DOM.loginSection.classList.add('hidden');
             DOM.appSections.classList.remove('hidden');

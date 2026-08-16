@@ -81,23 +81,17 @@ func (s *UpdaterService) CheckForUpdate() (*UpdateInfoDTO, error) {
 	}, nil
 }
 
+// isNewerVersion compares semantic versions component by component, so a
+// release that only bumps the patch (v1.0.0 -> v1.0.1) is still detected.
 func isNewerVersion(current, latest string) bool {
-	curClean := cleanVersionString(current)
-	latClean := cleanVersionString(latest)
+	cur := parseVersionParts(cleanVersionString(current))
+	lat := parseVersionParts(cleanVersionString(latest))
 
-	curParts := strings.Split(curClean, ".")
-	latParts := strings.Split(latClean, ".")
-
-	curMajor, curMinor := parseVersionParts(curParts)
-	latMajor, latMinor := parseVersionParts(latParts)
-
-	if latMajor > curMajor {
-		return true
+	for i := range lat {
+		if lat[i] != cur[i] {
+			return lat[i] > cur[i]
+		}
 	}
-	if latMajor == curMajor && latMinor > curMinor {
-		return true
-	}
-
 	return false
 }
 
@@ -105,16 +99,24 @@ func cleanVersionString(v string) string {
 	v = strings.TrimSpace(v)
 	v = strings.TrimPrefix(v, "v")
 	v = strings.TrimPrefix(v, "V")
+
+	// Drop any pre-release or build suffix (1.2.3-beta.1, 1.2.3+abc) so only
+	// the numeric core is compared.
+	if idx := strings.IndexAny(v, "-+"); idx != -1 {
+		v = v[:idx]
+	}
 	return v
 }
 
-func parseVersionParts(parts []string) (int, int) {
-	major, minor := 0, 0
-	if len(parts) > 0 {
-		major, _ = strconv.Atoi(parts[0])
+// parseVersionParts returns major, minor and patch. Missing or malformed
+// components count as zero.
+func parseVersionParts(v string) [3]int {
+	var out [3]int
+	for i, part := range strings.Split(v, ".") {
+		if i >= len(out) {
+			break
+		}
+		out[i], _ = strconv.Atoi(part)
 	}
-	if len(parts) > 1 {
-		minor, _ = strconv.Atoi(parts[1])
-	}
-	return major, minor
+	return out
 }

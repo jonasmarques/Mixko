@@ -1,16 +1,15 @@
 package services
 
 import (
-	"context"
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
 type SearchService struct {
-	clientMgr *BSkyClient
+	clientMgr *ATClient
 }
 
-func NewSearchService(clientMgr *BSkyClient) *SearchService {
+func NewSearchService(clientMgr *ATClient) *SearchService {
 	return &SearchService{clientMgr: clientMgr}
 }
 
@@ -25,7 +24,8 @@ type PostSearchFilter struct {
 }
 
 func (s *SearchService) SearchPosts(filter *PostSearchFilter) (*SearchDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *SearchDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedSearchPosts(ctx, c, filter.Author, filter.Cursor, "", filter.Lang, 50, "", filter.Query, filter.Since, filter.Sort, nil, filter.Until, "")
@@ -49,7 +49,8 @@ func (s *SearchService) SearchPosts(filter *PostSearchFilter) (*SearchDTO, error
 }
 
 func (s *SearchService) SearchProfiles(query string, cursor string) (*ProfileListDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorSearchActors(ctx, c, cursor, 50, query, "")
@@ -59,28 +60,9 @@ func (s *SearchService) SearchProfiles(query string, cursor string) (*ProfileLis
 
 		out = &ProfileListDTO{Cursor: safeString(res.Cursor)}
 		for _, actor := range res.Actors {
-			displayName := ""
-			if actor.DisplayName != nil {
-				displayName = *actor.DisplayName
+			if dto := ParseProfileView(actor); dto != nil {
+				out.Profiles = append(out.Profiles, dto)
 			}
-			description := ""
-			if actor.Description != nil {
-				description = *actor.Description
-			}
-			
-			following := ""
-			if actor.Viewer != nil && actor.Viewer.Following != nil {
-				following = *actor.Viewer.Following
-			}
-
-			out.Profiles = append(out.Profiles, &ProfileDTO{
-				DID:             actor.Did,
-				Handle:          actor.Handle,
-				DisplayName:     displayName,
-				Description:     description,
-				Avatar:          safeString(actor.Avatar),
-				ViewerFollowing: following,
-			})
 		}
 		return nil
 	})
@@ -88,7 +70,8 @@ func (s *SearchService) SearchProfiles(query string, cursor string) (*ProfileLis
 }
 
 func (s *SearchService) SearchProfilesTypeahead(query string) (*ProfileListDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorSearchActorsTypeahead(ctx, c, 50, query, "")
@@ -98,25 +81,9 @@ func (s *SearchService) SearchProfilesTypeahead(query string) (*ProfileListDTO, 
 
 		out = &ProfileListDTO{}
 		for _, actor := range res.Actors {
-			displayName := ""
-			if actor.DisplayName != nil {
-				displayName = *actor.DisplayName
+			if dto := ParseProfileViewBasic(actor); dto != nil {
+				out.Profiles = append(out.Profiles, dto)
 			}
-			description := ""
-			
-			following := ""
-			if actor.Viewer != nil && actor.Viewer.Following != nil {
-				following = *actor.Viewer.Following
-			}
-
-			out.Profiles = append(out.Profiles, &ProfileDTO{
-				DID:             actor.Did,
-				Handle:          actor.Handle,
-				DisplayName:     displayName,
-				Description:     description,
-				Avatar:          safeString(actor.Avatar),
-				ViewerFollowing: following,
-			})
 		}
 		return nil
 	})

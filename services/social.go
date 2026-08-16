@@ -17,15 +17,107 @@ import (
 )
 
 type SocialService struct {
-	clientMgr *BSkyClient
+	clientMgr *ATClient
 }
 
-func NewSocialService(clientMgr *BSkyClient) *SocialService {
+func NewSocialService(clientMgr *ATClient) *SocialService {
 	return &SocialService{clientMgr: clientMgr}
 }
 
+// mutatePrefs runs a read-modify-write cycle over the account preferences.
+//
+// putPreferences replaces the whole array, so every update has to fetch the
+// current set, change one entry and send all of them back. transform receives
+// the existing preferences and returns the full set to store.
+func (s *SocialService) mutatePrefs(transform func([]bsky.ActorDefs_Preferences_Elem) []bsky.ActorDefs_Preferences_Elem) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.ActorGetPreferences(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		return bsky.ActorPutPreferences(ctx, c, &bsky.ActorPutPreferences_Input{
+			Preferences: transform(res.Preferences),
+		})
+	})
+}
+
+// replacePref swaps the single preference entry matched by match for the one
+// built by build, appending it when the account has none yet.
+func replacePref(
+	prefs []bsky.ActorDefs_Preferences_Elem,
+	match func(bsky.ActorDefs_Preferences_Elem) bool,
+	build func() bsky.ActorDefs_Preferences_Elem,
+) []bsky.ActorDefs_Preferences_Elem {
+	out := make([]bsky.ActorDefs_Preferences_Elem, 0, len(prefs)+1)
+	replaced := false
+
+	for _, pref := range prefs {
+		if match(pref) {
+			if replaced {
+				// Drop duplicates rather than keeping stale copies around.
+				continue
+			}
+			out = append(out, build())
+			replaced = true
+			continue
+		}
+		out = append(out, pref)
+	}
+
+	if !replaced {
+		out = append(out, build())
+	}
+	return out
+}
+
+// buildMutedWords converts the UI's plain word list into preference records.
+func buildMutedWords(words []string) []*bsky.ActorDefs_MutedWord {
+	items := make([]*bsky.ActorDefs_MutedWord, 0, len(words))
+	for _, w := range words {
+		valContent := "content"
+		valTag := "tag"
+		items = append(items, &bsky.ActorDefs_MutedWord{
+			Value:   w,
+			Targets: []*string{&valContent, &valTag},
+		})
+	}
+	return items
+}
+
+// buildContentLabelPrefs converts UI filters into preference records.
+func buildContentLabelPrefs(filters []ContentFilterDTO) []bsky.ActorDefs_Preferences_Elem {
+	out := make([]bsky.ActorDefs_Preferences_Elem, 0, len(filters))
+	for _, filter := range filters {
+		var labelerDid *string
+		if filter.LabelerDid != "" {
+			did := filter.LabelerDid
+			labelerDid = &did
+		}
+
+		// The lexicon spells "show" as "ignore".
+		vis := filter.Visibility
+		if vis == "show" {
+			vis = "ignore"
+		}
+
+		out = append(out, bsky.ActorDefs_Preferences_Elem{
+			ActorDefs_ContentLabelPref: &bsky.ActorDefs_ContentLabelPref{
+				Label:      filter.Label,
+				Visibility: vis,
+				LabelerDid: labelerDid,
+			},
+		})
+	}
+	return out
+}
+
 func (s *SocialService) GetPreferences() (*PreferencesDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *PreferencesDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorGetPreferences(ctx, c)
@@ -93,208 +185,79 @@ func (s *SocialService) GetPreferences() (*PreferencesDTO, error) {
 }
 
 func (s *SocialService) UpdateMutedWords(words []string) error {
-	ctx := context.Background()
-	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
-		if err != nil {
-			return err
-		}
-
-		newMutedWords := []*bsky.ActorDefs_MutedWord{}
-		for _, w := range words {
-			valContent := "content"
-			valTag := "tag"
-			newMutedWords = append(newMutedWords, &bsky.ActorDefs_MutedWord{
-				Value: w,
-				Targets: []*string{&valContent, &valTag},
+	return s.mutatePrefs(func(prefs []bsky.ActorDefs_Preferences_Elem) []bsky.ActorDefs_Preferences_Elem {
+		return replacePref(prefs,
+			func(p bsky.ActorDefs_Preferences_Elem) bool { return p.ActorDefs_MutedWordsPref != nil },
+			func() bsky.ActorDefs_Preferences_Elem {
+				return bsky.ActorDefs_Preferences_Elem{
+					ActorDefs_MutedWordsPref: &bsky.ActorDefs_MutedWordsPref{
+						Items: buildMutedWords(words),
+					},
+				}
 			})
-		}
-
-		var newPrefs []bsky.ActorDefs_Preferences_Elem
-		found := false
-		for _, pref := range res.Preferences {
-			if pref.ActorDefs_MutedWordsPref != nil {
-				pref.ActorDefs_MutedWordsPref.Items = newMutedWords
-				found = true
-			}
-			newPrefs = append(newPrefs, pref)
-		}
-
-		if !found {
-			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-				ActorDefs_MutedWordsPref: &bsky.ActorDefs_MutedWordsPref{
-					Items: newMutedWords,
-				},
-			})
-		}
-
-		input := &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
-		}
-		return bsky.ActorPutPreferences(ctx, c, input)
 	})
 }
 
 func (s *SocialService) UpdateAdultContentEnabled(enabled bool) error {
-	ctx := context.Background()
-	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
-		if err != nil {
-			return err
-		}
-
-		var newPrefs []bsky.ActorDefs_Preferences_Elem
-		found := false
-		for _, pref := range res.Preferences {
-			if pref.ActorDefs_AdultContentPref != nil {
-				pref.ActorDefs_AdultContentPref.Enabled = enabled
-				found = true
-			}
-			newPrefs = append(newPrefs, pref)
-		}
-
-		if !found {
-			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-				ActorDefs_AdultContentPref: &bsky.ActorDefs_AdultContentPref{
-					Enabled: enabled,
-				},
+	return s.mutatePrefs(func(prefs []bsky.ActorDefs_Preferences_Elem) []bsky.ActorDefs_Preferences_Elem {
+		return replacePref(prefs,
+			func(p bsky.ActorDefs_Preferences_Elem) bool { return p.ActorDefs_AdultContentPref != nil },
+			func() bsky.ActorDefs_Preferences_Elem {
+				return bsky.ActorDefs_Preferences_Elem{
+					ActorDefs_AdultContentPref: &bsky.ActorDefs_AdultContentPref{Enabled: enabled},
+				}
 			})
-		}
-
-		input := &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
-		}
-		return bsky.ActorPutPreferences(ctx, c, input)
 	})
 }
 
 func (s *SocialService) UpdateContentFilters(filters []ContentFilterDTO) error {
-	ctx := context.Background()
-	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
-		if err != nil {
-			return err
-		}
-
-		// Remover preferências antigas de content label
-		var newPrefs []bsky.ActorDefs_Preferences_Elem
-		for _, pref := range res.Preferences {
+	return s.mutatePrefs(func(prefs []bsky.ActorDefs_Preferences_Elem) []bsky.ActorDefs_Preferences_Elem {
+		// Content label prefs are one entry per label, so the whole group is
+		// rebuilt rather than replaced entry by entry.
+		out := make([]bsky.ActorDefs_Preferences_Elem, 0, len(prefs)+len(filters))
+		for _, pref := range prefs {
 			if pref.ActorDefs_ContentLabelPref == nil {
-				newPrefs = append(newPrefs, pref)
+				out = append(out, pref)
 			}
 		}
-
-		// Adicionar novas preferências
-		for _, filter := range filters {
-			var labelerDid *string
-			if filter.LabelerDid != "" {
-				did := filter.LabelerDid
-				labelerDid = &did
-			}
-			vis := filter.Visibility
-			if vis == "show" {
-				vis = "ignore"
-			}
-			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-				ActorDefs_ContentLabelPref: &bsky.ActorDefs_ContentLabelPref{
-					Label:      filter.Label,
-					Visibility: vis,
-					LabelerDid: labelerDid,
-				},
-			})
-		}
-
-		input := &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
-		}
-		return bsky.ActorPutPreferences(ctx, c, input)
+		return append(out, buildContentLabelPrefs(filters)...)
 	})
 }
 
 func (s *SocialService) UpdateAllPreferences(threadSort string, adultContent bool, mutedWords []string, filters []ContentFilterDTO) error {
-	ctx := context.Background()
-	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
-		if err != nil {
-			return err
-		}
+	return s.mutatePrefs(func(prefs []bsky.ActorDefs_Preferences_Elem) []bsky.ActorDefs_Preferences_Elem {
+		out := make([]bsky.ActorDefs_Preferences_Elem, 0, len(prefs)+len(filters)+3)
 
-		var newMutedWords []*bsky.ActorDefs_MutedWord
-		for _, w := range mutedWords {
-			valContent := "content"
-			valTag := "tag"
-			newMutedWords = append(newMutedWords, &bsky.ActorDefs_MutedWord{
-				Value: w,
-				Targets: []*string{&valContent, &valTag},
-			})
-		}
-		if newMutedWords == nil {
-			newMutedWords = []*bsky.ActorDefs_MutedWord{}
-		}
-
-		var newPrefs []bsky.ActorDefs_Preferences_Elem
-		
-		// Remove old versions of the prefs we are updating
-		for _, pref := range res.Preferences {
+		// Keep every preference this call does not own.
+		for _, pref := range prefs {
 			if pref.ActorDefs_ThreadViewPref != nil ||
-			   pref.ActorDefs_AdultContentPref != nil ||
-			   pref.ActorDefs_MutedWordsPref != nil ||
-			   pref.ActorDefs_ContentLabelPref != nil {
+				pref.ActorDefs_AdultContentPref != nil ||
+				pref.ActorDefs_MutedWordsPref != nil ||
+				pref.ActorDefs_ContentLabelPref != nil {
 				continue
 			}
-			newPrefs = append(newPrefs, pref)
+			out = append(out, pref)
 		}
 
-		// Add Thread View Pref
-		newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-			ActorDefs_ThreadViewPref: &bsky.ActorDefs_ThreadViewPref{
-				Sort: &threadSort,
+		out = append(out,
+			bsky.ActorDefs_Preferences_Elem{
+				ActorDefs_ThreadViewPref: &bsky.ActorDefs_ThreadViewPref{Sort: &threadSort},
 			},
-		})
-
-		// Add Adult Content Pref
-		newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-			ActorDefs_AdultContentPref: &bsky.ActorDefs_AdultContentPref{
-				Enabled: adultContent,
+			bsky.ActorDefs_Preferences_Elem{
+				ActorDefs_AdultContentPref: &bsky.ActorDefs_AdultContentPref{Enabled: adultContent},
 			},
-		})
-
-		// Add Muted Words Pref
-		newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-			ActorDefs_MutedWordsPref: &bsky.ActorDefs_MutedWordsPref{
-				Items: newMutedWords,
+			bsky.ActorDefs_Preferences_Elem{
+				ActorDefs_MutedWordsPref: &bsky.ActorDefs_MutedWordsPref{Items: buildMutedWords(mutedWords)},
 			},
-		})
+		)
 
-		// Add Content Label Prefs
-		for _, filter := range filters {
-			var labelerDid *string
-			if filter.LabelerDid != "" {
-				did := filter.LabelerDid
-				labelerDid = &did
-			}
-			vis := filter.Visibility
-			if vis == "show" {
-				vis = "ignore"
-			}
-			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-				ActorDefs_ContentLabelPref: &bsky.ActorDefs_ContentLabelPref{
-					Label:      filter.Label,
-					Visibility: vis,
-					LabelerDid: labelerDid,
-				},
-			})
-		}
-
-		input := &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
-		}
-		return bsky.ActorPutPreferences(ctx, c, input)
+		return append(out, buildContentLabelPrefs(filters)...)
 	})
 }
 
 func (s *SocialService) GetSubscribedLabelerDIDs() ([]string, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var dids []string
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorGetPreferences(ctx, c)
@@ -316,7 +279,8 @@ func (s *SocialService) GetSubscribedLabelerDIDs() ([]string, error) {
 }
 
 func (s *SocialService) SubscribeLabeler(labelerDid string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorGetPreferences(ctx, c)
 		if err != nil {
@@ -364,7 +328,8 @@ func (s *SocialService) SubscribeLabeler(labelerDid string) error {
 }
 
 func (s *SocialService) UnsubscribeLabeler(labelerDid string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorGetPreferences(ctx, c)
 		if err != nil {
@@ -395,7 +360,8 @@ func (s *SocialService) GetLabelerServices(dids []string) ([]*LabelerDTO, error)
 	if len(dids) == 0 {
 		return []*LabelerDTO{}, nil
 	}
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out []*LabelerDTO
 
 	subscribedDIDs, _ := s.GetSubscribedLabelerDIDs()
@@ -549,7 +515,8 @@ func (s *SocialService) GetSubscribedLabelers() ([]*LabelerDTO, error) {
 }
 
 func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ProfileDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		if actor == "" {
@@ -649,27 +616,53 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 	return out, err
 }
 
+// ParseProfileView converts a full profile view into the DTO the UI consumes.
 func ParseProfileView(view *bsky.ActorDefs_ProfileView) *ProfileDTO {
-    if view == nil { return nil }
-    name := ""
-    if view.DisplayName != nil { name = *view.DisplayName }
-    desc := ""
-    if view.Description != nil { desc = *view.Description }
-    viewerFollowing := ""
-    if view.Viewer != nil && view.Viewer.Following != nil {
-        viewerFollowing = *view.Viewer.Following
-    }
-    return &ProfileDTO{
-        DID:             view.Did,
-        Handle:          view.Handle,
-        DisplayName:     name,
-        Description:     desc,
-        ViewerFollowing: viewerFollowing,
-    }
+	if view == nil {
+		return nil
+	}
+	CacheDID(view.Did, view.Handle)
+
+	viewerFollowing := ""
+	if view.Viewer != nil && view.Viewer.Following != nil {
+		viewerFollowing = *view.Viewer.Following
+	}
+
+	return &ProfileDTO{
+		DID:             view.Did,
+		Handle:          view.Handle,
+		DisplayName:     safeString(view.DisplayName),
+		Description:     safeString(view.Description),
+		Avatar:          safeString(view.Avatar),
+		ViewerFollowing: viewerFollowing,
+	}
+}
+
+// ParseProfileViewBasic converts the trimmed-down profile view returned by
+// typeahead endpoints. It carries no description.
+func ParseProfileViewBasic(view *bsky.ActorDefs_ProfileViewBasic) *ProfileDTO {
+	if view == nil {
+		return nil
+	}
+	CacheDID(view.Did, view.Handle)
+
+	viewerFollowing := ""
+	if view.Viewer != nil && view.Viewer.Following != nil {
+		viewerFollowing = *view.Viewer.Following
+	}
+
+	return &ProfileDTO{
+		DID:             view.Did,
+		Handle:          view.Handle,
+		DisplayName:     safeString(view.DisplayName),
+		Avatar:          safeString(view.Avatar),
+		ViewerFollowing: viewerFollowing,
+	}
 }
 
 func (s *SocialService) GetFollowers(actor string, cursor string) (*ProfileListDTO, error) {
-    ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
     var out *ProfileListDTO
     err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
         res, err := bsky.GraphGetFollowers(ctx, c, actor, cursor, 30)
@@ -686,7 +679,8 @@ func (s *SocialService) GetFollowers(actor string, cursor string) (*ProfileListD
 }
 
 func (s *SocialService) GetFollows(actor string, cursor string) (*ProfileListDTO, error) {
-    ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
     var out *ProfileListDTO
     err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
         res, err := bsky.GraphGetFollows(ctx, c, actor, cursor, 30)
@@ -703,7 +697,8 @@ func (s *SocialService) GetFollows(actor string, cursor string) (*ProfileListDTO
 }
 
 func (s *SocialService) Follow(actorDID string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoCreateRecord_Input{
 			Collection: "app.bsky.graph.follow",
@@ -728,7 +723,8 @@ func (s *SocialService) Unfollow(followURI string) error {
 	}
 	rkey := parts[len(parts)-1]
 
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoDeleteRecord_Input{
 			Collection: "app.bsky.graph.follow",
@@ -741,7 +737,8 @@ func (s *SocialService) Unfollow(followURI string) error {
 }
 
 func (s *SocialService) GetActorLists(actorDID string, cursor string) (*ListResponseDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ListResponseDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.GraphGetLists(ctx, c, actorDID, cursor, 30, nil)
@@ -804,7 +801,8 @@ func (s *SocialService) GetActorLists(actorDID string, cursor string) (*ListResp
 }
 
 func (s *SocialService) GetActorStarterPacks(actorDID string, cursor string) (*StarterPackResponseDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *StarterPackResponseDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.GraphGetActorStarterPacks(ctx, c, actorDID, cursor, 30)
@@ -847,7 +845,8 @@ func (s *SocialService) GetActorStarterPacks(actorDID string, cursor string) (*S
 }
 
 func (s *SocialService) UpdateProfile(displayName, description string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		var profile bsky.ActorProfile
 		var swapRecord *string
@@ -896,7 +895,8 @@ func (s *SocialService) UpdateProfile(displayName, description string) error {
 }
 
 func (s *SocialService) CreateList(name, purpose, description string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		list := &bsky.GraphList{
 			LexiconTypeID: "app.bsky.graph.list",
@@ -926,7 +926,8 @@ func (s *SocialService) EditList(uri, name, purpose, description string) error {
 	}
 	rkey := parts[len(parts)-1]
 
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		list := &bsky.GraphList{
 			LexiconTypeID: "app.bsky.graph.list",
@@ -951,7 +952,8 @@ func (s *SocialService) EditList(uri, name, purpose, description string) error {
 }
 
 func (s *SocialService) SubscribeList(listUri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoCreateRecord_Input{
 			Collection: "app.bsky.graph.listitem",
@@ -971,7 +973,8 @@ func (s *SocialService) SubscribeList(listUri string) error {
 }
 
 func (s *SocialService) CreateStarterPack(name, description, listUri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		pack := &bsky.GraphStarterpack{
 			LexiconTypeID: "app.bsky.graph.starterpack",
@@ -1032,7 +1035,8 @@ func (s *SocialService) uploadBlob(ctx context.Context, c *xrpc.Client, path str
 }
 
 func (s *SocialService) UploadProfileAvatar(imagePath string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		blobRef, err := s.uploadBlob(ctx, c, imagePath)
 		if err != nil {
@@ -1072,7 +1076,8 @@ func (s *SocialService) UploadProfileAvatar(imagePath string) error {
 }
 
 func (s *SocialService) UploadProfileBanner(imagePath string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		blobRef, err := s.uploadBlob(ctx, c, imagePath)
 		if err != nil {
@@ -1118,7 +1123,8 @@ func (s *SocialService) DeleteList(uri string) error {
 	}
 	rkey := parts[len(parts)-1]
 
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoDeleteRecord_Input{
 			Collection: "app.bsky.graph.list",
@@ -1131,7 +1137,8 @@ func (s *SocialService) DeleteList(uri string) error {
 }
 
 func (s *SocialService) UnsubscribeList(listUri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		// Need to find the listitem record first
 		res, err := atproto.RepoListRecords(ctx, c, "app.bsky.graph.listitem", "", 100, c.Auth.Did, false)
@@ -1167,7 +1174,8 @@ func (s *SocialService) UnsubscribeList(listUri string) error {
 }
 
 func (s *SocialService) MuteList(uri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &bsky.GraphMuteActorList_Input{
 			List: uri,
@@ -1177,7 +1185,8 @@ func (s *SocialService) MuteList(uri string) error {
 }
 
 func (s *SocialService) UnmuteList(uri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &bsky.GraphUnmuteActorList_Input{
 			List: uri,
@@ -1187,7 +1196,8 @@ func (s *SocialService) UnmuteList(uri string) error {
 }
 
 func (s *SocialService) BlockList(uri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoCreateRecord_Input{
 			Collection: "app.bsky.graph.listblock",
@@ -1212,7 +1222,8 @@ func (s *SocialService) UnblockList(blockUri string) error {
 	}
 	rkey := parts[len(parts)-1]
 
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoDeleteRecord_Input{
 			Collection: "app.bsky.graph.listblock",
@@ -1231,7 +1242,8 @@ func (s *SocialService) DeleteStarterPack(uri string) error {
 	}
 	rkey := parts[len(parts)-1]
 
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoDeleteRecord_Input{
 			Collection: "app.bsky.graph.starterpack",
@@ -1244,7 +1256,8 @@ func (s *SocialService) DeleteStarterPack(uri string) error {
 }
 
 func (s *SocialService) GetSuggestedFollows() (*ProfileListDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.GraphGetSuggestedFollowsByActor(ctx, c, c.Auth.Did)
@@ -1263,7 +1276,8 @@ func (s *SocialService) GetSuggestedFollows() (*ProfileListDTO, error) {
 }
 
 func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.ActorGetPreferences(ctx, c)
 		if err != nil {
@@ -1352,41 +1366,28 @@ func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string
 	})
 }
 
+// UpdateThreadPreferences sets how threads are sorted.
+//
+// prioritizeFollowed is accepted for compatibility with the existing frontend
+// call, but app.bsky.actor.defs#threadViewPref no longer carries that field, so
+// there is nothing to store for it.
 func (s *SocialService) UpdateThreadPreferences(sort string, prioritizeFollowed bool) error {
-	ctx := context.Background()
-	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
-		if err != nil {
-			return err
-		}
+	_ = prioritizeFollowed
 
-		var newPrefs []bsky.ActorDefs_Preferences_Elem
-		found := false
-		for _, pref := range res.Preferences {
-			if pref.ActorDefs_ThreadViewPref != nil {
-				pref.ActorDefs_ThreadViewPref.Sort = &sort
-				found = true
-			}
-			newPrefs = append(newPrefs, pref)
-		}
-
-		if !found {
-			newPrefs = append(newPrefs, bsky.ActorDefs_Preferences_Elem{
-				ActorDefs_ThreadViewPref: &bsky.ActorDefs_ThreadViewPref{
-					Sort: &sort,
-				},
+	return s.mutatePrefs(func(prefs []bsky.ActorDefs_Preferences_Elem) []bsky.ActorDefs_Preferences_Elem {
+		return replacePref(prefs,
+			func(p bsky.ActorDefs_Preferences_Elem) bool { return p.ActorDefs_ThreadViewPref != nil },
+			func() bsky.ActorDefs_Preferences_Elem {
+				return bsky.ActorDefs_Preferences_Elem{
+					ActorDefs_ThreadViewPref: &bsky.ActorDefs_ThreadViewPref{Sort: &sort},
+				}
 			})
-		}
-
-		input := &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
-		}
-		return bsky.ActorPutPreferences(ctx, c, input)
 	})
 }
 
 func (s *SocialService) PinPost(postUri string, cid string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
 		if err != nil {
@@ -1422,7 +1423,8 @@ func (s *SocialService) PinPost(postUri string, cid string) error {
 }
 
 func (s *SocialService) AddSelfLabel(val string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
 		if err != nil {
@@ -1480,7 +1482,8 @@ func (s *SocialService) AddSelfLabel(val string) error {
 }
 
 func (s *SocialService) GetSelfLabels() ([]string, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var labels []string
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
@@ -1518,7 +1521,8 @@ func (s *SocialService) GetSelfLabels() ([]string, error) {
 }
 
 func (s *SocialService) RemoveSelfLabel(val string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
 		if err != nil {
@@ -1571,7 +1575,8 @@ func (s *SocialService) RemoveSelfLabel(val string) error {
 }
 
 func (s *SocialService) UnpinPost() error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
 		if err != nil {
@@ -1603,7 +1608,8 @@ func (s *SocialService) UnpinPost() error {
 }
 
 func (s *SocialService) AddUserToList(listUri string, subjectDid string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var itemUri string
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		input := &atproto.RepoCreateRecord_Input{
@@ -1631,7 +1637,8 @@ func (s *SocialService) AddUserToList(listUri string, subjectDid string) (string
 }
 
 func (s *SocialService) RemoveUserFromList(itemUri string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		parts := strings.Split(itemUri, "/")
 		if len(parts) < 3 {
@@ -1648,7 +1655,8 @@ func (s *SocialService) RemoveUserFromList(itemUri string) error {
 }
 
 func (s *SocialService) GetListMembers(listUri string, cursor string) (*ProfileListDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.GraphGetList(ctx, c, cursor, 50, listUri)
@@ -1668,7 +1676,8 @@ func (s *SocialService) GetListMembers(listUri string, cursor string) (*ProfileL
 }
 
 func (s *SocialService) FollowAllInList(listUri string) (int, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	count := 0
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.GraphGetList(ctx, c, "", 100, listUri)

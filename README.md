@@ -58,7 +58,7 @@ O Mixko está disponível para Linux, Windows e Mac. [Baixe-o aqui](https://gith
 
 O Mixko utiliza o framework **Wails v2**, que incorpora o frontend como um pacote de ativos estáticos dentro do binário Go compilado. A camada Go expõe métodos tipados para o frontend por meio da ponte IPC do Wails. 
 
-- **Backend:** Desenvolvido em Go 1.26 com suporte a persistência segura em SQLite criptografado (AES-256-GCM) usando `modernc.org/sqlite`.
+- **Backend:** Desenvolvido em Go 1.26 usando `modernc.org/sqlite`. Os tokens de sessão são cifrados com AES-256-GCM, e a chave fica guardada no cofre nativo do sistema operacional (DPAPI no Windows, Chaveiro no macOS, Secret Service no Linux).
 - **Frontend:** Desenvolvido em Vite + TypeScript com suporte a leitores de tela e navegação por teclado.
 - **Protocolo:** Integração com a rede Bluesky via biblioteca oficial [Indigo](https://github.com/bluesky-social/indigo).
 

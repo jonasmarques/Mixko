@@ -2,9 +2,9 @@ import { state } from '../config/state';
 import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { reloadCurrentTab } from './tabs';
-import { getFilePathOrDataUrl } from '../utils/helpers';
+import { getFilePathOrDataUrl, esc, escUrl } from '../utils/helpers';
 import { initGifModal, openGifPicker } from '../components/gif_modal';
-import { i18n } from '../utils/i18n';
+import { i18n, translateError } from '../utils/i18n';
 import { MentionAutocomplete } from '../components/mention_autocomplete';
 
 export let selectedImages: string[] = [];
@@ -196,9 +196,9 @@ function checkAndFetchLinkPreviewForPost(pState: PostLinkState, text: string, co
                 pState.fetchedLinkUrl = url;
                 containerEl.innerHTML = `
                     <button type="button" class="btn-remove-link-preview" style="position: absolute; top: 5px; right: 5px; background: #d32f2f; color: #fff; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer; font-size: 0.8em;">${i18n.t('compose.removePreviewBtn')}</button>
-                    ${card.thumb ? `<img src="${card.thumb}" alt="${i18n.t('compose.linkPreviewAlt')}" style="max-height: 100px; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
-                    <strong>${card.title || url}</strong>
-                    ${card.description ? `<p style="font-size: 0.85em; margin: 4px 0 0 0; color: #555;">${card.description}</p>` : ''}
+                    ${card.thumb ? `<img src="${escUrl(card.thumb)}" alt="${esc(i18n.t('compose.linkPreviewAlt'))}" style="max-height: 100px; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
+                    <strong>${esc(card.title || url)}</strong>
+                    ${card.description ? `<p style="font-size: 0.85em; margin: 4px 0 0 0; color: #555;">${esc(card.description)}</p>` : ''}
                 `;
                 containerEl.querySelector('.btn-remove-link-preview')?.addEventListener('click', () => {
                     pState.dismissedLinkUrl = url;
@@ -299,41 +299,50 @@ export function setupCompose() {
     if (postImageInput) {
         postImageInput.addEventListener('change', async (e) => {
             const files = (e.target as HTMLInputElement).files;
-            if (altContainer) altContainer.innerHTML = '';
-            selectedImages = [];
-            if (files && files.length > 0) {
-                if (files.length > 4) {
-                    announceAssertive(i18n.t('compose.maxImagesLimit'));
-                    postImageInput.value = "";
-                    return;
-                }
-                if (postVideoInput) postVideoInput.value = "";
-                selectedVideo = "";
-                selectedGifUrl = "";
-                if (gifContainer) gifContainer.classList.add('hidden');
-                if (videoAltContainer) videoAltContainer.classList.add('hidden');
+            if (!files || files.length === 0) return;
 
-                for (let i = 0; i < files.length; i++) {
-                    const pathOrData = await getFilePathOrDataUrl(files[i]);
-                    selectedImages.push(pathOrData);
-                    const div = document.createElement('div');
-                    div.style.marginBottom = '10px';
-                    const label = document.createElement('label');
-                    label.textContent = i18n.t('compose.altImgLabel', { index: (i+1).toString() });
-                    label.style.display = 'block';
-                    const input = document.createElement('input');
-                    input.type = 'text';
-                    input.className = 'alt-text-input';
-                    input.required = true;
-                    input.style.width = '100%';
-                    div.appendChild(label);
-                    div.appendChild(input);
-                    if (altContainer) altContainer.appendChild(div);
-                }
-                announcePolite(i18n.t('compose.imgsSelected', { count: files.length.toString() }));
-                const firstAltInput = document.querySelector('.alt-text-input') as HTMLInputElement;
-                if (firstAltInput) firstAltInput.focus();
+            const slotsAvailable = 4 - selectedImages.length;
+            if (slotsAvailable <= 0) {
+                announceAssertive(i18n.t('compose.maxImagesLimit'));
+                postImageInput.value = "";
+                return;
             }
+
+            const filesToAdd = Array.from(files).slice(0, slotsAvailable);
+            if (filesToAdd.length < files.length) {
+                announceAssertive(i18n.t('compose.maxImagesLimit'));
+            }
+
+            if (postVideoInput) postVideoInput.value = "";
+            selectedVideo = "";
+            selectedGifUrl = "";
+            if (gifContainer) gifContainer.classList.add('hidden');
+            if (videoAltContainer) videoAltContainer.classList.add('hidden');
+
+            for (let i = 0; i < filesToAdd.length; i++) {
+                const pathOrData = await getFilePathOrDataUrl(filesToAdd[i]);
+                selectedImages.push(pathOrData);
+                const globalIndex = selectedImages.length;
+                const div = document.createElement('div');
+                div.style.marginBottom = '10px';
+                const label = document.createElement('label');
+                label.textContent = i18n.t('compose.altImgLabel', { index: globalIndex.toString() });
+                label.style.display = 'block';
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'alt-text-input';
+                input.required = true;
+                input.style.width = '100%';
+                div.appendChild(label);
+                div.appendChild(input);
+                if (altContainer) altContainer.appendChild(div);
+            }
+
+            postImageInput.value = "";
+            announcePolite(i18n.t('compose.imgsSelected', { count: selectedImages.length.toString() }));
+            const altInputs = altContainer ? altContainer.querySelectorAll<HTMLInputElement>('.alt-text-input') : [];
+            const lastAlt = altInputs[altInputs.length - 1];
+            if (lastAlt) lastAlt.focus();
         });
     }
 
@@ -598,7 +607,7 @@ export function setupCompose() {
             if (btnSubmit) btnSubmit.disabled = false;
             if (btnAddPost) btnAddPost.disabled = false;
             console.error("Error publishing post:", err);
-            const msg = i18n.t('compose.publishError') + err;
+            const msg = i18n.t('compose.publishError') + translateError(err);
             announceAssertive(msg);
             alert(msg);
           }

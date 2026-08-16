@@ -6,9 +6,13 @@ export function BlockActor(arg1:string):Promise<void>;
 
 export function GetBlocks(arg1:string):Promise<services.ProfileListDTO>;
 
+export function GetMuteScope(arg1:string):Promise<services.MuteScopeDTO>;
+
 export function GetMutes(arg1:string):Promise<services.ProfileListDTO>;
 
 export function MuteActor(arg1:string):Promise<void>;
+
+export function MuteActorScoped(arg1:string,arg2:boolean,arg3:boolean):Promise<void>;
 
 export function MuteThread(arg1:string):Promise<void>;
 

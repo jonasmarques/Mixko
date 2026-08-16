@@ -90,7 +90,7 @@
           
           <fieldset>
             <legend data-i18n="compose.mediaLegend">Mídia</legend>
-            <label for="post-image" data-i18n="compose.imageLabel">Anexar Imagens (máx 4):</label>
+            <label for="post-image" data-i18n="compose.imageLabel">Anexar Imagens:</label>
             <input type="file" id="post-image" accept="image/jpeg, image/png" multiple />
             
             <br/><br/>
@@ -264,6 +264,7 @@
                   <li role="presentation"><button role="tab" id="ftab-saved" aria-selected="true" tabindex="0" data-i18n="feeds.tabSaved">Salvos</button></li>
                   <li role="presentation"><button role="tab" id="ftab-lists" aria-selected="false" tabindex="-1" data-i18n="feeds.tabLists">Minhas Listas</button></li>
                   <li role="presentation"><button role="tab" id="ftab-discover" aria-selected="false" tabindex="-1" data-i18n="feeds.tabDiscover">Descobrir</button></li>
+                  <li role="presentation"><button role="tab" id="ftab-trending" aria-selected="false" tabindex="-1" data-i18n="feeds.tabTrending">Em Alta (Alt+T)</button></li>
               </ul>
           </nav>
           <div id="feed-list" aria-busy="false" style="margin-top: 15px;" data-i18n="app.loading">Carregando...</div>
@@ -506,6 +507,15 @@
         </div>
       </dialog>
 
+      <!-- Mute Options Modal -->
+      <dialog id="mute-options-modal" aria-labelledby="mute-options-title">
+        <h2 id="mute-options-title" data-i18n="modals.muteOptions">Opções de Silenciar</h2>
+        <div id="mute-options-container" role="list" aria-label="Opções de silenciar" data-i18n-aria="modals.muteOptions" tabindex="0" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
+        <div class="actions" style="margin-top: 15px;">
+          <button type="button" id="btn-close-mute-options" data-i18n="app.close">Fechar</button>
+        </div>
+      </dialog>
+
       <!-- Generic Posts List Modal -->
       <dialog id="posts-list-modal" aria-labelledby="posts-list-title">
         <h2 id="posts-list-title" data-i18n="modals.postsList">Lista de Posts</h2>
@@ -528,6 +538,7 @@
               <tr><td><kbd>Alt</kbd> + <kbd>3</kbd></td><td data-i18n="help.tProfile">Ir para a aba Perfil (seu próprio perfil)</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>4</kbd></td><td data-i18n="help.tDms">Ir para a aba DMs (Mensagens Diretas)</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>5</kbd></td><td data-i18n="help.tFeeds">Ir para a aba Feeds e Listas</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>T</kbd></td><td data-i18n="help.tTrending">Ir para a sub-aba Em Alta (assuntos do momento)</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>6</kbd></td><td data-i18n="help.tSaved">Ir para a aba <strong data-i18n="sections.saved">Posts Salvos</strong> (Bookmarks)</td></tr>
               <tr><td><kbd>Ctrl</kbd> + <kbd>F</kbd> / <kbd>Alt</kbd> + <kbd>7</kbd></td><td data-i18n="help.tSearch">Ir para a aba Busca e focar no campo de pesquisa</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>S</kbd> / <kbd>Alt</kbd> + <kbd>8</kbd></td><td data-i18n="help.tSettings">Ir para a aba Configurações</td></tr>
@@ -582,7 +593,8 @@
               <tr><td><kbd>Shift</kbd> + <kbd>R</kbd></td><td data-i18n="help.tViewReplies">Ver a thread de respostas do post focado</td></tr>
               <tr><td><kbd>Shift</kbd> + <kbd>F</kbd></td><td data-i18n="help.tPinPost">Fixar publicação no seu perfil</td></tr>
               <tr><td><kbd>Shift</kbd> + <kbd>M</kbd></td><td data-i18n="help.tMuteThread">Mutar (silenciar) a thread da publicação focada</td></tr>
-              <tr><td><kbd>Alt</kbd> + <kbd>H</kbd></td><td data-i18n="help.tHideReply">Ocultar a resposta focada</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>O</kbd></td><td data-i18n="help.tHideReply">Ocultar a resposta focada</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>H</kbd></td><td data-i18n="help.tMuteOptions">Abrir opções de silenciar do autor (tudo, só reposts, só citações)</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>R</kbd></td><td data-i18n="help.tToggleReplies">Ocultar ou exibir respostas na Timeline</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>D</kbd></td><td data-i18n="help.tReport">Denunciar a publicação focada ou perfil em exibição</td></tr>
             </table>

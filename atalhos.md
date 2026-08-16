@@ -15,6 +15,7 @@ O **Mixko** foi projetado com foco total em acessibilidade e produtividade por m
 | `Alt` + `3` | Ir para a aba **Perfil** (seu próprio perfil) |
 | `Alt` + `4` | Ir para a aba **DMs** (Mensagens Diretas / Chat) |
 | `Alt` + `5` | Ir para a aba **Feeds e Listas** |
+| `Alt` + `T` | Ir para a aba **Em Alta** (trending topics) |
 | `Alt` + `6` | Ir para a aba **Posts Salvos** (Bookmarks) |
 | `Ctrl` + `F` ou `Alt` + `7` | Ir para a aba **Busca** e focar no campo de pesquisa |
 | `Alt` + `S` ou `Alt` + `8` | Ir para a aba **Configurações** |
@@ -72,7 +73,8 @@ O **Mixko** foi projetado com foco total em acessibilidade e produtividade por m
 | `Shift` + `O` | Visualizar o post original de uma citação (*Quote*) em um modal |
 | `Shift` + `F` | Fixar a publicação focada no seu perfil |
 | `Shift` + `M` | Mutar/Silenciar a thread da publicação focada |
-| `Alt` + `H` | Ocultar a resposta focada |
+| `Alt` + `O` | Ocultar a resposta focada |
+| `Alt` + `H` | Abrir as **opções de silenciar** do autor (tudo, apenas reposts, apenas citações ou desmutar) |
 | `Alt` + `R` | Ocultar ou exibir respostas na Timeline (alternar preferência) |
 | `Alt` + `D` | Denunciar a publicação focada ou o perfil em exibição |
 

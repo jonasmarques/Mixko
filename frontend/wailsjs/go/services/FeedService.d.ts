@@ -30,3 +30,5 @@ export function GetSavedFeeds():Promise<Array<services.SavedFeedDTO>>;
 export function GetThread(arg1:string,arg2:number):Promise<bsky.FeedGetPostThread_Output>;
 
 export function GetTimeline(arg1:string,arg2:number):Promise<services.FeedDTO>;
+
+export function GetTrends(arg1:number):Promise<services.TrendListDTO>;

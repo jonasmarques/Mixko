@@ -2614,6 +2614,22 @@ export namespace services {
 		    return a;
 		}
 	}
+	export class MuteScopeDTO {
+	    muted: boolean;
+	    mutedOnlyReposts: boolean;
+	    mutedOnlyQuoteposts: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MuteScopeDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.muted = source["muted"];
+	        this.mutedOnlyReposts = source["mutedOnlyReposts"];
+	        this.mutedOnlyQuoteposts = source["mutedOnlyQuoteposts"];
+	    }
+	}
 	export class MutedWordDTO {
 	    value: string;
 	    targets: string[];
@@ -2631,6 +2647,7 @@ export namespace services {
 	export class NotificationDTO {
 	    uri: string;
 	    cid: string;
+	    authorDid: string;
 	    authorName: string;
 	    authorHandle: string;
 	    reason: string;
@@ -2653,6 +2670,7 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.uri = source["uri"];
 	        this.cid = source["cid"];
+	        this.authorDid = source["authorDid"];
 	        this.authorName = source["authorName"];
 	        this.authorHandle = source["authorHandle"];
 	        this.reason = source["reason"];
@@ -2967,6 +2985,64 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cursor = source["cursor"];
 	        this.starterPacks = this.convertValues(source["starterPacks"], StarterPackDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TrendDTO {
+	    topic: string;
+	    displayName: string;
+	    description: string;
+	    link: string;
+	    category: string;
+	    status: string;
+	    postCount: number;
+	    startedAt: string;
+	    actors: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TrendDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.topic = source["topic"];
+	        this.displayName = source["displayName"];
+	        this.description = source["description"];
+	        this.link = source["link"];
+	        this.category = source["category"];
+	        this.status = source["status"];
+	        this.postCount = source["postCount"];
+	        this.startedAt = source["startedAt"];
+	        this.actors = source["actors"];
+	    }
+	}
+	export class TrendListDTO {
+	    trends: TrendDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TrendListDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.trends = this.convertValues(source["trends"], TrendDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

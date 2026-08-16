@@ -1,5 +1,25 @@
+import type {
+  FeedDTO,
+  MuteScopeDTO,
+  NotificationListDTO,
+  PostDTO,
+  ProfileDTO,
+  ProfileListDTO,
+  SavedFeedDTO,
+  TrendListDTO,
+  UpdateInfoDTO,
+} from './dto';
+
 declare global {
   interface Window {
+    /** Wails runtime, injected by the Go side. */
+    runtime: {
+      BrowserOpenURL(url: string): void;
+      EventsOn(event: string, callback: (...data: any[]) => void): () => void;
+      EventsOff(event: string, ...additional: string[]): void;
+      EventsEmit(event: string, ...data: any[]): void;
+      Quit(): void;
+    };
     go: {
       services: {
         AuthService: {
@@ -8,18 +28,19 @@ declare global {
           Logout(): Promise<void>;
         };
         FeedService: {
-          GetTimeline(cursor: string, limit: number): Promise<any>;
-          GetAuthorFeed(actor: string, cursor: string, limit: number, filter?: string): Promise<any>;
-          GetSavedFeeds(): Promise<any[]>;
-          GetCustomFeed(feedUri: string, cursor: string, limit: number): Promise<any>;
-          GetPostThread(uri: string, depth: number): Promise<any>;
-          GetListFeed(listUri: string, cursor: string, limit: number): Promise<any>;
+          GetTimeline(cursor: string, limit: number): Promise<FeedDTO>;
+          GetAuthorFeed(actor: string, cursor: string, limit: number, filter?: string): Promise<FeedDTO>;
+          GetSavedFeeds(): Promise<SavedFeedDTO[]>;
+          GetCustomFeed(feedUri: string, cursor: string, limit: number): Promise<FeedDTO>;
+          GetPostThread(uri: string, depth: number): Promise<FeedDTO>;
+          GetListFeed(listUri: string, cursor: string, limit: number): Promise<FeedDTO>;
           GetPopularFeedGenerators(cursor: string, query: string): Promise<any>;
-          GetRepostedBy(uri: string, cid: string, cursor: string): Promise<any>;
-          GetQuotes(uri: string, cid: string, cursor: string): Promise<any>;
-          GetLikes(uri: string, cid: string, cursor: string): Promise<any>;
-          GetActorLikes(actor: string, cursor: string, limit: number): Promise<any>;
-          GetPosts(uris: string[]): Promise<any>;
+          GetRepostedBy(uri: string, cid: string, cursor: string): Promise<ProfileListDTO>;
+          GetQuotes(uri: string, cid: string, cursor: string): Promise<FeedDTO>;
+          GetLikes(uri: string, cid: string, cursor: string): Promise<ProfileListDTO>;
+          GetActorLikes(actor: string, cursor: string, limit: number): Promise<FeedDTO>;
+          GetPosts(uris: string[]): Promise<FeedDTO>;
+          GetTrends(limit: number): Promise<TrendListDTO>;
         };
         PostBuilderService: {
           CreatePost(text: string, replyUri: string, replyCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, linkUrl: string, language: string, threadgate: string): Promise<any>;
@@ -33,11 +54,11 @@ declare global {
           FetchLinkCard(url: string): Promise<any>;
         };
         NotificationsService: {
-          GetNotifications(cursor: string): Promise<any>;
+          GetNotifications(cursor: string): Promise<NotificationListDTO>;
           UpdateSeen(seenAt: string): Promise<void>;
         };
         SocialService: {
-          GetProfile(actor: string): Promise<any>;
+          GetProfile(actor: string): Promise<ProfileDTO>;
           GetLabelerServices(dids: string[]): Promise<any>;
           GetSubscribedLabelerDIDs(): Promise<string[]>;
           GetSubscribedLabelers(): Promise<any>;
@@ -47,8 +68,8 @@ declare global {
           Unfollow(followURI: string): Promise<void>;
           GetActorLists(actorDID: string, cursor: string): Promise<any>;
           GetActorStarterPacks(actorDID: string, cursor: string): Promise<any>;
-          GetFollowers(actor: string, cursor: string): Promise<any>;
-          GetFollows(actor: string, cursor: string): Promise<any>;
+          GetFollowers(actor: string, cursor: string): Promise<ProfileListDTO>;
+          GetFollows(actor: string, cursor: string): Promise<ProfileListDTO>;
           GetPreferences(): Promise<any>;
           UpdateMutedWords(words: string[]): Promise<void>;
           UpdateAdultContentEnabled(enabled: boolean): Promise<void>;
@@ -74,13 +95,13 @@ declare global {
           UnpinPost(): Promise<void>;
           AddUserToList(listUri: string, subjectDid: string): Promise<string>;
           RemoveUserFromList(itemUri: string): Promise<void>;
-          GetListMembers(listUri: string, cursor: string): Promise<any>;
+          GetListMembers(listUri: string, cursor: string): Promise<ProfileListDTO>;
           FollowAllInList(listUri: string): Promise<number>;
           AddSelfLabel(val: string): Promise<void>;
           RemoveSelfLabel(val: string): Promise<void>;
           GetSelfLabels(): Promise<string[]>;
-          GetKnownFollowers(actor: string, cursor: string): Promise<any>;
-          GetSuggestedFollows(): Promise<any>;
+          GetKnownFollowers(actor: string, cursor: string): Promise<ProfileListDTO>;
+          GetSuggestedFollows(): Promise<ProfileListDTO>;
         };
         ChatService: {
           ListConvos(cursor: string): Promise<any[]>;
@@ -99,9 +120,11 @@ declare global {
         };
         ModerationService: {
           MuteActor(actor: string): Promise<void>;
+          MuteActorScoped(actor: string, onlyReposts: boolean, onlyQuoteposts: boolean): Promise<void>;
+          GetMuteScope(actor: string): Promise<MuteScopeDTO>;
           BlockActor(actorDID: string): Promise<void>;
-          GetMutes(cursor: string): Promise<any>;
-          GetBlocks(cursor: string): Promise<any>;
+          GetMutes(cursor: string): Promise<ProfileListDTO>;
+          GetBlocks(cursor: string): Promise<ProfileListDTO>;
           UnmuteActor(actorDID: string): Promise<void>;
           UnblockActor(actorDID: string): Promise<void>;
           MuteThread(uri: string): Promise<void>;
@@ -110,9 +133,9 @@ declare global {
           ReportAccount(did: string, reasonType: string, reason: string): Promise<void>;
         };
         SearchService: {
-          SearchPosts(filter: any): Promise<any>;
-          SearchProfiles(query: string, cursor: string): Promise<any>;
-          SearchProfilesTypeahead(query: string): Promise<any>;
+          SearchPosts(filter: PostSearchFilter): Promise<FeedDTO>;
+          SearchProfiles(query: string, cursor: string): Promise<ProfileListDTO>;
+          SearchProfilesTypeahead(query: string): Promise<ProfileListDTO>;
         };
       };
       main: {
@@ -138,3 +161,14 @@ export interface ListDTO {
 
 export {};
 
+
+/** Mirrors services.PostSearchFilter on the Go side. */
+export interface PostSearchFilter {
+  Query: string;
+  Author: string;
+  Lang: string;
+  Sort: string;
+  Since: string;
+  Until: string;
+  Cursor: string;
+}

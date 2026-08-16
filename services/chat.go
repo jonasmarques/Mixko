@@ -1,21 +1,21 @@
 package services
 
 import (
-	"context"
 	"github.com/bluesky-social/indigo/api/chat"
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
 type ChatService struct {
-	clientMgr *BSkyClient
+	clientMgr *ATClient
 }
 
-func NewChatService(clientMgr *BSkyClient) *ChatService {
+func NewChatService(clientMgr *ATClient) *ChatService {
 	return &ChatService{clientMgr: clientMgr}
 }
 
 func (s *ChatService) ListConvos(cursor string) ([]*ChatConvoDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out []*ChatConvoDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
@@ -52,7 +52,8 @@ func (s *ChatService) ListConvos(cursor string) ([]*ChatConvoDTO, error) {
 }
 
 func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ChatMessagesDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
@@ -218,7 +219,8 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 
 
 func (s *ChatService) SendMessage(convoId string, text string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -247,7 +249,8 @@ func (s *ChatService) SendReply(convoId string, replyToMessageId string, text st
 }
 
 func (s *ChatService) sendMessageRaw(convoId string, text string, gifUrl string, replyToMessageId string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -285,7 +288,8 @@ func (s *ChatService) sendMessageRaw(convoId string, text string, gifUrl string,
 }
 
 func (s *ChatService) AddReaction(convoId string, messageId string, emoji string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -302,7 +306,8 @@ func (s *ChatService) AddReaction(convoId string, messageId string, emoji string
 }
 
 func (s *ChatService) RemoveReaction(convoId string, messageId string, emoji string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -320,7 +325,8 @@ func (s *ChatService) RemoveReaction(convoId string, messageId string, emoji str
 
 
 func (s *ChatService) UpdateReadStatus(convoId string, messageId string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -337,7 +343,8 @@ func (s *ChatService) UpdateReadStatus(convoId string, messageId string) error {
 }
 
 func (s *ChatService) GetUnreadCount() (int64, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var count int64
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
@@ -359,7 +366,8 @@ func (s *ChatService) GetUnreadCount() (int64, error) {
 }
 
 func (s *ChatService) MuteConvo(convoId string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -375,7 +383,8 @@ func (s *ChatService) MuteConvo(convoId string) error {
 }
 
 func (s *ChatService) UnmuteConvo(convoId string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -391,7 +400,8 @@ func (s *ChatService) UnmuteConvo(convoId string) error {
 }
 
 func (s *ChatService) LeaveConvo(convoId string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,
@@ -407,7 +417,8 @@ func (s *ChatService) LeaveConvo(convoId string) error {
 }
 
 func (s *ChatService) GetConvoForMembers(dids []string) (*ChatConvoDTO, error) {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	var out *ChatConvoDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
@@ -443,7 +454,8 @@ func (s *ChatService) GetConvoForMembers(dids []string) (*ChatConvoDTO, error) {
 }
 
 func (s *ChatService) DeleteMessage(convoId string, messageId string) error {
-	ctx := context.Background()
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		chatClient := &xrpc.Client{
 			Client: c.Client,

@@ -1,14 +1,18 @@
 # Build & Binary artifacts
 build/bin/
 *.exe
-jsky
+mixko
 
 # Frontend
 frontend/dist/
+frontend/dist-test/
 frontend/node_modules/
 
 # Local data & Keys
 .secret.key
+session.key
+session.key.dpapi
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
 nppBackup/
-
