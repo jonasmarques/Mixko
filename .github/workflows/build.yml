@@ -30,13 +30,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Go vet
-        run: go vet ./...
-
-      - name: Go test
-        # -race catches the data races that the background sync poller can hit.
-        run: go test -race ./...
-
       - name: Install frontend dependencies
         run: |
           cd frontend
@@ -51,6 +44,21 @@ jobs:
         run: |
           cd frontend
           npm test
+
+      # frontend/dist is gitignored, so it must be built before any Go step:
+      # main.go embeds it with //go:embed all:frontend/dist and fails to
+      # compile when the directory is missing.
+      - name: Build Frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go test
+        # -race catches the data races that the background sync poller can hit.
+        run: go test -race ./...
 
   build:
     name: Build (${{ matrix.build_name }})
