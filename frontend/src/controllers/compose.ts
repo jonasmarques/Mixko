@@ -9,9 +9,35 @@ import { MentionAutocomplete } from '../components/mention_autocomplete';
 
 export let selectedImages: string[] = [];
 export let selectedVideo: string = "";
+export let selectedVideoWidth: number = 0;
+export let selectedVideoHeight: number = 0;
 export let selectedGifUrl: string = "";
 export let selectedGifAlt: string = "";
 export let postCount = 1;
+
+export async function loadUserListsForThreadgate() {
+    const selectEl = document.getElementById('post-threadgate-list') as HTMLSelectElement;
+    if (!selectEl) return;
+    try {
+        const res = await (window as any).go.services.SocialService.GetActorLists(state.loggedInDid || "", "");
+        selectEl.innerHTML = "";
+        if (res && res.lists && res.lists.length > 0) {
+            for (const list of res.lists) {
+                const opt = document.createElement('option');
+                opt.value = list.uri;
+                opt.textContent = list.name;
+                selectEl.appendChild(opt);
+            }
+        } else {
+            const opt = document.createElement('option');
+            opt.value = "";
+            opt.textContent = i18n.t('compose.noListsFound');
+            selectEl.appendChild(opt);
+        }
+    } catch (e) {
+        console.error("Error loading lists for threadgate:", e);
+    }
+}
 
 export function updateCharCounter(text: string) {
     const len = text.length;
@@ -47,12 +73,30 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
   const postVideoInput = document.getElementById('post-video') as HTMLInputElement;
   const altContainer = document.getElementById('image-alts-container') as HTMLDivElement;
   const videoAltContainer = document.getElementById('video-alt-container') as HTMLDivElement;
+  const tgListContainer = document.getElementById('threadgate-list-container');
   
   const savedLang = localStorage.getItem('postLanguage');
-  if (savedLang && postLanguageInput) postLanguageInput.value = savedLang;
+  if (savedLang !== null) {
+      if (postLanguageInput) postLanguageInput.value = savedLang;
+  } else {
+      const currentUiLang = localStorage.getItem('language') || 'pt_br';
+      const defaultCode = currentUiLang.startsWith('en') ? 'en' : currentUiLang.startsWith('es') ? 'es' : 'pt';
+      if (postLanguageInput) postLanguageInput.value = defaultCode;
+      localStorage.setItem('postLanguage', defaultCode);
+  }
   
   const savedGate = localStorage.getItem('postThreadgate');
-  if (savedGate && postThreadgateInput) postThreadgateInput.value = savedGate;
+  if (savedGate && postThreadgateInput) {
+      postThreadgateInput.value = savedGate;
+      if (savedGate === 'list' && tgListContainer) {
+          tgListContainer.classList.remove('hidden');
+      } else if (tgListContainer) {
+          tgListContainer.classList.add('hidden');
+      }
+  } else if (tgListContainer) {
+      tgListContainer.classList.add('hidden');
+  }
+  loadUserListsForThreadgate();
 
   if (DOM.composeModal) DOM.composeModal.showModal();
   
@@ -75,6 +119,8 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
   
   selectedImages = [];
   selectedVideo = "";
+  selectedVideoWidth = 0;
+  selectedVideoHeight = 0;
   selectedGifUrl = "";
   selectedGifAlt = "";
   
@@ -264,11 +310,24 @@ export function setupCompose() {
                 if (postVideoInput) postVideoInput.value = "";
                 selectedImages = [];
                 selectedVideo = "";
+                selectedVideoWidth = 0;
+                selectedVideoHeight = 0;
                 if (altContainer) altContainer.innerHTML = '';
                 if (videoAltContainer) videoAltContainer.classList.add('hidden');
                 
                 selectedGifUrl = url;
                 selectedGifAlt = alt;
+
+                try {
+                    const tempVideo = document.createElement('video');
+                    tempVideo.preload = 'metadata';
+                    tempVideo.onloadedmetadata = () => {
+                        selectedVideoWidth = tempVideo.videoWidth || 0;
+                        selectedVideoHeight = tempVideo.videoHeight || 0;
+                    };
+                    tempVideo.src = url;
+                } catch (_) {}
+
                 if (videoAltContainer) {
                     videoAltContainer.classList.remove('hidden');
                     const vAltInput = document.getElementById('video-alt') as HTMLInputElement;
@@ -287,6 +346,8 @@ export function setupCompose() {
         btnRemoveGif.addEventListener('click', () => {
             selectedGifUrl = "";
             selectedGifAlt = "";
+            selectedVideoWidth = 0;
+            selectedVideoHeight = 0;
             if (videoAltContainer) videoAltContainer.classList.add('hidden');
             if (gifContainer && gifPreview) {
                 gifContainer.classList.add('hidden');
@@ -315,6 +376,8 @@ export function setupCompose() {
 
             if (postVideoInput) postVideoInput.value = "";
             selectedVideo = "";
+            selectedVideoWidth = 0;
+            selectedVideoHeight = 0;
             selectedGifUrl = "";
             if (gifContainer) gifContainer.classList.add('hidden');
             if (videoAltContainer) videoAltContainer.classList.add('hidden');
@@ -353,16 +416,33 @@ export function setupCompose() {
                 if (postImageInput) postImageInput.value = "";
                 selectedImages = [];
                 selectedGifUrl = "";
+                selectedVideoWidth = 0;
+                selectedVideoHeight = 0;
                 if (gifContainer) gifContainer.classList.add('hidden');
                 if (altContainer) altContainer.innerHTML = '';
 
                 selectedVideo = await getFilePathOrDataUrl(files[0]);
+
+                try {
+                    const videoUrl = URL.createObjectURL(files[0]);
+                    const tempVideo = document.createElement('video');
+                    tempVideo.preload = 'metadata';
+                    tempVideo.onloadedmetadata = () => {
+                        selectedVideoWidth = tempVideo.videoWidth || 0;
+                        selectedVideoHeight = tempVideo.videoHeight || 0;
+                        URL.revokeObjectURL(videoUrl);
+                    };
+                    tempVideo.src = videoUrl;
+                } catch (_) {}
+
                 if (videoAltContainer) videoAltContainer.classList.remove('hidden');
                 announcePolite(i18n.t('compose.videoSelected'));
                 const vAltInput = document.getElementById('video-alt') as HTMLInputElement;
                 if (vAltInput) vAltInput.focus();
             } else {
                 selectedVideo = "";
+                selectedVideoWidth = 0;
+                selectedVideoHeight = 0;
                 if (videoAltContainer) videoAltContainer.classList.add('hidden');
             }
         });
@@ -388,7 +468,17 @@ export function setupCompose() {
     const postThreadgateInput = document.getElementById('post-threadgate') as HTMLSelectElement;
     if (postThreadgateInput) {
         postThreadgateInput.addEventListener('change', (e) => {
-            localStorage.setItem('postThreadgate', (e.target as HTMLSelectElement).value);
+            const val = (e.target as HTMLSelectElement).value;
+            localStorage.setItem('postThreadgate', val);
+            const tgListContainer = document.getElementById('threadgate-list-container');
+            if (tgListContainer) {
+                if (val === 'list') {
+                    tgListContainer.classList.remove('hidden');
+                    loadUserListsForThreadgate();
+                } else {
+                    tgListContainer.classList.add('hidden');
+                }
+            }
         });
     }
 
@@ -516,6 +606,8 @@ export function setupCompose() {
           
           const language = postLanguageInput ? postLanguageInput.value : "";
           const threadgate = postThreadgateInput ? postThreadgateInput.value : "everyone";
+          const selectedListUri = (document.getElementById('post-threadgate-list') as HTMLSelectElement)?.value || "";
+          const listUris = (threadgate === 'list' && selectedListUri) ? [selectedListUri] : [];
           
           const imageSources = selectedImages.length > 0 ? selectedImages : [];
           const videoPath = selectedVideo;
@@ -573,18 +665,21 @@ export function setupCompose() {
                 const pVid = i === 0 ? videoPath : "";
                 const pVidAlt = i === 0 ? vAlt : "";
                 const pLink = item.linkUrl;
-                const pLang = i === 0 ? language : ""; 
+                const pLang = language;
                 const pThreadgate = i === 0 ? threadgate : "everyone";
                 const pGifUrl = i === 0 ? selectedGifUrl : "";
+                const pVidWidth = i === 0 ? selectedVideoWidth : 0;
+                const pVidHeight = i === 0 ? selectedVideoHeight : 0;
+                const pListUris = i === 0 ? listUris : [];
                 
                 if (state.composeMode === 'quote' && i === 0 && state.composeTarget) {
-                    res = await (window as any).go.services.PostBuilderService.QuotePost(item.text, state.composeTarget.uri, state.composeTarget.cid, pPaths, pAlts, pVid, pVidAlt, pLang, pThreadgate, pGifUrl);
+                    res = await (window as any).go.services.PostBuilderService.QuotePost(item.text, state.composeTarget.uri, state.composeTarget.cid, pPaths, pAlts, pVid, pVidAlt, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris);
                     if (res) {
                         currentReplyUri = res.uri;
                         currentReplyCid = res.cid;
                     }
                 } else {
-                    res = await (window as any).go.services.PostBuilderService.CreatePost(item.text, currentReplyUri, currentReplyCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate, pGifUrl);
+                    res = await (window as any).go.services.PostBuilderService.CreatePost(item.text, currentReplyUri, currentReplyCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris);
                     if (res) {
                         currentReplyUri = res.uri;
                         currentReplyCid = res.cid;

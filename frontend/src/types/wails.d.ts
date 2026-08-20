@@ -43,11 +43,11 @@ declare global {
           GetTrends(limit: number): Promise<TrendListDTO>;
         };
         PostBuilderService: {
-          CreatePost(text: string, replyUri: string, replyCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, linkUrl: string, language: string, threadgate: string): Promise<any>;
+          CreatePost(text: string, replyUri: string, replyCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, linkUrl: string, language: string, threadgate: string, gifUrl: string, videoWidth: number, videoHeight: number, listUris: string[]): Promise<any>;
           LikePost(uri: string, cid: string): Promise<string>;
           UnlikePost(likeUri: string): Promise<void>;
           Repost(uri: string, cid: string): Promise<string>;
-          QuotePost(text: string, quoteUri: string, quoteCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, language: string, threadgate: string): Promise<any>;
+          QuotePost(text: string, quoteUri: string, quoteCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, language: string, threadgate: string, gifUrl: string, videoWidth: number, videoHeight: number, listUris: string[]): Promise<any>;
           DeletePost(uri: string): Promise<void>;
           DeleteRepost(repostUri: string): Promise<void>;
           HideReply(postUri: string, replyUri: string): Promise<void>;

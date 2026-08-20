@@ -2,9 +2,13 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -50,6 +54,7 @@ func (s *SyncService) Start(ctx context.Context) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.isRunning = true
 	go s.pollLoop(s.ctx)
+	go s.jetstreamLoop(s.ctx)
 }
 
 func (s *SyncService) Stop() {
@@ -130,5 +135,78 @@ func (s *SyncService) checkForUpdates(ctx context.Context) {
 
 	if changed {
 		runtime.EventsEmit(ctx, "new_timeline_posts", timeline.Posts)
+	}
+}
+
+func (s *SyncService) jetstreamLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		client, err := s.clientMgr.GetClient()
+		if err != nil || client.Auth == nil || client.Auth.Did == "" {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+				continue
+			}
+		}
+
+		userDid := client.Auth.Did
+		wsURL := fmt.Sprintf("wss://jetstream.us-east.bsky.network/xrpc/network.bsky.jetstream.subscribeEvents?wantedDids=%s&wantedCollections=app.bsky.feed.post&wantedCollections=app.bsky.feed.like&wantedCollections=app.bsky.feed.repost&wantedCollections=app.bsky.graph.follow", url.QueryEscape(userDid))
+
+		dialer := websocket.Dialer{
+			HandshakeTimeout: 10 * time.Second,
+		}
+
+		conn, _, err := dialer.DialContext(ctx, wsURL, nil)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Second):
+				continue
+			}
+		}
+
+		done := make(chan struct{})
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = conn.Close()
+			case <-done:
+			}
+		}()
+
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				_ = conn.Close()
+				break
+			}
+
+			if len(msg) > 0 {
+				var evt struct {
+					Kind   string `json:"kind"`
+					Commit *struct {
+						Collection string `json:"collection"`
+					} `json:"commit"`
+				}
+				if jsonErr := json.Unmarshal(msg, &evt); jsonErr == nil && evt.Kind == "commit" {
+					s.checkForUpdates(ctx)
+				}
+			}
+		}
+		close(done)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
 	}
 }

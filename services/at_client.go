@@ -20,6 +20,9 @@ import (
 // DID document.
 const DefaultPDSHost = "https://bsky.social"
 
+// PublicAppViewHost is the official cached endpoint for unauthenticated queries.
+const PublicAppViewHost = "https://public.api.bsky.app"
+
 // defaultCallTimeout bounds a single API call. Without it a stalled connection
 // would hang a goroutine for the lifetime of the process.
 const defaultCallTimeout = 20 * time.Second
@@ -104,6 +107,13 @@ func (c *ATClient) GetClient() (*xrpc.Client, error) {
 		return nil, fmt.Errorf("client not authenticated")
 	}
 	return client, nil
+}
+
+// NewPublicClient returns an unauthenticated client targeting the public AppView.
+func (c *ATClient) NewPublicClient() *xrpc.Client {
+	return &xrpc.Client{
+		Host: PublicAppViewHost,
+	}
 }
 
 // ResolvePDSHost finds the PDS that hosts the given handle or DID by reading

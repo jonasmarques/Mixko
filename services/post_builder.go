@@ -70,7 +70,7 @@ func NewPostBuilderService(clientMgr *ATClient) *PostBuilderService {
 }
 
 // CreatePost handles creating a new post with optional reply info, images, video, and link preview
-func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string) (*atproto.RepoCreateRecord_Output, error) {
+func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*atproto.RepoCreateRecord_Output, error) {
 	// Posting can include a video upload plus transcode polling, which runs far
 	// longer than a plain API call.
 	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
@@ -192,19 +192,19 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 				Video:         blobRef,
 				Alt:           &altText,
 			}
+			if videoWidth > 0 && videoHeight > 0 {
+				vidEmbed.AspectRatio = &bsky.EmbedDefs_AspectRatio{
+					Width:  videoWidth,
+					Height: videoHeight,
+				}
+			}
 			
 			if gifUrl != "" {
 				vidEmbed.Presentation = &presentationStr
 			}
 			
-			if gifUrl != "" {
-				post.Embed = &bsky.FeedPost_Embed{
-					EmbedVideo: vidEmbed,
-				}
-			} else {
-				post.Embed = &bsky.FeedPost_Embed{
-					EmbedVideo: vidEmbed,
-				}
+			post.Embed = &bsky.FeedPost_Embed{
+				EmbedVideo: vidEmbed,
 			}
 		} else if linkUrl != "" {
 			preview, err := GenerateLinkPreview(ctx, c, linkUrl)
@@ -248,7 +248,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 		}
 		
 		if threadgate != "" && threadgate != "everyone" {
-			_ = s.createThreadgate(ctx, c, res.Uri, threadgate)
+			_ = s.createThreadgate(ctx, c, res.Uri, threadgate, listUris)
 		}
 
 		out = res
@@ -258,7 +258,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 	return out, err
 }
 
-func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Client, postUri string, threadgate string) error {
+func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Client, postUri string, threadgate string, listUris []string) error {
 	var allow []*bsky.FeedThreadgate_Allow_Elem
 	switch threadgate {
 	case "nobody":
@@ -275,6 +275,17 @@ func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Clien
 				LexiconTypeID: "app.bsky.feed.threadgate#followingRule",
 			},
 		})
+	case "list":
+		for _, lUri := range listUris {
+			if lUri != "" {
+				allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
+					FeedThreadgate_ListRule: &bsky.FeedThreadgate_ListRule{
+						LexiconTypeID: "app.bsky.feed.threadgate#listRule",
+						List:          lUri,
+					},
+				})
+			}
+		}
 	}
 	
 	tg := &bsky.FeedThreadgate{
@@ -498,7 +509,7 @@ func (s *PostBuilderService) Repost(uri, cid string) (string, error) {
 }
 
 // QuotePost handles quoting a post
-func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string) (*atproto.RepoCreateRecord_Output, error) {
+func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*atproto.RepoCreateRecord_Output, error) {
 	// Posting can include a video upload plus transcode polling, which runs far
 	// longer than a plain API call.
 	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
@@ -566,12 +577,19 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 					return fmt.Errorf("failed to upload video: %w", err)
 				}
 			}
+			vidEmbed := &bsky.EmbedVideo{
+				LexiconTypeID: "app.bsky.embed.video",
+				Video:         blobRef,
+				Alt:           &altText,
+			}
+			if videoWidth > 0 && videoHeight > 0 {
+				vidEmbed.AspectRatio = &bsky.EmbedDefs_AspectRatio{
+					Width:  videoWidth,
+					Height: videoHeight,
+				}
+			}
 			media = &bsky.EmbedRecordWithMedia_Media{
-				EmbedVideo: &bsky.EmbedVideo{
-					LexiconTypeID: "app.bsky.embed.video",
-					Video:         blobRef,
-					Alt:           &altText,
-				},
+				EmbedVideo: vidEmbed,
 			}
 		}
 
@@ -610,7 +628,7 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 			return err
 		}
 		if threadgate != "" && threadgate != "everyone" {
-			_ = s.createThreadgate(ctx, c, res.Uri, threadgate)
+			_ = s.createThreadgate(ctx, c, res.Uri, threadgate, listUris)
 		}
 		out = res
 		return nil
