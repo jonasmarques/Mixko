@@ -89,3 +89,41 @@ func TestGetTrendsClampsLimitToTheLexiconMaximum(t *testing.T) {
 		t.Errorf("limit = %q, want 25", gotLimit)
 	}
 }
+
+func TestExtractReplyMetaFromRecord(t *testing.T) {
+	record := map[string]interface{}{
+		"text": "Reply to post 2",
+		"reply": map[string]interface{}{
+			"parent": map[string]interface{}{
+				"uri": "at://did:plc:user2/app.bsky.feed.post/post2",
+			},
+			"root": map[string]interface{}{
+				"uri": "at://did:plc:user1/app.bsky.feed.post/post1",
+			},
+		},
+	}
+
+	isReply, parentURI, parentDID, rootURI, rootDID := ExtractReplyMetaFromRecord(record)
+	if !isReply {
+		t.Fatalf("expected isReply to be true")
+	}
+	if parentURI != "at://did:plc:user2/app.bsky.feed.post/post2" || parentDID != "did:plc:user2" {
+		t.Errorf("unexpected parent: uri=%q, did=%q", parentURI, parentDID)
+	}
+	if rootURI != "at://did:plc:user1/app.bsky.feed.post/post1" || rootDID != "did:plc:user1" {
+		t.Errorf("unexpected root: uri=%q, did=%q", rootURI, rootDID)
+	}
+
+	CacheAuthor("did:plc:user1", "alice.test", "Alice")
+	CacheAuthor("did:plc:user2", "bob.test", "Bob")
+
+	identity1, ok1 := GetAuthorForDID("did:plc:user1")
+	if !ok1 || identity1.Handle != "alice.test" || identity1.DisplayName != "Alice" {
+		t.Errorf("unexpected identity1: %+v", identity1)
+	}
+
+	identity2, ok2 := GetAuthorForDID("did:plc:user2")
+	if !ok2 || identity2.Handle != "bob.test" || identity2.DisplayName != "Bob" {
+		t.Errorf("unexpected identity2: %+v", identity2)
+	}
+}

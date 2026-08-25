@@ -16,5 +16,13 @@
   },
   // The base config excludes tests; this project is only tests.
   "exclude": [],
-  "include": ["src/utils/helpers.ts", "src/utils/helpers.test.ts", "src/utils/node-test.d.ts"]
+  "include": [
+    "src/utils/helpers.ts",
+    "src/utils/helpers.test.ts",
+    "src/utils/pagination.ts",
+    "src/utils/pagination.test.ts",
+    "src/config/state.ts",
+    "src/types/index.ts",
+    "src/utils/node-test.d.ts"
+  ]
 }

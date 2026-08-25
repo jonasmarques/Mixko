@@ -39,11 +39,19 @@ export function getPostAccessibleLabel(article: HTMLElement): string {
     const dateFormatted = createdAt ? formatPostDate(createdAt) : "";
 
     let replyContext = "";
-    if (article.dataset.replyTo && !article.dataset.replyTo.startsWith('did:')) {
-        if (article.dataset.rootAuthor && !article.dataset.rootAuthor.startsWith('did:')) {
-            replyContext = i18n.t('a11y.replyToInThread', { replyTo: article.dataset.replyTo, rootAuthor: article.dataset.rootAuthor }) + ": ";
+    if (!article.dataset.notifReason && article.dataset.replyTo && !article.dataset.replyTo.startsWith('did:')) {
+        const replyToHandle = article.dataset.replyTo;
+        const replyToName = article.dataset.replyToName || "";
+        const formattedReplyTo = formatAuthor(replyToName, replyToHandle);
+
+        const rootAuthorHandle = article.dataset.rootAuthor || "";
+        const rootAuthorName = article.dataset.rootAuthorName || "";
+        const formattedRoot = rootAuthorHandle ? formatAuthor(rootAuthorName, rootAuthorHandle) : "";
+
+        if (rootAuthorHandle && !rootAuthorHandle.startsWith('did:') && rootAuthorHandle !== replyToHandle) {
+            replyContext = i18n.t('a11y.replyToMultiple', { replyTo: formattedReplyTo, rootAuthor: formattedRoot }) + ": ";
         } else {
-            replyContext = i18n.t('a11y.replyTo', { replyTo: article.dataset.replyTo }) + ": ";
+            replyContext = i18n.t('a11y.replyTo', { replyTo: formattedReplyTo }) + ": ";
         }
     }
     let repostText = "";

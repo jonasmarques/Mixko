@@ -41,8 +41,10 @@ export interface PostDTO {
     likeCount: number;
     isReply: boolean;
     replyToAuthor: string;
+    replyToAuthorName?: string;
     replyToUri: string;
     rootAuthor: string;
+    rootAuthorName?: string;
     rootUri: string;
     parentPost: PostDTO | null;
     repostedBy: string;
@@ -144,6 +146,10 @@ export interface NotificationDTO {
     quoteText?: string;
     quoteUri?: string;
     hydratedPost?: PostDTO;
+    replyParentUri?: string;
+    replyParentAuthorDid?: string;
+    replyParentAuthorHandle?: string;
+    replyParentAuthorName?: string;
 }
 
 export interface NotificationListDTO {

@@ -2,6 +2,7 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
 import { i18n } from '../utils/i18n';
+import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
 
 /** Reasons whose post lives in reasonSubject, so several of them collapse into one row. */
 const GROUPABLE_REASONS = ['like', 'repost', 'like-via-repost', 'repost-via-repost'];
@@ -104,7 +105,8 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
   return result;
 }
 
-export async function loadNotifications(loadMore = false, keepFocus = false) {
+/** @param silent suppresses the "loaded" announcement, for pages fetched to restore focus. */
+export async function loadNotifications(loadMore = false, keepFocus = false, silent = false) {
   if (loadMore && state.notificationsCursor === "") {
     announcePolite(i18n.t('notif.endOfNotifs'));
     return;
@@ -112,16 +114,20 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
   const container = document.getElementById('notif-items') as HTMLDivElement;
   container.setAttribute('aria-busy', 'true');
   let targetUri = "";
+  let pagesBefore = 0;
   if (!loadMore && keepFocus && state.focusedPostIndex >= 0 && state.focusedPostIndex < state.currentPosts.length) {
     targetUri = state.currentPosts[state.focusedPostIndex]?.dataset.uri || "";
+    pagesBefore = pagesLoadedFor('notifications');
   }
   if (!loadMore) {
     state.notificationsCursor = "";
+    resetPagesLoaded('notifications');
     container.innerHTML = '';
     state.currentPosts = [];
   }
     try {
       const res = await window.go.services.NotificationsService.GetNotifications(state.notificationsCursor);
+      if (res) markPageLoaded('notifications');
       if (res && res.notifications) {
         let itemsToRender = res.notifications;
         
@@ -180,7 +186,30 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
         } else if (notif.reason === 'quote') {
             notifText = i18n.t('notif.quotedYourPost', { text: notif.text || i18n.t('notif.quoteNoText') });
         } else if (notif.reason === 'reply') {
-            notifText = i18n.t('notif.repliedYourPost', { text: notif.text || i18n.t('notif.replyNoText') });
+            // A reply notification also fires when we are only the thread root
+            // author, so the answered post is frequently somebody else's.
+            const replyText = notif.text || i18n.t('notif.replyNoText');
+            const parentDid = notif.replyParentAuthorDid || "";
+            const parentHandle = notif.replyParentAuthorHandle || "";
+            // The DID is the stable identity; fall back to the handle only when
+            // one of the two DIDs is missing, and to the old wording when the
+            // answered post identifies nobody at all.
+            let repliedToMe = true;
+            if (parentDid && state.loggedInDid) {
+                repliedToMe = parentDid === state.loggedInDid;
+            } else if (parentHandle) {
+                repliedToMe = parentHandle === state.loggedInHandle;
+            }
+            if (repliedToMe) {
+                notifText = i18n.t('notif.repliedYourPost', { text: replyText });
+            } else {
+                const parentAuthor = formatAuthor(notif.replyParentAuthorName || "", parentHandle);
+                // Unnamed parent: the notification still only reached us because
+                // we own the thread root, so say that rather than claim the post.
+                notifText = parentAuthor
+                    ? i18n.t('notif.repliedToAuthor', { author: parentAuthor, text: replyText })
+                    : i18n.t('notif.repliedInYourThread', { text: replyText });
+            }
         } else if (notif.reason === 'mention') {
             notifText = i18n.t('notif.mentionedYou', { text: notif.text || i18n.t('notif.mentionNoText') });
         } else if (notif.reason === 'starterpack-joined') {
@@ -241,20 +270,18 @@ export async function loadNotifications(loadMore = false, keepFocus = false) {
         }
       });
       state.notificationsCursor = res.cursor || "";
-      announcePolite(i18n.t('notif.notifsLoaded', { count: state.currentPosts.length.toString() }));
+      if (!silent) announcePolite(i18n.t('notif.notifsLoaded', { count: state.currentPosts.length.toString() }));
       window.go.services.NotificationsService.UpdateSeen(new Date().toISOString()).catch((e: any) => console.error(e));
     } else { if (!loadMore) container.innerHTML = `<p>${i18n.t('notif.noNotifs')}</p>`; }
     state.tabStates['notifications'].loaded = true;
     if (!loadMore && state.currentPosts.length > 0) {
-        let focused = false;
-        if (keepFocus && targetUri) {
-            const idx = state.currentPosts.findIndex(p => p.dataset.uri === targetUri);
-            if (idx >= 0) {
-                state.focusedPostIndex = idx;
-                state.currentPosts[idx].focus();
-                focused = true;
-            }
-        }
+        const focused = await restoreFocusAfterReload({
+            tab: 'notifications',
+            targetUri: keepFocus ? targetUri : "",
+            pagesBefore,
+            hasMore: () => state.notificationsCursor !== "",
+            loadMore: async () => { await loadNotifications(true, false, true); }
+        });
         if (!focused && state.focusedPostIndex === -1) {
             state.focusedPostIndex = 0;
             state.currentPosts[0].focus();

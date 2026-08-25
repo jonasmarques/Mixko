@@ -56,10 +56,31 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 				}
 			} else if reasonUsesOwnURI(item.Reason) {
 				postUris = append(postUris, item.Uri)
-				if item.Reason == "quote" && item.ReasonSubject != nil {
+				if (item.Reason == "quote" || item.Reason == "reply") && item.ReasonSubject != nil && *item.ReasonSubject != "" {
 					postUris = append(postUris, *item.ReasonSubject)
 				}
+				if item.Reason == "reply" && item.Record != nil {
+					if isReply, parentURI, _, _, _ := ExtractReplyMetaFromRecord(item.Record.Val); isReply && parentURI != "" {
+						postUris = append(postUris, parentURI)
+					}
+				}
 			}
+		}
+
+		// The same post can be referenced by several notifications (and a reply's
+		// reasonSubject often is its parent), so collapse duplicates before
+		// spending them against the 25-per-call batch budget.
+		if len(postUris) > 1 {
+			seen := make(map[string]bool, len(postUris))
+			unique := postUris[:0]
+			for _, uri := range postUris {
+				if uri == "" || seen[uri] {
+					continue
+				}
+				seen[uri] = true
+				unique = append(unique, uri)
+			}
+			postUris = unique
 		}
 
 		postViews := make(map[string]*PostDTO)
@@ -115,6 +136,22 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 				text = ""
 			}
 
+			var replyParentURI, replyParentDID, replyParentHandle, replyParentName string
+			if item.Reason == "reply" && item.Record != nil {
+				if isReply, parentURI, parentDID, _, _ := ExtractReplyMetaFromRecord(item.Record.Val); isReply && parentURI != "" {
+					replyParentURI = parentURI
+					replyParentDID = parentDID
+					if pv, ok := postViews[parentURI]; ok && pv != nil {
+						replyParentDID = pv.AuthorDID
+						replyParentHandle = pv.AuthorHandle
+						replyParentName = pv.AuthorName
+					} else if author, ok := GetAuthorForDID(parentDID); ok {
+						replyParentHandle = author.Handle
+						replyParentName = author.DisplayName
+					}
+				}
+			}
+
 			var quoteAuthorName, quoteAuthorHandle, quoteText, quoteUri string
 			if item.Reason == "quote" && item.ReasonSubject != nil {
 				if qView, ok := postViews[*item.ReasonSubject]; ok {
@@ -142,6 +179,10 @@ func (s *NotificationsService) GetNotifications(cursor string) (*NotificationLis
 				QuoteText:         quoteText,
 				QuoteUri:          quoteUri,
 				HydratedPost:      hydratedPost,
+				ReplyParentURI:          replyParentURI,
+				ReplyParentAuthorDID:    replyParentDID,
+				ReplyParentAuthorHandle: replyParentHandle,
+				ReplyParentAuthorName:   replyParentName,
 			})
 		}
 		

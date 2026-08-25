@@ -7,17 +7,22 @@ import { switchTab } from './tabs';
 import { showMuteMenu } from './shortcuts';
 import { getFilePathOrDataUrl, esc, linkify } from '../utils/helpers';
 import { i18n } from '../utils/i18n';
+import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
 
-export async function loadProfile(loadMore = false, keepFocus = false) {
+/** @param silent suppresses the "loaded" announcement, for pages fetched to restore focus. */
+export async function loadProfile(loadMore = false, keepFocus = false, silent = false) {
   const container = document.getElementById('profile-card') as HTMLDivElement;
   container.setAttribute('aria-busy', 'true');
   let targetUri = "";
+  let pagesBefore = 0;
   if (!loadMore && keepFocus && state.focusedPostIndex >= 0 && state.focusedPostIndex < state.currentPosts.length) {
     targetUri = state.currentPosts[state.focusedPostIndex]?.dataset.uri || "";
+    pagesBefore = pagesLoadedFor('profile');
   }
   
   if (!loadMore) {
       state.profileCursor = "";
+      resetPagesLoaded('profile');
       state.currentPosts = [];
       container.innerHTML = `<div style="padding: 20px;">${i18n.t('profile.loadingProfile')}</div>`;
       const contentContainer = document.getElementById('profile-content');
@@ -503,19 +508,18 @@ export async function loadProfile(loadMore = false, keepFocus = false) {
         }
     }
     
+    markPageLoaded('profile');
     state.tabStates['profile'].loaded = true;
     state.tabStates['profile'].lastHandle = state.currentHandle;
-    announcePolite(i18n.t('profile.profileLoaded', { count: state.currentPosts.length.toString() }));
+    if (!silent) announcePolite(i18n.t('profile.profileLoaded', { count: state.currentPosts.length.toString() }));
     if (!loadMore && state.currentPosts.length > 0) {
-        let focused = false;
-        if (keepFocus && targetUri) {
-            const idx = state.currentPosts.findIndex(p => p.dataset.uri === targetUri);
-            if (idx >= 0) {
-                state.focusedPostIndex = idx;
-                state.currentPosts[idx].focus();
-                focused = true;
-            }
-        }
+        const focused = await restoreFocusAfterReload({
+            tab: 'profile',
+            targetUri: keepFocus ? targetUri : "",
+            pagesBefore,
+            hasMore: () => Boolean(state.profileCursor),
+            loadMore: async () => { await loadProfile(true, false, true); }
+        });
         if (!focused && state.focusedPostIndex === -1) {
             state.focusedPostIndex = 0;
             state.currentPosts[0].focus();

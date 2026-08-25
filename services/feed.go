@@ -48,21 +48,34 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {
 						parentPV := item.Reply.Parent.FeedDefs_PostView
-						CacheDID(parentPV.Author.Did, parentPV.Author.Handle)
+						parentName := ""
+						if parentPV.Author.DisplayName != nil {
+							parentName = *parentPV.Author.DisplayName
+						}
+						CacheAuthor(parentPV.Author.Did, parentPV.Author.Handle, parentName)
 						dto.IsReply = true
 						dto.ReplyToAuthor = parentPV.Author.Handle
+						dto.ReplyToAuthorName = parentName
 						dto.ReplyToURI = parentPV.Uri
 						dto.ParentPost = ParsePostView(parentPV)
 						if dto.ParentPost != nil && strings.HasPrefix(dto.ParentPost.ReplyToAuthor, "did:") {
-							if h, ok := GetHandleForDID(dto.ParentPost.ReplyToAuthor); ok {
-								dto.ParentPost.ReplyToAuthor = h
+							if author, ok := GetAuthorForDID(dto.ParentPost.ReplyToAuthor); ok {
+								dto.ParentPost.ReplyToAuthor = author.Handle
+								if dto.ParentPost.ReplyToAuthorName == "" {
+									dto.ParentPost.ReplyToAuthorName = author.DisplayName
+								}
 							}
 						}
 					}
 					if item.Reply.Root != nil && item.Reply.Root.FeedDefs_PostView != nil {
 						rootPV := item.Reply.Root.FeedDefs_PostView
-						CacheDID(rootPV.Author.Did, rootPV.Author.Handle)
+						rootName := ""
+						if rootPV.Author.DisplayName != nil {
+							rootName = *rootPV.Author.DisplayName
+						}
+						CacheAuthor(rootPV.Author.Did, rootPV.Author.Handle, rootName)
 						dto.RootAuthor = rootPV.Author.Handle
+						dto.RootAuthorName = rootName
 						dto.RootURI = rootPV.Uri
 					}
 				}
@@ -81,9 +94,9 @@ func safeString(s *string) string {
 
 func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 	if post == nil { return nil }
-	CacheDID(post.Author.Did, post.Author.Handle)
 	authorName := ""
 	if post.Author.DisplayName != nil { authorName = *post.Author.DisplayName }
+	CacheAuthor(post.Author.Did, post.Author.Handle, authorName)
 	
 	replyCount, repostCount, likeCount := int64(0), int64(0), int64(0)
 	if post.ReplyCount != nil { replyCount = *post.ReplyCount }
@@ -270,40 +283,61 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 		viewerRepost = *post.Viewer.Repost
 	}
 
-	isReply, replyToURI, replyToDID := ExtractReplyMetaFromRecord(recVal)
+	isReply, replyToURI, replyToDID, rootURI, rootDID := ExtractReplyMetaFromRecord(recVal)
 	replyToAuthor := ""
+	replyToAuthorName := ""
 	if isReply {
 		if replyToDID != "" && replyToDID == post.Author.Did {
 			replyToAuthor = post.Author.Handle
-		} else if handle, ok := GetHandleForDID(replyToDID); ok && handle != "" {
-			replyToAuthor = handle
+			replyToAuthorName = authorName
+		} else if author, ok := GetAuthorForDID(replyToDID); ok && author.Handle != "" {
+			replyToAuthor = author.Handle
+			replyToAuthorName = author.DisplayName
 		} else {
 			replyToAuthor = replyToDID
 		}
 	}
 
+	rootAuthor := ""
+	rootAuthorName := ""
+	if isReply && rootDID != "" {
+		if rootDID == post.Author.Did {
+			rootAuthor = post.Author.Handle
+			rootAuthorName = authorName
+		} else if author, ok := GetAuthorForDID(rootDID); ok && author.Handle != "" {
+			rootAuthor = author.Handle
+			rootAuthorName = author.DisplayName
+		} else {
+			rootAuthor = rootDID
+		}
+	}
+
 	return &PostDTO{
-		URI:          post.Uri,
-		CID:          post.Cid,
-		AuthorName:   authorName,
-		AuthorHandle: post.Author.Handle,
-		AuthorDID:    post.Author.Did,
-		Text:         ParseFeedPost(recVal),
-		CreatedAt:    post.IndexedAt,
-		ReplyCount:   replyCount,
-		RepostCount:  repostCount,
-		LikeCount:    likeCount,
-		IsReply:      isReply,
-		ReplyToAuthor: replyToAuthor,
-		ReplyToURI:   replyToURI,
-		QuotePost:    quotePost,
-		ImageAlts:    imageAlts,
-		Images:       images,
-		External:     external,
-		Video:        video,
-		HasMedia:     (len(images) > 0) || (external != nil) || (video != nil) || (post.Embed != nil && (post.Embed.EmbedImages_View != nil || post.Embed.EmbedRecordWithMedia_View != nil)),
-		ViewerLike:   viewerLike,
-		ViewerRepost: viewerRepost,
+		URI:               post.Uri,
+		CID:               post.Cid,
+		AuthorName:        authorName,
+		AuthorHandle:      post.Author.Handle,
+		AuthorDID:         post.Author.Did,
+		Text:              ParseFeedPost(recVal),
+		CreatedAt:         post.IndexedAt,
+		ReplyCount:        replyCount,
+		RepostCount:       repostCount,
+		LikeCount:         likeCount,
+		IsReply:           isReply,
+		ReplyToAuthor:     replyToAuthor,
+		ReplyToAuthorName: replyToAuthorName,
+		ReplyToURI:        replyToURI,
+		RootAuthor:        rootAuthor,
+		RootAuthorName:    rootAuthorName,
+		RootURI:           rootURI,
+		QuotePost:         quotePost,
+		ImageAlts:         imageAlts,
+		Images:            images,
+		External:          external,
+		Video:             video,
+		HasMedia:          (len(images) > 0) || (external != nil) || (video != nil) || (post.Embed != nil && (post.Embed.EmbedImages_View != nil || post.Embed.EmbedRecordWithMedia_View != nil)),
+		ViewerLike:        viewerLike,
+		ViewerRepost:      viewerRepost,
 	}
 }
 
@@ -335,14 +369,28 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 				}
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {
+						parentPV := item.Reply.Parent.FeedDefs_PostView
+						parentName := ""
+						if parentPV.Author.DisplayName != nil {
+							parentName = *parentPV.Author.DisplayName
+						}
+						CacheAuthor(parentPV.Author.Did, parentPV.Author.Handle, parentName)
 						dto.IsReply = true
-						dto.ReplyToAuthor = item.Reply.Parent.FeedDefs_PostView.Author.Handle
-						dto.ReplyToURI = item.Reply.Parent.FeedDefs_PostView.Uri
-						dto.ParentPost = ParsePostView(item.Reply.Parent.FeedDefs_PostView)
+						dto.ReplyToAuthor = parentPV.Author.Handle
+						dto.ReplyToAuthorName = parentName
+						dto.ReplyToURI = parentPV.Uri
+						dto.ParentPost = ParsePostView(parentPV)
 					}
 					if item.Reply.Root != nil && item.Reply.Root.FeedDefs_PostView != nil {
-						dto.RootAuthor = item.Reply.Root.FeedDefs_PostView.Author.Handle
-						dto.RootURI = item.Reply.Root.FeedDefs_PostView.Uri
+						rootPV := item.Reply.Root.FeedDefs_PostView
+						rootName := ""
+						if rootPV.Author.DisplayName != nil {
+							rootName = *rootPV.Author.DisplayName
+						}
+						CacheAuthor(rootPV.Author.Did, rootPV.Author.Handle, rootName)
+						dto.RootAuthor = rootPV.Author.Handle
+						dto.RootAuthorName = rootName
+						dto.RootURI = rootPV.Uri
 					}
 				}
 				out.Posts = append(out.Posts, dto)
@@ -395,10 +443,14 @@ func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 			}
 		}
 		
-		var extractReplies func(thread *bsky.FeedDefs_ThreadViewPost)
-		extractReplies = func(thread *bsky.FeedDefs_ThreadViewPost) {
+		var extractReplies func(thread *bsky.FeedDefs_ThreadViewPost, rootAuthor string, rootAuthorName string, rootURI string)
+		extractReplies = func(thread *bsky.FeedDefs_ThreadViewPost, rootAuthor string, rootAuthorName string, rootURI string) {
 			if thread == nil {
 				return
+			}
+			parentName := ""
+			if thread.Post.Author.DisplayName != nil {
+				parentName = *thread.Post.Author.DisplayName
 			}
 			for _, rep := range thread.Replies {
 				if rep.FeedDefs_ThreadViewPost != nil {
@@ -406,8 +458,15 @@ func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 					if postDTO != nil {
 						postDTO.IsReply = true
 						postDTO.ReplyToAuthor = thread.Post.Author.Handle
+						postDTO.ReplyToAuthorName = parentName
+						postDTO.ReplyToURI = thread.Post.Uri
+						if rootAuthor != "" {
+							postDTO.RootAuthor = rootAuthor
+							postDTO.RootAuthorName = rootAuthorName
+							postDTO.RootURI = rootURI
+						}
 						out.Posts = append(out.Posts, postDTO)
-						extractReplies(rep.FeedDefs_ThreadViewPost)
+						extractReplies(rep.FeedDefs_ThreadViewPost, rootAuthor, rootAuthorName, rootURI)
 					}
 				}
 			}
@@ -419,7 +478,19 @@ func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 			if targetDTO != nil {
 				out.Posts = append(out.Posts, targetDTO)
 			}
-			extractReplies(res.Thread.FeedDefs_ThreadViewPost)
+			rootAuthor := ""
+			rootAuthorName := ""
+			rootURI := ""
+			if len(out.Posts) > 0 && out.Posts[0] != nil {
+				rootAuthor = out.Posts[0].AuthorHandle
+				rootAuthorName = out.Posts[0].AuthorName
+				rootURI = out.Posts[0].URI
+			} else if targetDTO != nil {
+				rootAuthor = targetDTO.AuthorHandle
+				rootAuthorName = targetDTO.AuthorName
+				rootURI = targetDTO.URI
+			}
+			extractReplies(res.Thread.FeedDefs_ThreadViewPost, rootAuthor, rootAuthorName, rootURI)
 		}
 		return nil
 	})
@@ -450,14 +521,28 @@ func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*
 				}
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {
+						parentPV := item.Reply.Parent.FeedDefs_PostView
+						parentName := ""
+						if parentPV.Author.DisplayName != nil {
+							parentName = *parentPV.Author.DisplayName
+						}
+						CacheAuthor(parentPV.Author.Did, parentPV.Author.Handle, parentName)
 						dto.IsReply = true
-						dto.ReplyToAuthor = item.Reply.Parent.FeedDefs_PostView.Author.Handle
-						dto.ReplyToURI = item.Reply.Parent.FeedDefs_PostView.Uri
-						dto.ParentPost = ParsePostView(item.Reply.Parent.FeedDefs_PostView)
+						dto.ReplyToAuthor = parentPV.Author.Handle
+						dto.ReplyToAuthorName = parentName
+						dto.ReplyToURI = parentPV.Uri
+						dto.ParentPost = ParsePostView(parentPV)
 					}
 					if item.Reply.Root != nil && item.Reply.Root.FeedDefs_PostView != nil {
-						dto.RootAuthor = item.Reply.Root.FeedDefs_PostView.Author.Handle
-						dto.RootURI = item.Reply.Root.FeedDefs_PostView.Uri
+						rootPV := item.Reply.Root.FeedDefs_PostView
+						rootName := ""
+						if rootPV.Author.DisplayName != nil {
+							rootName = *rootPV.Author.DisplayName
+						}
+						CacheAuthor(rootPV.Author.Did, rootPV.Author.Handle, rootName)
+						dto.RootAuthor = rootPV.Author.Handle
+						dto.RootAuthorName = rootName
+						dto.RootURI = rootPV.Uri
 					}
 				}
 				out.Posts = append(out.Posts, dto)
@@ -574,14 +659,28 @@ func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) 
 				}
 				if item.Reply != nil {
 					if item.Reply.Parent != nil && item.Reply.Parent.FeedDefs_PostView != nil {
+						parentPV := item.Reply.Parent.FeedDefs_PostView
+						parentName := ""
+						if parentPV.Author.DisplayName != nil {
+							parentName = *parentPV.Author.DisplayName
+						}
+						CacheAuthor(parentPV.Author.Did, parentPV.Author.Handle, parentName)
 						dto.IsReply = true
-						dto.ReplyToAuthor = item.Reply.Parent.FeedDefs_PostView.Author.Handle
-						dto.ReplyToURI = item.Reply.Parent.FeedDefs_PostView.Uri
-						dto.ParentPost = ParsePostView(item.Reply.Parent.FeedDefs_PostView)
+						dto.ReplyToAuthor = parentPV.Author.Handle
+						dto.ReplyToAuthorName = parentName
+						dto.ReplyToURI = parentPV.Uri
+						dto.ParentPost = ParsePostView(parentPV)
 					}
 					if item.Reply.Root != nil && item.Reply.Root.FeedDefs_PostView != nil {
-						dto.RootAuthor = item.Reply.Root.FeedDefs_PostView.Author.Handle
-						dto.RootURI = item.Reply.Root.FeedDefs_PostView.Uri
+						rootPV := item.Reply.Root.FeedDefs_PostView
+						rootName := ""
+						if rootPV.Author.DisplayName != nil {
+							rootName = *rootPV.Author.DisplayName
+						}
+						CacheAuthor(rootPV.Author.Did, rootPV.Author.Handle, rootName)
+						dto.RootAuthor = rootPV.Author.Handle
+						dto.RootAuthorName = rootName
+						dto.RootURI = rootPV.Uri
 					}
 				}
 				out.Posts = append(out.Posts, dto)

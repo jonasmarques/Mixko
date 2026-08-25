@@ -411,8 +411,8 @@
     },
     "post": {
         "metricsReplies": "Replies: {{replies}}, Reposts: {{reposts}}, Likes: {{likes}}",
-        "inReplyTo": "Replying to @{{handle}}",
-        "threadOf": "thread by @{{handle}}",
+        "inReplyTo": "Replying to {{handle}}",
+        "inReplyToMultiple": "Replying to {{replyTo}} and {{rootAuthor}}",
         "repostedBy": "Reposted by {{handle}}",
         "imagesTitle": "Images:",
         "attachedImageAlt": "Image attached to post",
@@ -676,6 +676,8 @@
         "quotedYourPost": "quoted your post: {{text}}",
         "quoteNoText": "Quote without text",
         "repliedYourPost": "replied to your post: {{text}}",
+        "repliedToAuthor": "replied to {{author}}: {{text}}",
+        "repliedInYourThread": "replied in your thread: {{text}}",
         "replyNoText": "Reply without text",
         "mentionedYou": "mentioned you: {{text}}",
         "mentionNoText": "Mention without text",
@@ -928,8 +930,8 @@
         "justNow": "just now"
     },
     "a11y": {
-        "replyToInThread": "In reply to @{{replyTo}} in thread by @{{rootAuthor}}",
-        "replyTo": "In reply to @{{replyTo}}",
+        "replyTo": "In reply to {{replyTo}}",
+        "replyToMultiple": "In reply to {{replyTo}} and {{rootAuthor}}",
         "repostedBy": "Reposted by {{author}}",
         "images": "Images",
         "video": "Video",

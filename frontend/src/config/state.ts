@@ -1,4 +1,4 @@
-import { TabState } from '../types';
+import { TabState } from '../types/index.js';
 
 export const state = {
     isAppReady: false,
@@ -34,14 +34,14 @@ export const state = {
     notificationFormat: 'combined' as 'combined' | 'individual',
     fontSize: 'normal' as 'normal' | 'large' | 'x-large' | 'huge',
     tabStates: {
-        timeline: { posts: [], focusedIndex: -1, loaded: false },
-        notifications: { posts: [], focusedIndex: -1, loaded: false },
-        profile: { posts: [], focusedIndex: -1, loaded: false },
-        chat: { posts: [], focusedIndex: -1, loaded: false },
-        feeds: { posts: [], focusedIndex: -1, loaded: false },
-        saved: { posts: [], focusedIndex: -1, loaded: false },
-        search: { posts: [], focusedIndex: -1, loaded: false },
-        settings: { posts: [], focusedIndex: -1, loaded: false },
-        lists: { posts: [], focusedIndex: -1, loaded: false }
+        timeline: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        notifications: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        profile: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        chat: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        feeds: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        saved: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        search: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        settings: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 },
+        lists: { posts: [], focusedIndex: -1, loaded: false, pagesLoaded: 0 }
     } as Record<string, TabState>
 };

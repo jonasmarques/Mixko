@@ -2311,8 +2311,10 @@ export namespace services {
 	    likeCount: number;
 	    isReply: boolean;
 	    replyToAuthor: string;
+	    replyToAuthorName?: string;
 	    replyToUri: string;
 	    rootAuthor: string;
+	    rootAuthorName?: string;
 	    rootUri: string;
 	    parentPost?: PostDTO;
 	    repostedBy: string;
@@ -2345,8 +2347,10 @@ export namespace services {
 	        this.likeCount = source["likeCount"];
 	        this.isReply = source["isReply"];
 	        this.replyToAuthor = source["replyToAuthor"];
+	        this.replyToAuthorName = source["replyToAuthorName"];
 	        this.replyToUri = source["replyToUri"];
 	        this.rootAuthor = source["rootAuthor"];
+	        this.rootAuthorName = source["rootAuthorName"];
 	        this.rootUri = source["rootUri"];
 	        this.parentPost = this.convertValues(source["parentPost"], PostDTO);
 	        this.repostedBy = source["repostedBy"];
@@ -2661,6 +2665,10 @@ export namespace services {
 	    quoteText?: string;
 	    quoteUri?: string;
 	    hydratedPost?: PostDTO;
+	    replyParentUri?: string;
+	    replyParentAuthorDid?: string;
+	    replyParentAuthorHandle?: string;
+	    replyParentAuthorName?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new NotificationDTO(source);
@@ -2684,6 +2692,10 @@ export namespace services {
 	        this.quoteText = source["quoteText"];
 	        this.quoteUri = source["quoteUri"];
 	        this.hydratedPost = this.convertValues(source["hydratedPost"], PostDTO);
+	        this.replyParentUri = source["replyParentUri"];
+	        this.replyParentAuthorDid = source["replyParentAuthorDid"];
+	        this.replyParentAuthorHandle = source["replyParentAuthorHandle"];
+	        this.replyParentAuthorName = source["replyParentAuthorName"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

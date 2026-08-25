@@ -422,8 +422,8 @@
     },
     "post": {
         "metricsReplies": "Respuestas: {{replies}}, Reposts: {{reposts}}, Me gusta: {{likes}}",
-        "inReplyTo": "En respuesta a @{{handle}}",
-        "threadOf": "hilo de @{{handle}}",
+        "inReplyTo": "En resposta a {{handle}}",
+        "inReplyToMultiple": "En resposta a {{replyTo}} y {{rootAuthor}}",
         "repostedBy": "Reposteado por {{handle}}",
         "imagesTitle": "Imágenes:",
         "attachedImageAlt": "Imagen adjunta a la publicación",
@@ -685,6 +685,8 @@
         "quotedYourPost": "citó tu post: {{text}}",
         "quoteNoText": "Cita sin texto",
         "repliedYourPost": "respondió a tu post: {{text}}",
+        "repliedToAuthor": "respondió a {{author}}: {{text}}",
+        "repliedInYourThread": "respondió en tu hilo: {{text}}",
         "replyNoText": "Respuesta sin texto",
         "mentionedYou": "te mencionó: {{text}}",
         "mentionNoText": "Mención sin texto",
@@ -937,8 +939,8 @@
         "justNow": "ahora mismo"
     },
     "a11y": {
-        "replyToInThread": "En respuesta a @{{replyTo}} en el hilo de @{{rootAuthor}}",
-        "replyTo": "En respuesta a @{{replyTo}}",
+        "replyTo": "En respuesta a {{replyTo}}",
+        "replyToMultiple": "En respuesta a {{replyTo}} y {{rootAuthor}}",
         "repostedBy": "Republicado por {{author}}",
         "images": "Imágenes",
         "video": "Video",

@@ -7,11 +7,51 @@ import (
 )
 
 var globalDIDCache sync.Map
+var globalAuthorCache sync.Map
 
-func CacheDID(did, handle string) {
-	if did != "" && handle != "" && !strings.HasPrefix(handle, "did:") {
+type AuthorIdentity struct {
+	DID         string `json:"did"`
+	Handle      string `json:"handle"`
+	DisplayName string `json:"displayName"`
+}
+
+func CacheAuthor(did, handle, displayName string) {
+	if did == "" {
+		return
+	}
+	if handle != "" && !strings.HasPrefix(handle, "did:") {
 		globalDIDCache.Store(did, handle)
 	}
+	existing, ok := GetAuthorForDID(did)
+	if ok {
+		if handle == "" || strings.HasPrefix(handle, "did:") {
+			handle = existing.Handle
+		}
+		if displayName == "" {
+			displayName = existing.DisplayName
+		}
+	}
+	globalAuthorCache.Store(did, AuthorIdentity{
+		DID:         did,
+		Handle:      handle,
+		DisplayName: displayName,
+	})
+}
+
+func CacheDID(did, handle string) {
+	CacheAuthor(did, handle, "")
+}
+
+func GetAuthorForDID(did string) (AuthorIdentity, bool) {
+	if val, ok := globalAuthorCache.Load(did); ok {
+		if identity, ok := val.(AuthorIdentity); ok {
+			return identity, true
+		}
+	}
+	if handle, ok := GetHandleForDID(did); ok {
+		return AuthorIdentity{DID: did, Handle: handle}, true
+	}
+	return AuthorIdentity{}, false
 }
 
 func GetHandleForDID(did string) (string, bool) {
@@ -25,22 +65,24 @@ func GetHandleForDID(did string) (string, bool) {
 
 
 type PostDTO struct {
-	URI          string `json:"uri"`
-	CID          string `json:"cid"`
-	AuthorName   string `json:"authorName"`
-	AuthorHandle string `json:"authorHandle"`
-	AuthorDID    string `json:"authorDid"`
-	Text         string `json:"text"`
-	CreatedAt     string `json:"createdAt"`
-	ReplyCount    int64  `json:"replyCount"`
-	RepostCount   int64  `json:"repostCount"`
-	LikeCount     int64  `json:"likeCount"`
-	IsReply       bool     `json:"isReply"`
-	ReplyToAuthor string   `json:"replyToAuthor"`
-	ReplyToURI    string   `json:"replyToUri"`
-	RootAuthor    string   `json:"rootAuthor"`
-	RootURI       string   `json:"rootUri"`
-	ParentPost    *PostDTO `json:"parentPost"`
+	URI               string   `json:"uri"`
+	CID               string   `json:"cid"`
+	AuthorName        string   `json:"authorName"`
+	AuthorHandle      string   `json:"authorHandle"`
+	AuthorDID         string   `json:"authorDid"`
+	Text              string   `json:"text"`
+	CreatedAt         string   `json:"createdAt"`
+	ReplyCount        int64    `json:"replyCount"`
+	RepostCount       int64    `json:"repostCount"`
+	LikeCount         int64    `json:"likeCount"`
+	IsReply           bool     `json:"isReply"`
+	ReplyToAuthor     string   `json:"replyToAuthor"`
+	ReplyToAuthorName string   `json:"replyToAuthorName,omitempty"`
+	ReplyToURI        string   `json:"replyToUri"`
+	RootAuthor        string   `json:"rootAuthor"`
+	RootAuthorName    string   `json:"rootAuthorName,omitempty"`
+	RootURI           string   `json:"rootUri"`
+	ParentPost        *PostDTO `json:"parentPost"`
 	RepostedBy       string   `json:"repostedBy"`
 	RepostedByHandle string   `json:"repostedByHandle"`
 	QuotePost     *PostDTO `json:"quotePost"`
@@ -116,6 +158,13 @@ type NotificationDTO struct {
 	QuoteText         string `json:"quoteText,omitempty"`
 	QuoteUri          string `json:"quoteUri,omitempty"`
 	HydratedPost      *PostDTO `json:"hydratedPost,omitempty"`
+	// Reply notifications also fire for the thread root author, so the post
+	// being answered is often somebody else's. These carry that author so the
+	// UI can say "replied to X" instead of assuming "replied to your post".
+	ReplyParentURI          string `json:"replyParentUri,omitempty"`
+	ReplyParentAuthorDID    string `json:"replyParentAuthorDid,omitempty"`
+	ReplyParentAuthorHandle string `json:"replyParentAuthorHandle,omitempty"`
+	ReplyParentAuthorName   string `json:"replyParentAuthorName,omitempty"`
 }
 
 type NotificationListDTO struct {
@@ -348,13 +397,13 @@ func ExtractExternalFromRecord(record interface{}) *ExternalEmbedDTO {
 }
 
 // Helper para extrair metadados de resposta do Record em CBOR/JSON
-func ExtractReplyMetaFromRecord(record interface{}) (bool, string, string) {
+func ExtractReplyMetaFromRecord(record interface{}) (bool, string, string, string, string) {
 	if record == nil {
-		return false, "", ""
+		return false, "", "", "", ""
 	}
 	bytes, err := json.Marshal(record)
 	if err != nil {
-		return false, "", ""
+		return false, "", "", "", ""
 	}
 	var meta struct {
 		Reply *struct {
@@ -367,7 +416,7 @@ func ExtractReplyMetaFromRecord(record interface{}) (bool, string, string) {
 		} `json:"reply"`
 	}
 	if err := json.Unmarshal(bytes, &meta); err != nil || meta.Reply == nil || meta.Reply.Parent.URI == "" {
-		return false, "", ""
+		return false, "", "", "", ""
 	}
 	parentURI := meta.Reply.Parent.URI
 	parentDID := ""
@@ -377,7 +426,18 @@ func ExtractReplyMetaFromRecord(record interface{}) (bool, string, string) {
 			parentDID = parts[0]
 		}
 	}
-	return true, parentURI, parentDID
+	rootURI := ""
+	rootDID := ""
+	if meta.Reply.Root.URI != "" {
+		rootURI = meta.Reply.Root.URI
+		if strings.HasPrefix(rootURI, "at://") {
+			parts := strings.SplitN(rootURI[5:], "/", 2)
+			if len(parts) > 0 {
+				rootDID = parts[0]
+			}
+		}
+	}
+	return true, parentURI, parentDID, rootURI, rootDID
 }
 
 // Helper para extrair o alt do vídeo a partir do Record CBOR/JSON

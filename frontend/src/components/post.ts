@@ -98,16 +98,26 @@ export function createPostArticle(post: PostView, index: number, isNotification 
   article.dataset.notifReason = notifReason;
 
   let replyContext = "";
-  if (post.isReply && post.replyToAuthor) {
+  if (!isNotification && post.isReply && post.replyToAuthor) {
     article.dataset.replyTo = post.replyToAuthor;
+    if (post.replyToAuthorName) {
+      article.dataset.replyToName = post.replyToAuthorName;
+    }
+    if (post.rootAuthor) {
+      article.dataset.rootAuthor = post.rootAuthor;
+      if (post.rootAuthorName) {
+        article.dataset.rootAuthorName = post.rootAuthorName;
+      }
+    }
     const isDidReply = post.replyToAuthor.startsWith('did:');
     const isDidRoot = post.rootAuthor ? post.rootAuthor.startsWith('did:') : false;
     if (!isDidReply) {
-      if (post.rootAuthor && !isDidRoot && post.rootAuthor !== post.replyToAuthor && post.rootAuthor !== state.currentHandle) {
-          replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyTo', { handle: post.replyToAuthor }))} (${esc(i18n.t('post.threadOf', { handle: post.rootAuthor }))}):</small></div>`;
-          article.dataset.rootAuthor = post.rootAuthor;
+      const formattedReplyTo = formatAuthor(post.replyToAuthorName || "", post.replyToAuthor);
+      if (post.rootAuthor && !isDidRoot && post.rootAuthor !== post.replyToAuthor) {
+        const formattedRoot = formatAuthor(post.rootAuthorName || "", post.rootAuthor);
+        replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyToMultiple', { replyTo: formattedReplyTo, rootAuthor: formattedRoot }))}:</small></div>`;
       } else {
-          replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyTo', { handle: post.replyToAuthor }))}:</small></div>`;
+        replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyTo', { handle: formattedReplyTo }))}:</small></div>`;
       }
     }
   }
