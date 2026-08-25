@@ -1,13 +1,29 @@
 import { state } from '../config/state';
-import { announcePolite, announceAssertive } from '../utils/a11y';
+import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { linkify, esc, escUrl } from '../utils/helpers';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { createPostArticle } from '../components/post';
 import { formatPostDate } from '../utils/format';
 import { openGifPicker } from '../components/gif_modal';
 import { i18n } from '../utils/i18n';
+import type { ChatConvoDTO, ChatMemberDTO, ChatMessageDTO } from '../types/dto';
+
+let currentConvoTitle = "";
+
+export function formatConvoMembers(members: ChatMemberDTO[] | string | undefined): string {
+  if (!members) return '';
+  if (typeof members === 'string') return members.trim();
+  if (Array.isArray(members)) {
+    const otherMembers = members.filter(m => m.did !== state.loggedInDid && m.handle !== state.loggedInHandle);
+    const targetMembers = otherMembers.length > 0 ? otherMembers : members;
+    return targetMembers.map(m => formatAuthor(m.displayName || '', m.handle || '')).filter(Boolean).join(', ');
+  }
+  return '';
+}
 
 export async function loadChat(loadMore = false) {
+  state.activeConvoId = "";
+  currentConvoTitle = "";
   if (loadMore) {
     announcePolite(i18n.t('chat.allChatsLoaded'));
     return;
@@ -33,7 +49,8 @@ export async function loadChat(loadMore = false) {
           if (prof && prof.did) {
             const convo = await window.go.services.ChatService.GetConvoForMembers([prof.did]);
             if (convo && convo.id) {
-              openChatConvo(convo.id, prof.displayName || prof.handle);
+              const formattedName = formatAuthor(prof.displayName || '', prof.handle);
+              openChatConvo(convo.id, formattedName);
             }
           }
         } catch (e) {
@@ -45,29 +62,31 @@ export async function loadChat(loadMore = false) {
     const itemsContainer = document.getElementById('chat-list-items') as HTMLDivElement;
     state.currentPosts = [];
     if (res && res.length > 0) {
-      res.forEach((convo: any, idx: number) => {
+      res.forEach((convo: ChatConvoDTO, idx: number) => {
         const div = document.createElement('div');
         div.classList.add('post-item');
         div.setAttribute('tabindex', '0');
         div.dataset.index = idx.toString();
         div.dataset.convoId = convo.id;
-        div.dataset.author = convo.members;
+        
+        const formattedMembers = formatConvoMembers(convo.members);
+        div.dataset.author = formattedMembers;
         
         let unreadText = convo.unreadCount > 0 ? i18n.t('chat.unreadCountAccessible', { count: convo.unreadCount.toString() }) : '';
-        div.dataset.text = i18n.t('chat.convoWithAccessible', { members: (convo.members || '').trim(), lastMessage: convo.lastMessage }) + unreadText;
+        div.dataset.text = i18n.t('chat.convoWithAccessible', { members: formattedMembers, lastMessage: convo.lastMessage }) + unreadText;
         
         div.setAttribute('aria-label', div.dataset.text);
         div.innerHTML = `
           <div aria-hidden="true">
-            <header><strong>${i18n.t('chat.convoWith')}</strong> ${esc(convo.members)}</header>
+            <header><strong>${i18n.t('chat.convoWith')}</strong> ${esc(formattedMembers)}</header>
             <div class="post-content"><p><strong>${i18n.t('chat.lastMessage')}</strong> ${esc(convo.lastMessage)}</p></div>
             <footer><small>${convo.unreadCount > 0 ? i18n.t('chat.unreadCount', { count: convo.unreadCount.toString() }) : ''}</small></footer>
           </div>
         `;
         div.addEventListener('focus', () => { state.focusedPostIndex = idx; });
-        div.addEventListener('click', () => openChatConvo(convo.id, convo.members));
+        div.addEventListener('click', () => openChatConvo(convo.id, formattedMembers));
         div.addEventListener('keydown', (e) => {
-           if (e.key === 'Enter') openChatConvo(convo.id, convo.members);
+           if (e.key === 'Enter') openChatConvo(convo.id, formattedMembers);
         });
         itemsContainer.appendChild(div);
         state.currentPosts.push(div);
@@ -82,9 +101,15 @@ export async function loadChat(loadMore = false) {
   finally { container.setAttribute('aria-busy', 'false'); }
 }
 
-export async function openChatConvo(convoId: string, members: string, silent = false) {
+export async function openChatConvo(convoId: string, members?: string, silent = false) {
   state.activeConvoId = convoId;
-  announcePolite(i18n.t('chat.startingConvo', { title: members || i18n.t('chat.defaultUser') }));
+  if (members) {
+    currentConvoTitle = members;
+  }
+  const displayTitle = currentConvoTitle || i18n.t('chat.defaultUser');
+  if (!silent) {
+    announcePolite(i18n.t('chat.startingConvo', { title: displayTitle }));
+  }
   const container = document.getElementById('chat-list') as HTMLDivElement;
   if (!silent) {
     container.innerHTML = `
@@ -95,7 +120,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
           <button id="btn-leave-chat" style="padding:4px 8px; background:#d32f2f; color:#fff; border:none; border-radius:4px;">${i18n.t('chat.leaveChat')}</button>
         </div>
       </div>
-      <h3>${esc(i18n.t('chat.convoWithTitle', { members }))}</h3>
+      <h3>${esc(i18n.t('chat.convoWithTitle', { members: displayTitle }))}</h3>
       <div id="chat-messages" aria-live="polite">${i18n.t('chat.loading')}</div>
       
       <div id="chat-reply-preview-container" class="hidden" style="margin-top: 10px; border-left: 3px solid var(--primary-bg, #0085ff); padding: 8px; background: rgba(0, 133, 255, 0.08); border-radius: 4px; position: relative;">
@@ -146,7 +171,11 @@ export async function openChatConvo(convoId: string, members: string, silent = f
 
     document.getElementById('btn-chat-cancel-reply')?.addEventListener('click', clearReplyingTo);
 
-    document.getElementById('btn-back-chat')?.addEventListener('click', () => loadChat(false));
+    document.getElementById('btn-back-chat')?.addEventListener('click', () => {
+      state.activeConvoId = "";
+      currentConvoTitle = "";
+      loadChat(false);
+    });
     document.getElementById('btn-mute-chat')?.addEventListener('click', async () => {
       try {
         await window.go.services.ChatService.MuteConvo(convoId);
@@ -160,6 +189,8 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         try {
           await window.go.services.ChatService.LeaveConvo(convoId);
           announceAssertive(i18n.t('chat.leftChat'));
+          state.activeConvoId = "";
+          currentConvoTitle = "";
           loadChat(false);
         } catch (e) {
           announceAssertive(i18n.t('chat.leaveError'));
@@ -196,9 +227,9 @@ export async function openChatConvo(convoId: string, members: string, silent = f
        announcePolite(i18n.t('chat.sending'));
        try {
          if (replyingToMessageId) {
-           await (window as any).go.services.ChatService.SendReply(convoId, replyingToMessageId, text, chatSelectedGifUrl);
+           await window.go.services.ChatService.SendReply(convoId, replyingToMessageId, text, chatSelectedGifUrl);
          } else {
-           await (window as any).go.services.ChatService.SendMessageWithGif(convoId, text, chatSelectedGifUrl);
+           await window.go.services.ChatService.SendMessageWithGif(convoId, text, chatSelectedGifUrl);
          }
          announceAssertive(i18n.t('chat.sent'));
          chatInput.value = "";
@@ -208,7 +239,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
              gifContainer.classList.add('hidden');
              gifPreview.src = "";
          }
-         openChatConvo(convoId, members, true);
+         openChatConvo(convoId, currentConvoTitle, true);
        } catch (err: any) {
          announceAssertive(i18n.t('chat.sendError', { err: String(err) }));
        }
@@ -228,7 +259,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
       }
       const EMOJI_PALETTE = ['❤️', '👍', '😂', '😮', '😢', '🔥', '👏', '🎉'];
 
-      res.messages.slice().reverse().forEach((msg: any) => {
+      res.messages.slice().reverse().forEach((msg: ChatMessageDTO) => {
         const div = document.createElement('div');
         div.classList.add('post-item');
         div.setAttribute('tabindex', '0');
@@ -256,13 +287,27 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         let embedInfo = targetEmbedUri ? `<div id="${esc(embedContainerId)}" style="border: 1px solid var(--border-color, #38444d); padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9em;">${i18n.t('chat.loadingAttachedPost')}</div>` : "";
         let replyInfo = "";
         const msgDateFormatted = msg.sentAt ? formatPostDate(msg.sentAt, undefined, true) : "";
-        const senderPrefix = msg.sender ? `${msg.sender}${msgDateFormatted ? `, ${msgDateFormatted}` : ""}: ` : "";
+
+        const isMe = msg.senderDid === state.loggedInDid || msg.sender === 'Me';
+        const senderDisplay = isMe
+          ? i18n.t('chat.me')
+          : formatAuthor(msg.senderDisplayName || (msg.sender !== msg.senderDid ? msg.sender : ''), msg.senderHandle || (msg.sender && msg.sender.includes('.') ? msg.sender : ''));
+
+        const senderPrefix = senderDisplay ? `${senderDisplay}${msgDateFormatted ? `, ${msgDateFormatted}` : ""}: ` : "";
         let accessibleLabel = `${senderPrefix}${msg.text || ""}`;
 
-        if (msg.replyToMessageText || msg.replyToSender) {
-            const replySenderLabel = msg.replyToSender || i18n.t('chat.replyingTo');
+        if (msg.replyToMessageText || msg.replyToSender || msg.replyToSenderDisplayName || msg.replyToSenderHandle) {
+            let replySenderDisplay = i18n.t('chat.replyingTo');
+            const replyIsMe = msg.replyToSenderDid === state.loggedInDid || msg.replyToSender === 'Me';
+            if (replyIsMe) {
+              replySenderDisplay = i18n.t('chat.me');
+            } else if (msg.replyToSenderDisplayName || msg.replyToSenderHandle) {
+              replySenderDisplay = formatAuthor(msg.replyToSenderDisplayName || '', msg.replyToSenderHandle || '');
+            } else if (msg.replyToSender) {
+              replySenderDisplay = msg.replyToSender;
+            }
             replyInfo = `<div style="border-left: 3px solid var(--brand-color, #1da1f2); padding-left: 10px; margin-bottom: 10px; font-size: 0.9em; opacity: 0.85; background: rgba(29, 161, 242, 0.08); padding: 6px 10px; border-radius: 4px;">
-                <strong>↩ ${esc(replySenderLabel)}:</strong> ${linkify(msg.replyToMessageText || "")}
+                <strong>↩ ${esc(replySenderDisplay)}:</strong> ${linkify(msg.replyToMessageText || "")}
             </div>`;
             accessibleLabel = i18n.t('chat.replyingToAccessible', { msg: msg.replyToMessageText || "", rest: accessibleLabel });
         }
@@ -270,7 +315,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         // Group reactions by emoji value
         const reactionCounts: Record<string, { count: number; isMine: boolean }> = {};
         if (msg.reactions && Array.isArray(msg.reactions)) {
-          msg.reactions.forEach((r: any) => {
+          msg.reactions.forEach((r) => {
             if (!reactionCounts[r.value]) {
               reactionCounts[r.value] = { count: 0, isMine: false };
             }
@@ -300,17 +345,17 @@ export async function openChatConvo(convoId: string, members: string, silent = f
         div.innerHTML = `
           ${replyInfo}
           <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <div><strong>${esc(msg.sender)}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${esc(msgDateFormatted)}</small>` : ''}</div>
+            <div><strong>${esc(senderDisplay)}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${esc(msgDateFormatted)}</small>` : ''}</div>
           </header>
           <div class="post-content">
             <p style="margin:4px 0;">${msgContent}</p>
             ${embedInfo}
           </div>
           <div class="chat-msg-actions" aria-label="${i18n.t('chat.actionsAria')}">
-            <button type="button" class="btn-reply-msg" data-id="${esc(msg.id)}" data-sender="${esc(msg.sender)}" data-text="${esc(msg.text || '')}" aria-label="${esc(i18n.t('chat.replyBtnAria', { sender: msg.sender }))}" title="${i18n.t('chat.replyBtn')}">↩ ${i18n.t('chat.replyBtn')}</button>
-            <button type="button" class="btn-show-reactions" data-msg-id="${esc(msg.id)}" aria-label="${esc(i18n.t('chat.reactBtnAria', { sender: msg.sender }))}" title="${i18n.t('chat.reactBtn')}">😀 ${i18n.t('chat.reactBtn')}</button>
+            <button type="button" class="btn-reply-msg" data-id="${esc(msg.id)}" data-sender="${esc(senderDisplay)}" data-text="${esc(msg.text || '')}" aria-label="${esc(i18n.t('chat.replyBtnAria', { sender: senderDisplay }))}" title="${i18n.t('chat.replyBtn')}">↩ ${i18n.t('chat.replyBtn')}</button>
+            <button type="button" class="btn-show-reactions" data-msg-id="${esc(msg.id)}" aria-label="${esc(i18n.t('chat.reactBtnAria', { sender: senderDisplay }))}" title="${i18n.t('chat.reactBtn')}">😀 ${i18n.t('chat.reactBtn')}</button>
             ${emojiPickerHtml}
-            <button type="button" class="btn-delete-msg" data-id="${esc(msg.id)}" aria-label="${esc(i18n.t('chat.deleteMsgAria', { sender: msg.sender }))}" title="${i18n.t('chat.delete')}">🗑️ ${i18n.t('chat.delete')}</button>
+            <button type="button" class="btn-delete-msg" data-id="${esc(msg.id)}" aria-label="${esc(i18n.t('chat.deleteMsgAria', { sender: senderDisplay }))}" title="${i18n.t('chat.delete')}">🗑️ ${i18n.t('chat.delete')}</button>
           </div>
           <div class="chat-reactions-container">
             ${reactionsHtml}
@@ -338,8 +383,8 @@ export async function openChatConvo(convoId: string, members: string, silent = f
             const emoji = (btn as HTMLElement).dataset.emoji || "";
             if (pickerEl) pickerEl.style.display = 'none';
             try {
-              await (window as any).go.services.ChatService.AddReaction(convoId, msg.id, emoji);
-              openChatConvo(convoId, members, true);
+              await window.go.services.ChatService.AddReaction(convoId, msg.id, emoji);
+              openChatConvo(convoId, currentConvoTitle, true);
             } catch (err) {
               announceAssertive(i18n.t('chat.addReactionError'));
             }
@@ -354,11 +399,11 @@ export async function openChatConvo(convoId: string, members: string, silent = f
             const isMine = (btn as HTMLElement).dataset.isMine === "true";
             try {
               if (isMine) {
-                await (window as any).go.services.ChatService.RemoveReaction(convoId, msg.id, emoji);
+                await window.go.services.ChatService.RemoveReaction(convoId, msg.id, emoji);
               } else {
-                await (window as any).go.services.ChatService.AddReaction(convoId, msg.id, emoji);
+                await window.go.services.ChatService.AddReaction(convoId, msg.id, emoji);
               }
-              openChatConvo(convoId, members, true);
+              openChatConvo(convoId, currentConvoTitle, true);
             } catch (err) {
               announceAssertive(isMine ? i18n.t('chat.removeReactionError') : i18n.t('chat.addReactionError'));
             }
@@ -370,7 +415,7 @@ export async function openChatConvo(convoId: string, members: string, silent = f
           e.stopPropagation();
           const target = e.currentTarget as HTMLElement;
           const msgId = target.dataset.id || msg.id;
-          const sender = target.dataset.sender || msg.sender;
+          const sender = target.dataset.sender || senderDisplay;
           const text = target.dataset.text || msg.text || "";
           // Populate reply bar
           const setReplyFn = (window as any).__chatSetReplyingTo;

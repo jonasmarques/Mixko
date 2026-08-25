@@ -1,7 +1,7 @@
 import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { DOM } from '../config/dom';
-import { announcePolite, announceAssertive } from '../utils/a11y';
+import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab, reloadCurrentTab } from './tabs';
 import { i18n, translateError } from '../utils/i18n';
@@ -594,29 +594,33 @@ export function setupShortcuts() {
             e.preventDefault();
             let targetDid = "";
             let targetHandle = "";
+            let targetDisplayName = "";
             
             if (state.currentTab === 'profile') {
                 const msgBtn = document.getElementById('btn-message');
                 if (msgBtn && msgBtn.dataset.did) {
                     targetDid = msgBtn.dataset.did;
-                    targetHandle = state.currentHandle;
+                    targetHandle = msgBtn.dataset.handle || state.currentHandle;
+                    targetDisplayName = msgBtn.dataset.displayName || "";
                 }
             } else if (state.focusedPostIndex >= 0 && state.currentPosts[state.focusedPostIndex]) {
                 const p = state.currentPosts[state.focusedPostIndex];
                 if (p.dataset.authorDid) {
                     targetDid = p.dataset.authorDid;
                     targetHandle = p.dataset.authorHandle || p.dataset.author || "";
+                    targetDisplayName = p.dataset.authorName || "";
                 }
             }
 
             if (targetDid) {
-                announcePolite(i18n.t('chat.openingChat', { handle: targetHandle }));
+                const formattedTitle = formatAuthor(targetDisplayName, targetHandle);
+                announcePolite(i18n.t('chat.openingChat', { handle: formattedTitle }));
                 try {
                     const convo = await window.go.services.ChatService.GetConvoForMembers([targetDid]);
                     if (convo && convo.id) {
                         state.tabStates['chat'].loaded = true;
                         switchTab('chat');
-                        openChatConvo(convo.id, targetHandle);
+                        openChatConvo(convo.id, formattedTitle);
                     }
                 } catch (err) {
                     announceAssertive(i18n.t('shortcuts.errorOpenChat', { msg: String(err) }));

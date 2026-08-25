@@ -34,9 +34,22 @@ func (s *ChatService) ListConvos(cursor string) ([]*ChatConvoDTO, error) {
 			if convo.LastMessage != nil && convo.LastMessage.ConvoDefs_MessageView != nil {
 				lastMsg = convo.LastMessage.ConvoDefs_MessageView.Text
 			}
-			members := ""
+			var members []ChatMemberDTO
 			for _, m := range convo.Members {
-				members += m.Handle + " "
+				dispName := ""
+				if m.DisplayName != nil {
+					dispName = *m.DisplayName
+				}
+				avatar := ""
+				if m.Avatar != nil {
+					avatar = *m.Avatar
+				}
+				members = append(members, ChatMemberDTO{
+					DID:         m.Did,
+					Handle:      m.Handle,
+					DisplayName: dispName,
+					Avatar:      avatar,
+				})
 			}
 			out = append(out, &ChatConvoDTO{
 				ID:          convo.Id,
@@ -63,14 +76,21 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 		}
 
 		convoRes, _ := chat.ConvoGetConvo(ctx, chatClient, convoId)
-		memberMap := make(map[string]string)
+		type memberInfo struct {
+			handle      string
+			displayName string
+		}
+		memberMap := make(map[string]memberInfo)
 		if convoRes != nil && convoRes.Convo != nil {
 			for _, m := range convoRes.Convo.Members {
-				name := m.Handle
+				dispName := ""
 				if m.DisplayName != nil && *m.DisplayName != "" {
-					name = *m.DisplayName
+					dispName = *m.DisplayName
 				}
-				memberMap[m.Did] = name
+				memberMap[m.Did] = memberInfo{
+					handle:      m.Handle,
+					displayName: dispName,
+				}
 			}
 		}
 
@@ -121,14 +141,23 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 
 				senderName := "Unknown"
 				senderDid := ""
+				senderHandle := ""
+				senderDisplayName := ""
 				if senderMap, ok := rawMsg["sender"].(map[string]interface{}); ok {
 					if did, ok := senderMap["did"].(string); ok {
 						senderDid = did
-						senderName = did
-						if name, ok := memberMap[senderDid]; ok {
-							senderName = name
+						if info, ok := memberMap[senderDid]; ok {
+							senderHandle = info.handle
+							senderDisplayName = info.displayName
+							if info.displayName != "" {
+								senderName = info.displayName
+							} else {
+								senderName = info.handle
+							}
 						} else if senderDid == c.Auth.Did {
 							senderName = "Me"
+						} else {
+							senderName = did
 						}
 					}
 				}
@@ -154,6 +183,9 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 				replyToMessageId := ""
 				replyToText := ""
 				replyToSender := ""
+				replyToSenderDid := ""
+				replyToSenderHandle := ""
+				replyToSenderDisplayName := ""
 				if replyToMap, ok := rawMsg["replyTo"].(map[string]interface{}); ok {
 					if parentId, ok := replyToMap["id"].(string); ok {
 						replyToMessageId = parentId
@@ -164,8 +196,15 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 						}
 						if sMap, ok := replyToMap["sender"].(map[string]interface{}); ok {
 							if did, ok := sMap["did"].(string); ok {
-								if name, found := memberMap[did]; found {
-									replyToSender = name
+								replyToSenderDid = did
+								if info, found := memberMap[did]; found {
+									replyToSenderHandle = info.handle
+									replyToSenderDisplayName = info.displayName
+									if info.displayName != "" {
+										replyToSender = info.displayName
+									} else {
+										replyToSender = info.handle
+									}
 								} else if did == c.Auth.Did {
 									replyToSender = "Me"
 								} else {
@@ -198,17 +237,22 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 				}
 
 				out.Messages = append(out.Messages, &ChatMessageDTO{
-					ID:                 id,
-					Rev:                rev,
-					Sender:             senderName,
-					SenderDID:          senderDid,
-					Text:               text,
-					SentAt:             sentAt,
-					EmbedURI:           embedUri,
-					ReplyToMessageID:   replyToMessageId,
-					ReplyToMessageText: replyToText,
-					ReplyToSender:      replyToSender,
-					Reactions:          reactions,
+					ID:                        id,
+					Rev:                       rev,
+					Sender:                    senderName,
+					SenderDID:                 senderDid,
+					SenderHandle:              senderHandle,
+					SenderDisplayName:         senderDisplayName,
+					Text:                      text,
+					SentAt:                    sentAt,
+					EmbedURI:                  embedUri,
+					ReplyToMessageID:          replyToMessageId,
+					ReplyToMessageText:        replyToText,
+					ReplyToSender:             replyToSender,
+					ReplyToSenderDID:          replyToSenderDid,
+					ReplyToSenderHandle:       replyToSenderHandle,
+					ReplyToSenderDisplayName:  replyToSenderDisplayName,
+					Reactions:                 reactions,
 				})
 			}
 		}
@@ -437,9 +481,22 @@ func (s *ChatService) GetConvoForMembers(dids []string) (*ChatConvoDTO, error) {
 		if convo.LastMessage != nil && convo.LastMessage.ConvoDefs_MessageView != nil {
 			lastMsg = convo.LastMessage.ConvoDefs_MessageView.Text
 		}
-		members := ""
+		var members []ChatMemberDTO
 		for _, m := range convo.Members {
-			members += m.Handle + " "
+			dispName := ""
+			if m.DisplayName != nil {
+				dispName = *m.DisplayName
+			}
+			avatar := ""
+			if m.Avatar != nil {
+				avatar = *m.Avatar
+			}
+			members = append(members, ChatMemberDTO{
+				DID:         m.Did,
+				Handle:      m.Handle,
+				DisplayName: dispName,
+				Avatar:      avatar,
+			})
 		}
 		out = &ChatConvoDTO{
 			ID:          convo.Id,

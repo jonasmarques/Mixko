@@ -634,6 +634,7 @@
         "defaultUser": "usuario",
         "openingChat": "Abriendo chat con @{{handle}}...",
         "actionsAria": "Acciones del mensaje",
+        "me": "Yo",
         "replyBtn": "Responder",
         "replyBtnAria": "Responder al mensaje de {{sender}}",
         "reactBtn": "Reaccionar",

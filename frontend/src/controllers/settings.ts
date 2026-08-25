@@ -320,6 +320,7 @@ export function setupSettings() {
                 const selectedNameFormat = nameDisplayFormatSelect.value as 'name' | 'nameAndHandle' | 'handle';
                 localStorage.setItem('nameDisplayFormat', selectedNameFormat);
                 state.nameDisplayFormat = selectedNameFormat;
+                state.tabStates['chat'].loaded = false;
             }
 
             const notificationFormatSelect = document.getElementById('notification-format-select') as HTMLSelectElement;

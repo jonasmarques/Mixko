@@ -261,12 +261,19 @@ type SearchDTO struct {
 	Posts  []*PostDTO `json:"posts"`
 }
 
+type ChatMemberDTO struct {
+	DID         string `json:"did"`
+	Handle      string `json:"handle"`
+	DisplayName string `json:"displayName"`
+	Avatar      string `json:"avatar,omitempty"`
+}
+
 type ChatConvoDTO struct {
-	ID            string `json:"id"`
-	Rev           string `json:"rev"`
-	Members       string `json:"members"`
-	LastMessage   string `json:"lastMessage"`
-	UnreadCount   int64  `json:"unreadCount"`
+	ID          string          `json:"id"`
+	Rev         string          `json:"rev"`
+	Members     []ChatMemberDTO `json:"members"`
+	LastMessage string          `json:"lastMessage"`
+	UnreadCount int64           `json:"unreadCount"`
 }
 
 type ChatReactionDTO struct {
@@ -276,17 +283,22 @@ type ChatReactionDTO struct {
 }
 
 type ChatMessageDTO struct {
-	ID                 string             `json:"id"`
-	Rev                string             `json:"rev"`
-	Sender             string             `json:"sender"`
-	SenderDID          string             `json:"senderDid"`
-	Text               string             `json:"text"`
-	SentAt             string             `json:"sentAt"`
-	EmbedURI           string             `json:"embedUri,omitempty"`
-	ReplyToMessageID   string             `json:"replyToMessageId,omitempty"`
-	ReplyToMessageText string             `json:"replyToMessageText,omitempty"`
-	ReplyToSender      string             `json:"replyToSender,omitempty"`
-	Reactions          []ChatReactionDTO  `json:"reactions,omitempty"`
+	ID                        string            `json:"id"`
+	Rev                       string            `json:"rev"`
+	Sender                    string            `json:"sender"`
+	SenderDID                 string            `json:"senderDid"`
+	SenderHandle              string            `json:"senderHandle,omitempty"`
+	SenderDisplayName         string            `json:"senderDisplayName,omitempty"`
+	Text                      string            `json:"text"`
+	SentAt                    string            `json:"sentAt"`
+	EmbedURI                  string            `json:"embedUri,omitempty"`
+	ReplyToMessageID          string            `json:"replyToMessageId,omitempty"`
+	ReplyToMessageText        string            `json:"replyToMessageText,omitempty"`
+	ReplyToSender             string            `json:"replyToSender,omitempty"`
+	ReplyToSenderDID          string            `json:"replyToSenderDid,omitempty"`
+	ReplyToSenderHandle       string            `json:"replyToSenderHandle,omitempty"`
+	ReplyToSenderDisplayName  string            `json:"replyToSenderDisplayName,omitempty"`
+	Reactions                 []ChatReactionDTO `json:"reactions,omitempty"`
 }
 
 type ChatMessagesDTO struct {

@@ -193,3 +193,48 @@ export interface UpdateInfoDTO {
     latestVersion: string;
     releaseURL: string;
 }
+
+export interface ChatMemberDTO {
+    did: string;
+    handle: string;
+    displayName: string;
+    avatar?: string;
+}
+
+export interface ChatReactionDTO {
+    value: string;
+    senderDid: string;
+    isMine: boolean;
+}
+
+export interface ChatMessageDTO {
+    id: string;
+    rev: string;
+    sender: string;
+    senderDid: string;
+    senderHandle?: string;
+    senderDisplayName?: string;
+    text: string;
+    sentAt: string;
+    embedUri?: string;
+    replyToMessageId?: string;
+    replyToMessageText?: string;
+    replyToSender?: string;
+    replyToSenderDid?: string;
+    replyToSenderHandle?: string;
+    replyToSenderDisplayName?: string;
+    reactions?: ChatReactionDTO[];
+}
+
+export interface ChatConvoDTO {
+    id: string;
+    rev: string;
+    members: ChatMemberDTO[];
+    lastMessage: string;
+    unreadCount: number;
+}
+
+export interface ChatMessagesDTO {
+    cursor: string;
+    messages: ChatMessageDTO[] | null;
+}

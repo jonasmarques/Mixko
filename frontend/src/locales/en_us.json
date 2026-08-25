@@ -622,6 +622,7 @@
         "startingConvo": "Starting conversation with {{title}}",
         "defaultUser": "user",
         "openingChat": "Opening chat with @{{handle}}...",
+        "me": "Me",
         "replyBtn": "Reply",
         "cancelReply": "Cancel reply",
         "replyingToMsg": "↩ {{sender}}: {{text}}",

@@ -1,4 +1,6 @@
 import type {
+  ChatConvoDTO,
+  ChatMessagesDTO,
   FeedDTO,
   MuteScopeDTO,
   NotificationListDTO,
@@ -104,14 +106,14 @@ declare global {
           GetSuggestedFollows(): Promise<ProfileListDTO>;
         };
         ChatService: {
-          ListConvos(cursor: string): Promise<any[]>;
-          GetMessages(convoId: string, cursor: string): Promise<any>;
+          ListConvos(cursor: string): Promise<ChatConvoDTO[]>;
+          GetMessages(convoId: string, cursor: string): Promise<ChatMessagesDTO>;
           SendMessage(convoId: string, text: string): Promise<void>;
           SendMessageWithGif(convoId: string, text: string, gifUrl: string): Promise<void>;
           SendReply(convoId: string, replyToMessageId: string, text: string, gifUrl: string): Promise<void>;
           AddReaction(convoId: string, messageId: string, emoji: string): Promise<void>;
           RemoveReaction(convoId: string, messageId: string, emoji: string): Promise<void>;
-          GetConvoForMembers(members: string[]): Promise<any>;
+          GetConvoForMembers(members: string[]): Promise<ChatConvoDTO>;
           UpdateReadStatus(convoId: string, messageId: string): Promise<void>;
           DeleteMessage(convoId: string, messageId: string): Promise<void>;
           MuteConvo(convoId: string): Promise<void>;

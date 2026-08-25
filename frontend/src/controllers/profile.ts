@@ -1,9 +1,10 @@
 import { state } from '../config/state';
-import { announcePolite, announceAssertive } from '../utils/a11y';
+import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
 import { createListArticle } from '../components/list';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
+import { openChatConvo } from './chat';
 import { showMuteMenu } from './shortcuts';
 import { getFilePathOrDataUrl, esc, linkify } from '../utils/helpers';
 import { i18n } from '../utils/i18n';
@@ -71,7 +72,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 ${muteBtn}
                 ${blockBtn}
                 ${labelerBtn}
-                <button id="btn-message" data-did="${res.did}" aria-label="${i18n.t('profile.messageAria')}">${i18n.t('profile.messageBtn')}</button>
+                <button id="btn-message" data-did="${res.did}" data-handle="${esc(res.handle)}" data-display-name="${esc(res.displayName || '')}" aria-label="${i18n.t('profile.messageAria')}">${i18n.t('profile.messageBtn')}</button>
                 <button id="btn-manage-lists" data-did="${res.did}" aria-label="${i18n.t('profile.manageListsAria')}">${i18n.t('profile.manageListsBtn')}</button>
                 <button id="btn-report-user" data-did="${res.did}" aria-label="${i18n.t('profile.reportAria')}">${i18n.t('profile.reportBtn')}</button>
               `;
@@ -310,11 +311,13 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               document.getElementById('btn-message')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
                   try {
-                    announcePolite(i18n.t('profile.openingChat'));
+                    const memberTitle = formatAuthor(res.displayName || '', res.handle);
+                    announcePolite(i18n.t('chat.openingChat', { handle: memberTitle }));
                     const convo = await window.go.services.ChatService.GetConvoForMembers([res.did]);
                     if (convo && convo.id) {
-                      state.activeConvoId = convo.id;
+                      state.tabStates['chat'].loaded = true;
                       switchTab('chat');
+                      openChatConvo(convo.id, memberTitle);
                     }
                   } catch (err) {
                     announceAssertive(i18n.t('profile.openChatError'));
