@@ -2,7 +2,7 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
 import { i18n } from '../utils/i18n';
-import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
+import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload, restoreKeyOf } from '../utils/pagination';
 
 /** Fetches the next page of the active feed and appends it. Returns how many articles it added. */
 async function fetchTimelinePage(container: HTMLDivElement): Promise<number> {
@@ -74,24 +74,32 @@ export async function loadTimeline(loadMore = false, keepFocus = false) {
   let targetUri = "";
   let pagesBefore = 0;
   if (!loadMore && keepFocus && state.focusedPostIndex >= 0 && state.focusedPostIndex < state.currentPosts.length) {
-    targetUri = state.currentPosts[state.focusedPostIndex]?.dataset.uri || "";
+    targetUri = restoreKeyOf(state.currentPosts[state.focusedPostIndex]);
     pagesBefore = pagesLoadedFor('timeline');
   }
+
+  // A fresh load renders into a detached node and swaps it in once the page
+  // has actually arrived. Clearing the feed up front left it blank for the
+  // whole request, and empty for good whenever the request failed.
+  const previousPosts = state.currentPosts;
+  const previousCursor = state.timelineCursor;
+  const staging = loadMore ? container : document.createElement('div');
 
   if (!loadMore) {
     state.timelineCursor = "";
     resetPagesLoaded('timeline');
-    container.innerHTML = '';
     state.currentPosts = [];
   }
   try {
-    let addedCount = await fetchTimelinePage(container);
+    let addedCount = await fetchTimelinePage(staging);
 
     // Hiding replies can strip a page down to almost nothing, so top it up
     // before handing the feed over.
     for (let depth = 1; state.hideReplies && addedCount < 25 && state.timelineCursor !== "" && depth < 3; depth++) {
-        addedCount = await fetchTimelinePage(container);
+        addedCount = await fetchTimelinePage(staging);
     }
+
+    if (!loadMore) container.replaceChildren(...staging.childNodes);
 
     state.tabStates['timeline'].loaded = true;
     const hiddenRepliesText = state.hideReplies ? i18n.t('timeline.hiddenReplies') : '';
@@ -109,6 +117,15 @@ export async function loadTimeline(loadMore = false, keepFocus = false) {
             state.currentPosts[0].focus();
         }
     }
-  } catch (err: any) { console.error(err); announceAssertive(i18n.t('timeline.loadError')); }
+  } catch (err: any) {
+    console.error(err);
+    // The feed on screen was never touched, so put the bookkeeping back with
+    // it rather than leaving the state describing a load that did not happen.
+    if (!loadMore) {
+      state.currentPosts = previousPosts;
+      state.timelineCursor = previousCursor;
+    }
+    announceAssertive(i18n.t('timeline.loadError'));
+  }
   finally { container.setAttribute('aria-busy', 'false'); }
 }

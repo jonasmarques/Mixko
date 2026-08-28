@@ -656,6 +656,13 @@ export function setupCompose() {
           try {
             let currentReplyUri = state.composeTarget?.uri || "";
             let currentReplyCid = state.composeTarget?.cid || "";
+            // The root is fixed by the first post and carried forward by hand.
+            // Letting the backend re-derive it from the parent does not work
+            // here: the parent was written seconds ago and the AppView has not
+            // indexed it yet, which silently reroots every post from the third
+            // one onward and breaks the thread apart.
+            let threadRootUri = "";
+            let threadRootCid = "";
             
             for (let i = 0; i < postItems.length; i++) {
                 let res;
@@ -674,16 +681,20 @@ export function setupCompose() {
                 
                 if (state.composeMode === 'quote' && i === 0 && state.composeTarget) {
                     res = await (window as any).go.services.PostBuilderService.QuotePost(item.text, state.composeTarget.uri, state.composeTarget.cid, pPaths, pAlts, pVid, pVidAlt, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris);
-                    if (res) {
-                        currentReplyUri = res.uri;
-                        currentReplyCid = res.cid;
-                    }
                 } else {
-                    res = await (window as any).go.services.PostBuilderService.CreatePost(item.text, currentReplyUri, currentReplyCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris);
-                    if (res) {
-                        currentReplyUri = res.uri;
-                        currentReplyCid = res.cid;
-                    }
+                    res = await (window as any).go.services.PostBuilderService.CreatePost(item.text, currentReplyUri, currentReplyCid, threadRootUri, threadRootCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris);
+                }
+
+                // Without a ref the next post would silently reply to the wrong
+                // parent, so stop the thread here rather than publish it broken.
+                if (!res || !res.uri || !res.cid) {
+                    throw new Error(i18n.t('compose.threadRefMissing', { count: (i + 1).toString() }));
+                }
+                currentReplyUri = res.uri;
+                currentReplyCid = res.cid;
+                if (!threadRootUri) {
+                    threadRootUri = res.rootUri || res.uri;
+                    threadRootCid = res.rootCid || res.cid;
                 }
                 
                 if (postItems.length > 1) {

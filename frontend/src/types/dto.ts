@@ -71,6 +71,14 @@ export interface PostDTO {
  * from notification records and can only fill in some fields. The renderer
  * guards every optional field, so this models the real contract.
  */
+/** A post that was just created, plus the root of the thread it belongs to. */
+export interface PostRefDTO {
+  uri: string;
+  cid: string;
+  rootUri: string;
+  rootCid: string;
+}
+
 export type PostView = Partial<PostDTO> & Pick<PostDTO, 'uri' | 'cid' | 'authorHandle'>;
 
 export interface FeedDTO {

@@ -62,6 +62,7 @@
         "publishingSingle": "Publicando publicación...",
         "sendingOf": "Enviado {{current}} de {{total}}...",
         "threadSuccess": "Hilo publicado con éxito.",
+        "threadRefMissing": "el hilo se detuvo en la publicación {{count}} — el servidor no devolvió la referencia de la publicación anterior. Las publicaciones ya enviadas se mantuvieron.",
         "postSuccess": "Publicado con éxito.",
         "publishError": "Error al publicar: ",
         "maxImagesLimit": "Máximo de 4 imágenes permitido.",

@@ -62,6 +62,7 @@
         "publishingSingle": "Publishing post...",
         "sendingOf": "Sent {{current}} of {{total}}...",
         "threadSuccess": "Thread published successfully.",
+        "threadRefMissing": "the thread stopped at post {{count}} — the server did not return a reference for the previous post. Posts already published were kept.",
         "postSuccess": "Published successfully.",
         "publishError": "Error publishing: ",
         "maxImagesLimit": "Maximum of 4 images allowed.",

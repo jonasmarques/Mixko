@@ -344,3 +344,30 @@ func ResolvePathOrDataURL(pathOrData string) (string, func(), error) {
 
 	return pathOrData, func() {}, nil
 }
+
+// nowISO8601 formats the current instant the way atproto's datetime format
+// wants it: UTC, Z-suffixed, with fixed millisecond precision.
+//
+// time.RFC3339 resolves only to the second, so every post of a thread
+// published in one burst lands on an identical createdAt. Anything downstream
+// that orders by createdAt then sees a tie and is free to return them in any
+// order. Fixed-width milliseconds also keep the strings lexicographically
+// comparable, which time.RFC3339Nano does not — it trims trailing zeros.
+func nowISO8601() string {
+	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
+// parseATURI splits an at:// record URI into the repo that holds it, its
+// collection and its record key. It reports false for anything that is not a
+// complete record URI.
+func parseATURI(uri string) (repo, collection, rkey string, ok bool) {
+	rest, found := strings.CutPrefix(uri, "at://")
+	if !found {
+		return "", "", "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+		return "", "", "", false
+	}
+	return parts[0], parts[1], parts[2], true
+}

@@ -62,6 +62,7 @@
         "publishingSingle": "Publicando post...",
         "sendingOf": "Enviado {{current}} de {{total}}...",
         "threadSuccess": "Thread publicada com sucesso.",
+        "threadRefMissing": "a thread parou no post {{count}} — o servidor não devolveu a referência do post anterior. Os posts já publicados foram mantidos.",
         "postSuccess": "Publicado com sucesso.",
         "publishError": "Erro ao publicar: ",
         "maxImagesLimit": "Máximo de 4 imagens permitido.",

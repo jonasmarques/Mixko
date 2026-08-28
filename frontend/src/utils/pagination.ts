@@ -28,6 +28,20 @@ export function resetPagesLoaded(tab: string): void {
     if (ts) ts.pagesLoaded = 0;
 }
 
+/**
+ * Identifies a rendered row so a reload can find the same one again.
+ *
+ * A post URI is enough in a feed, where it appears once. It is not enough in
+ * notifications: there the URI is the *subject* post, so every like and repost
+ * of it carries the same value, and matching on it can land the user on an
+ * unrelated row about that post. Those rows set `data-restore-key` to something
+ * unique, and this prefers it.
+ */
+export function restoreKeyOf(el: HTMLElement | undefined): string {
+    if (!el) return "";
+    return el.dataset.restoreKey || el.dataset.uri || "";
+}
+
 interface RestoreOptions {
     /** Tab whose page counter bounds the re-fetching. */
     tab: string;
@@ -55,7 +69,7 @@ interface RestoreOptions {
 export async function restoreFocusAfterReload(opts: RestoreOptions): Promise<boolean> {
     if (!opts.targetUri) return false;
 
-    const findTarget = () => state.currentPosts.findIndex(p => p.dataset.uri === opts.targetUri);
+    const findTarget = () => state.currentPosts.findIndex(p => restoreKeyOf(p) === opts.targetUri);
 
     let idx = findTarget();
     // One page of slack: posts published since the reload push the target down,

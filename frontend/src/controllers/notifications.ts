@@ -2,7 +2,7 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
 import { i18n } from '../utils/i18n';
-import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
+import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload, restoreKeyOf } from '../utils/pagination';
 
 /** Reasons whose post lives in reasonSubject, so several of them collapse into one row. */
 const GROUPABLE_REASONS = ['like', 'repost', 'like-via-repost', 'repost-via-repost'];
@@ -116,21 +116,25 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
   let targetUri = "";
   let pagesBefore = 0;
   if (!loadMore && keepFocus && state.focusedPostIndex >= 0 && state.focusedPostIndex < state.currentPosts.length) {
-    targetUri = state.currentPosts[state.focusedPostIndex]?.dataset.uri || "";
+    targetUri = restoreKeyOf(state.currentPosts[state.focusedPostIndex]);
     pagesBefore = pagesLoadedFor('notifications');
   }
   if (!loadMore) {
     state.notificationsCursor = "";
     resetPagesLoaded('notifications');
-    container.innerHTML = '';
-    state.currentPosts = [];
+    // The list is cleared only once the response is in hand; wiping it here
+    // left it empty for the whole request, and for good if the request failed.
   }
     try {
       const res = await window.go.services.NotificationsService.GetNotifications(state.notificationsCursor);
       if (res) markPageLoaded('notifications');
       if (res && res.notifications) {
+        if (!loadMore) {
+          container.innerHTML = '';
+          state.currentPosts = [];
+        }
         let itemsToRender = res.notifications;
-        
+
         const hydratedMap: Record<string, any> = {};
         res.notifications.forEach((n) => {
             if (n.hydratedPost) {
@@ -260,6 +264,19 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
            } : undefined)
         };
         const article = createPostArticle(mockPost, idx, true, notif.reason);
+
+        // Identity for focus restore. A row's uri is the subject post, which
+        // every like and repost of it shares, so it cannot tell rows apart. In
+        // combined mode the row *is* the group, and the group key stays put as
+        // new likes fold into it; otherwise the notification's own URI is
+        // unique to the row.
+        const isGroupedRow = state.notificationFormat === 'combined'
+            && GROUPABLE_REASONS.includes(notif.reason)
+            && Boolean(notif.reasonSubject);
+        article.dataset.restoreKey = isGroupedRow
+            ? `${notif.reason}:${notif.reasonSubject}`
+            : (notif.uri || postUri);
+
         container.appendChild(article);
         const isMention = ['mention', 'reply', 'quote'].includes(notif.reason);
         if (state.showOnlyMentions && !isMention) {
@@ -282,9 +299,18 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
             hasMore: () => state.notificationsCursor !== "",
             loadMore: async () => { await loadNotifications(true, false, true); }
         });
-        if (!focused && state.focusedPostIndex === -1) {
+        // A refresh that was holding the user's place has to land them
+        // somewhere definite. The row they were on has just been removed from
+        // the DOM, so doing nothing drops focus to the document and loses the
+        // reading position outright. A plain load leaves focus alone: there
+        // the user is still standing on the tab button they pressed.
+        const wasHoldingPlace = keepFocus && Boolean(targetUri);
+        if (!focused && (wasHoldingPlace || state.focusedPostIndex === -1)) {
             state.focusedPostIndex = 0;
             state.currentPosts[0].focus();
+        } else if (state.focusedPostIndex >= state.currentPosts.length) {
+            // The rebuilt list is shorter than where the saved index pointed.
+            state.focusedPostIndex = state.currentPosts.length - 1;
         }
     }
   } catch (err: any) { console.error(err); announceAssertive(i18n.t('notif.loadError')); } 

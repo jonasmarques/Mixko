@@ -118,25 +118,18 @@ export function setupAuth() {
 }
 
 export async function updateTimeline() {
+    // loadTimeline does its own fetching and now leaves the feed untouched when
+    // that fails, so probing here only cost a second full page every refresh.
     try {
-        let res;
-        if (state.currentFeedUri === "") {
-            res = await window.go.services.FeedService.GetTimeline("", 100);
-        } else {
-            res = await window.go.services.FeedService.GetCustomFeed(state.currentFeedUri, "", 100);
-        }
-        if (res && res.posts) {
-            loadTimeline(false); // reload the timeline completely
-        }
+        await loadTimeline(false);
     } catch(err) { console.error(err); }
 }
 
 export async function updateNotifications() {
+    // Same as updateTimeline: loadNotifications fetches for itself and keeps
+    // the list intact on failure, so the probe request was pure duplication.
     try {
-        const res = await window.go.services.NotificationsService.GetNotifications("");
-        if (res && res.notifications) {
-            loadNotifications(false, true);
-        }
+        await loadNotifications(false, true);
     } catch(err) { console.error(err); }
 }
 

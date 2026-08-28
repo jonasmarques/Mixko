@@ -69,8 +69,13 @@ func NewPostBuilderService(clientMgr *ATClient) *PostBuilderService {
 	}
 }
 
-// CreatePost handles creating a new post with optional reply info, images, video, and link preview
-func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*atproto.RepoCreateRecord_Output, error) {
+// CreatePost handles creating a new post with optional reply info, images, video, and link preview.
+//
+// rootUri/rootCid pin the thread the post belongs to. A caller publishing a
+// multi-post thread should pass the root returned for the first post back in
+// for every following one: it is authoritative and costs no round-trip. When
+// they are empty the root is resolved from the parent instead.
+func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, rootUri, rootCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*PostRefDTO, error) {
 	// Posting can include a video upload plus transcode polling, which runs far
 	// longer than a plain API call.
 	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
@@ -79,8 +84,8 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 		return nil, fmt.Errorf("length of imagePaths and altTexts must be identical")
 	}
 
-	var out *atproto.RepoCreateRecord_Output
-	
+	var out *PostRefDTO
+
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		var langs []string
 		if language != "" {
@@ -90,38 +95,16 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 		post := &bsky.FeedPost{
 			LexiconTypeID: "app.bsky.feed.post",
 			Text:          text,
-			CreatedAt:     time.Now().Format(time.RFC3339),
+			CreatedAt:     nowISO8601(),
 			Facets:        ParseFacets(ctx, c, text),
 			Langs:         langs,
 		}
 
 		// 2. Handle Replies
 		if replyToUri != "" && replyToCid != "" {
-			rootUri := replyToUri
-			rootCid := replyToCid
-
-			// Fetch the parent post to inherit its root if it exists
-			postRes, err := bsky.FeedGetPosts(ctx, c, []string{replyToUri})
-			if err == nil && len(postRes.Posts) > 0 {
-				parentPost := postRes.Posts[0]
-				if parentPost.Record != nil && parentPost.Record.Val != nil {
-					bytes, err := json.Marshal(parentPost.Record.Val)
-					if err == nil {
-						var rec struct {
-							Reply *struct {
-								Root *struct {
-									Uri string `json:"uri"`
-									Cid string `json:"cid"`
-								} `json:"root"`
-							} `json:"reply"`
-						}
-						_ = json.Unmarshal(bytes, &rec)
-						if rec.Reply != nil && rec.Reply.Root != nil && rec.Reply.Root.Uri != "" {
-							rootUri = rec.Reply.Root.Uri
-							rootCid = rec.Reply.Root.Cid
-						}
-					}
-				}
+			rUri, rCid := rootUri, rootCid
+			if rUri == "" || rCid == "" {
+				rUri, rCid = s.resolveThreadRoot(ctx, c, replyToUri, replyToCid)
 			}
 
 			post.Reply = &bsky.FeedPost_ReplyRef{
@@ -130,8 +113,8 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 					Cid: replyToCid,
 				},
 				Root: &atproto.RepoStrongRef{
-					Uri: rootUri,
-					Cid: rootCid,
+					Uri: rUri,
+					Cid: rCid,
 				},
 			}
 		}
@@ -251,11 +234,84 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 			_ = s.createThreadgate(ctx, c, res.Uri, threadgate, listUris)
 		}
 
-		out = res
+		out = &PostRefDTO{Uri: res.Uri, Cid: res.Cid}
+		if post.Reply != nil {
+			out.RootUri = post.Reply.Root.Uri
+			out.RootCid = post.Reply.Root.Cid
+		} else {
+			// A post that replies to nothing opens the thread, so it is its
+			// own root. Reporting it uniformly lets the caller chain the next
+			// post the same way whether the thread started here or not.
+			out.RootUri = res.Uri
+			out.RootCid = res.Cid
+		}
 		return nil
 	})
 
 	return out, err
+}
+
+// resolveThreadRoot returns the root ref of the thread that parentUri sits in,
+// falling back to the parent itself when the parent is a thread root or cannot
+// be read.
+//
+// The parent record is read with com.atproto.repo.getRecord rather than
+// app.bsky.feed.getPosts whenever it lives in the caller's own repo. The repo
+// is read-after-write consistent; the AppView is not — it only sees a post once
+// that post has travelled the firehose and been indexed, which takes long
+// enough that a post published moments earlier is reliably absent. getPosts
+// omits URIs it does not know without raising an error, so that miss used to
+// pass silently and leave each post of a thread rooted at its own parent.
+func (s *PostBuilderService) resolveThreadRoot(ctx context.Context, c *xrpc.Client, parentUri, parentCid string) (string, string) {
+	if rec := s.fetchOwnPostRecord(ctx, c, parentUri); rec != nil {
+		if rec.Reply != nil && rec.Reply.Root != nil && rec.Reply.Root.Uri != "" {
+			return rec.Reply.Root.Uri, rec.Reply.Root.Cid
+		}
+		return parentUri, parentCid
+	}
+
+	// Someone else's post: it has been indexed for a while, so the AppView is
+	// an accurate source for it.
+	postRes, err := bsky.FeedGetPosts(ctx, c, []string{parentUri})
+	if err == nil && len(postRes.Posts) > 0 {
+		parentPost := postRes.Posts[0]
+		if parentPost.Record != nil && parentPost.Record.Val != nil {
+			if bytes, err := json.Marshal(parentPost.Record.Val); err == nil {
+				var rec bsky.FeedPost
+				if json.Unmarshal(bytes, &rec) == nil &&
+					rec.Reply != nil && rec.Reply.Root != nil && rec.Reply.Root.Uri != "" {
+					return rec.Reply.Root.Uri, rec.Reply.Root.Cid
+				}
+			}
+		}
+	}
+
+	return parentUri, parentCid
+}
+
+// fetchOwnPostRecord reads a post record straight out of the signed-in user's
+// repo. It returns nil when the URI is malformed, points at another repo or at
+// another collection, or the record cannot be read.
+func (s *PostBuilderService) fetchOwnPostRecord(ctx context.Context, c *xrpc.Client, uri string) *bsky.FeedPost {
+	repo, collection, rkey, ok := parseATURI(uri)
+	if !ok || collection != "app.bsky.feed.post" || c.Auth == nil || repo != c.Auth.Did {
+		return nil
+	}
+
+	res, err := atproto.RepoGetRecord(ctx, c, "", collection, repo, rkey)
+	if err != nil || res == nil || res.Value == nil || res.Value.Val == nil {
+		return nil
+	}
+
+	bytes, err := json.Marshal(res.Value.Val)
+	if err != nil {
+		return nil
+	}
+	var rec bsky.FeedPost
+	if json.Unmarshal(bytes, &rec) != nil {
+		return nil
+	}
+	return &rec
 }
 
 func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Client, postUri string, threadgate string, listUris []string) error {
@@ -291,7 +347,7 @@ func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Clien
 	tg := &bsky.FeedThreadgate{
 		LexiconTypeID: "app.bsky.feed.threadgate",
 		Post:          postUri,
-		CreatedAt:     time.Now().Format(time.RFC3339),
+		CreatedAt:     nowISO8601(),
 		Allow:         allow,
 	}
 	parts := strings.Split(postUri, "/")
@@ -445,7 +501,7 @@ func (s *PostBuilderService) LikePost(uri, cid string) (string, error) {
 						Uri: uri,
 						Cid: cid,
 					},
-					CreatedAt: time.Now().Format(time.RFC3339),
+					CreatedAt: nowISO8601(),
 				},
 			},
 		}
@@ -495,7 +551,7 @@ func (s *PostBuilderService) Repost(uri, cid string) (string, error) {
 						Uri: uri,
 						Cid: cid,
 					},
-					CreatedAt: time.Now().Format(time.RFC3339),
+					CreatedAt: nowISO8601(),
 				},
 			},
 		}
@@ -509,7 +565,7 @@ func (s *PostBuilderService) Repost(uri, cid string) (string, error) {
 }
 
 // QuotePost handles quoting a post
-func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*atproto.RepoCreateRecord_Output, error) {
+func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*PostRefDTO, error) {
 	// Posting can include a video upload plus transcode polling, which runs far
 	// longer than a plain API call.
 	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
@@ -518,7 +574,7 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 		return nil, fmt.Errorf("length of imagePaths and altTexts must be identical")
 	}
 
-	var out *atproto.RepoCreateRecord_Output
+	var out *PostRefDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		var langs []string
 		if language != "" {
@@ -527,7 +583,7 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 		post := &bsky.FeedPost{
 			LexiconTypeID: "app.bsky.feed.post",
 			Text:          text,
-			CreatedAt:     time.Now().Format(time.RFC3339),
+			CreatedAt:     nowISO8601(),
 			Facets:        ParseFacets(ctx, c, text),
 			Langs:         langs,
 		}
@@ -630,7 +686,9 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 		if threadgate != "" && threadgate != "everyone" {
 			_ = s.createThreadgate(ctx, c, res.Uri, threadgate, listUris)
 		}
-		out = res
+		// A quote embeds the post it points at rather than replying to it, so
+		// it opens a thread of its own and is its own root.
+		out = &PostRefDTO{Uri: res.Uri, Cid: res.Cid, RootUri: res.Uri, RootCid: res.Cid}
 		return nil
 	})
 	return out, err
@@ -732,7 +790,7 @@ func (s *PostBuilderService) HideReply(postUri string, replyUri string) error {
 			tg = bsky.FeedThreadgate{
 				LexiconTypeID: "app.bsky.feed.threadgate",
 				Post:          postUri,
-				CreatedAt:     time.Now().Format(time.RFC3339),
+				CreatedAt:     nowISO8601(),
 			}
 		}
 

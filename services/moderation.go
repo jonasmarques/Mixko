@@ -2,7 +2,6 @@ package services
 
 import (
 	"strings"
-	"time"
 
 	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
@@ -111,7 +110,7 @@ func (s *ModerationService) BlockActor(actorDID string) error {
 		block := &bsky.GraphBlock{
 			LexiconTypeID: "app.bsky.graph.block",
 			Subject:       actorDID,
-			CreatedAt:     time.Now().Format(time.RFC3339),
+			CreatedAt:     nowISO8601(),
 		}
 
 		input := &atproto.RepoCreateRecord_Input{

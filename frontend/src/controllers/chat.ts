@@ -2,7 +2,7 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { linkify, esc, escUrl } from '../utils/helpers';
 import { confirmDialog, promptDialog } from '../utils/dialog';
-import { createPostArticle } from '../components/post';
+import { createPostArticle, registerInlineVideo } from '../components/post';
 import { formatPostDate } from '../utils/format';
 import { openGifPicker } from '../components/gif_modal';
 import { i18n } from '../utils/i18n';
@@ -270,7 +270,9 @@ export async function openChatConvo(convoId: string, members?: string, silent = 
         let inlineVideo = "";
         const klipyRegex = /(https?:\/\/[^\s]+?klipy[^\s]+?\.mp4|(?:https?:\/\/[^\s]+\.mp4))/g;
         rawText = rawText.replace(klipyRegex, (match: string) => {
-            inlineVideo += `<video src="${escUrl(match)}" autoplay loop muted playsinline style="max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 8px; display: block;"></video>`;
+            // The source is held back and attached once the message is on
+            // screen; see registerInlineVideo below.
+            inlineVideo += `<video class="chat-inline-gif" data-inline-src="${escUrl(match)}" loop muted playsinline preload="none" style="max-width: 100%; max-height: 250px; border-radius: 8px; margin-top: 8px; display: block;"></video>`;
             return ""; // Remove the URL from the text since it's now a video
         }).trim();
 
@@ -361,6 +363,12 @@ export async function openChatConvo(convoId: string, members?: string, silent = 
             ${reactionsHtml}
           </div>
         `;
+
+        // Inline GIFs load and play only while their message is on screen.
+        div.querySelectorAll<HTMLVideoElement>('video.chat-inline-gif').forEach((video) => {
+          const src = video.dataset.inlineSrc;
+          if (src) registerInlineVideo(video, src);
+        });
 
         // Toggle emoji picker visibility
         const pickerEl = div.querySelector(`#emoji-picker-${msg.id}`) as HTMLDivElement;

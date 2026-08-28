@@ -96,6 +96,17 @@ type PostDTO struct {
 	ViewerBookmark string           `json:"viewerBookmark"`
 }
 
+// PostRefDTO identifies a post that was just created, together with the root of
+// the thread it belongs to. Returning the root lets a client publishing a
+// multi-post thread carry it forward to the next reply instead of asking the
+// network to re-derive it from a parent that may not be indexed yet.
+type PostRefDTO struct {
+	Uri     string `json:"uri"`
+	Cid     string `json:"cid"`
+	RootUri string `json:"rootUri"`
+	RootCid string `json:"rootCid"`
+}
+
 type ImageDTO struct {
 	Thumb    string `json:"thumb"`
 	Fullsize string `json:"fullsize"`

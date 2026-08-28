@@ -10,8 +10,8 @@ export function CheckVideoStatus(arg1) {
   return window['go']['services']['PostBuilderService']['CheckVideoStatus'](arg1);
 }
 
-export function CreatePost(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14) {
-  return window['go']['services']['PostBuilderService']['CreatePost'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14);
+export function CreatePost(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16) {
+  return window['go']['services']['PostBuilderService']['CreatePost'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16);
 }
 
 export function DeletePost(arg1) {

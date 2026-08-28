@@ -26,47 +26,190 @@ function formatAltList(alts: string[]): string {
 /**
  * Live HLS players, keyed by the video element they drive.
  *
- * Switching tabs or reloading a feed replaces whole subtrees of the DOM. Any
- * player left attached to a discarded element keeps its buffers and network
- * requests alive, so they are tracked here and disposed of once their element
- * is gone.
+ * A player is created only while its video is on screen and destroyed as soon
+ * as it leaves, so the feed holds buffers for what the user is actually looking
+ * at rather than for every video it has rendered.
  */
 const activePlayers = new Map<HTMLVideoElement, Hls>();
 
-/** One observer for all players; one per video would be far more expensive. */
-let playerObserver: MutationObserver | null = null;
+/**
+ * Buffer ceiling per player.
+ *
+ * The hls.js defaults (60 MB, up to 600 s) are sized for a page playing one
+ * video. A feed holds dozens at once and it is their sum that exhausts the
+ * process, so each player gets only enough to play smoothly.
+ */
+const HLS_LIMITS = {
+  maxBufferLength: 10,
+  maxMaxBufferLength: 30,
+  maxBufferSize: 8 * 1000 * 1000,
+  backBufferLength: 10,
+};
 
-function reapDetachedPlayers(): void {
-  for (const [video, hls] of activePlayers) {
-    if (!video.isConnected) {
-      hls.destroy();
-      activePlayers.delete(video);
-    }
-  }
+/**
+ * Drives attach/detach from visibility.
+ *
+ * Removing an element from the document also makes it stop intersecting, so
+ * this doubles as the cleanup path for feed reloads and tab switches.
+ */
+let visibilityObserver: IntersectionObserver | null = null;
 
-  if (activePlayers.size === 0 && playerObserver) {
-    playerObserver.disconnect();
-    playerObserver = null;
+/**
+ * Every video handed to the observer.
+ *
+ * A target that never became visible reports no change when it is removed, so
+ * the observer alone would hold on to it forever. The feed rebuilds itself
+ * every minute and most of it is below the fold, which is exactly that case.
+ */
+const registeredVideos = new Set<HTMLVideoElement>();
+
+/** Reclaims registered videos whose element has left the document. */
+let sweepTimer: number | null = null;
+
+const SWEEP_INTERVAL_MS = 30_000;
+
+function stopSweep(): void {
+  if (sweepTimer !== null) {
+    clearInterval(sweepTimer);
+    sweepTimer = null;
   }
 }
 
-/** Attaches an HLS stream and registers the player for cleanup. */
-function attachHlsStream(video: HTMLVideoElement, playlist: string): void {
-  if (!Hls.isSupported()) {
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = playlist;
+/** Releases `video` and stops tracking it altogether. */
+function forgetVideo(video: HTMLVideoElement): void {
+  releasePlayer(video);
+  visibilityObserver?.unobserve(video);
+  registeredVideos.delete(video);
+  if (registeredVideos.size === 0) stopSweep();
+}
+
+function sweepDetachedVideos(): void {
+  for (const video of [...registeredVideos]) {
+    if (!video.isConnected) forgetVideo(video);
+  }
+  if (registeredVideos.size === 0) stopSweep();
+}
+
+/** Frees whatever `video` is holding: its player, or its source. */
+function releasePlayer(video: HTMLVideoElement): void {
+  try {
+    video.pause();
+  } catch {
+    // An element already torn down by the browser can throw here.
+  }
+
+  // Plain sources carry no player; dropping the source is what frees them.
+  if (video.dataset.src) {
+    if (video.getAttribute('src')) {
+      video.removeAttribute('src');
+      // Makes the element actually drop the buffered data.
+      try { video.load(); } catch { /* already gone */ }
     }
     return;
   }
 
-  const hls = new Hls();
+  const hls = activePlayers.get(video);
+  if (!hls) return;
+
+  activePlayers.delete(video);
+  try {
+    hls.destroy();
+  } catch {
+    // A player whose element is already gone can throw on teardown; the
+    // instance is dropped either way.
+  }
+}
+
+/** Builds the player for `video` and starts loading, if it has none yet. */
+function engagePlayer(video: HTMLVideoElement): void {
+  if (activePlayers.has(video)) return;
+
+  const shouldAutoplay = video.dataset.autoplay === 'true';
+
+  // A plain source needs no player, only to be connected when it comes up.
+  const plain = video.dataset.src;
+  if (plain) {
+    if (!video.getAttribute('src')) video.src = plain;
+    if (shouldAutoplay) void video.play().catch(() => {});
+    return;
+  }
+
+  const playlist = video.dataset.playlist;
+  if (!playlist) return;
+
+  // Safari plays HLS natively and needs no player at all.
+  if (!Hls.isSupported()) {
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      if (!video.src) video.src = playlist;
+      if (shouldAutoplay) void video.play().catch(() => {});
+    }
+    return;
+  }
+
+  const hls = new Hls(HLS_LIMITS);
   hls.loadSource(playlist);
   hls.attachMedia(video);
   activePlayers.set(video, hls);
 
-  if (!playerObserver) {
-    playerObserver = new MutationObserver(reapDetachedPlayers);
-    playerObserver.observe(document.body, { childList: true, subtree: true });
+  if (shouldAutoplay) {
+    // Muted autoplay is allowed; a rejection here is not worth surfacing.
+    hls.on(Hls.Events.MANIFEST_PARSED, () => void video.play().catch(() => {}));
+  }
+}
+
+function onVisibilityChange(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    const video = entry.target as HTMLVideoElement;
+
+    if (entry.isIntersecting) {
+      engagePlayer(video);
+    } else if (video.isConnected) {
+      // Scrolled away but still in the page, so it may come back.
+      releasePlayer(video);
+    } else {
+      forgetVideo(video);
+    }
+  }
+}
+
+/**
+ * Registers a video to be played once it comes into view.
+ *
+ * Nothing is downloaded here. Attaching every player as the feed renders was
+ * what let a few hundred posts pin hundreds of megabytes of video buffer for
+ * clips the user never opened.
+ */
+function registerVideo(video: HTMLVideoElement, playlist: string, isGif: boolean): void {
+  video.dataset.playlist = playlist;
+  if (isGif) video.dataset.autoplay = 'true';
+  observeVideo(video);
+}
+
+/**
+ * Registers a video that carries a plain source rather than an HLS playlist.
+ *
+ * Exported because chat builds its own markup: without this, every GIF a
+ * conversation has ever shown keeps looping and decoding for as long as the
+ * messages stay rendered.
+ */
+export function registerInlineVideo(video: HTMLVideoElement, src: string, autoplay = true): void {
+  video.dataset.src = src;
+  if (autoplay) video.dataset.autoplay = 'true';
+  observeVideo(video);
+}
+
+function observeVideo(video: HTMLVideoElement): void {
+  if (!visibilityObserver) {
+    // A margin keeps playback from starting exactly at the viewport edge, so
+    // moving focus through the feed does not stutter.
+    visibilityObserver = new IntersectionObserver(onVisibilityChange, { rootMargin: '200px' });
+  }
+
+  registeredVideos.add(video);
+  visibilityObserver.observe(video);
+
+  if (sweepTimer === null) {
+    sweepTimer = window.setInterval(sweepDetachedVideos, SWEEP_INTERVAL_MS);
   }
 }
 
@@ -200,7 +343,7 @@ export function createPostArticle(post: PostView, index: number, isNotification 
       const posterAttr = post.quotePost.video.thumbnail ? `poster="${escUrl(post.quotePost.video.thumbnail)}"` : '';
       quoteMediaHtml += `
         <div class="video-context quoted-video-context" style="margin-top: 10px;">
-          <video class="post-video quoted-post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls'} ${posterAttr}>
+          <video class="post-video quoted-post-video" ${isGif ? 'loop muted playsinline' : 'controls'} preload="none" ${posterAttr}>
               ${i18n.t('post.videoNoSupport')}
           </video>
           <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${esc(altText)}</small></div>
@@ -280,7 +423,7 @@ export function createPostArticle(post: PostView, index: number, isNotification 
     
     videoContext = `
       <div class="video-context" style="margin-top: 10px;">
-        <video class="post-video" ${isGif ? 'autoplay loop muted playsinline' : 'controls playsinline preload="metadata"'} ${posterAttr}>
+        <video class="post-video" ${isGif ? 'loop muted playsinline' : 'controls playsinline'} preload="none" ${posterAttr}>
             ${i18n.t('post.videoNoSupport')}
         </video>
         <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${esc(post.video.alt || i18n.t('post.noAlt'))}</small></div>
@@ -443,15 +586,15 @@ export function createPostArticle(post: PostView, index: number, isNotification 
       article.innerHTML = innerHtmlContent;
   }
 
-  // HLS binding
+  // HLS binding: registered now, loaded only once on screen.
   if (post.video?.playlist) {
      const vid = (article.querySelector('.root-post-video') || article.querySelector('.post-video:not(.quoted-post-video)')) as HTMLVideoElement | null;
-     if (vid) attachHlsStream(vid, post.video.playlist);
+     if (vid) registerVideo(vid, post.video.playlist, post.video.presentation === 'gif');
   }
 
   if (post.quotePost?.video?.playlist) {
      const qVid = article.querySelector('.quoted-post-video') as HTMLVideoElement | null;
-     if (qVid) attachHlsStream(qVid, post.quotePost.video.playlist);
+     if (qVid) registerVideo(qVid, post.quotePost.video.playlist, post.quotePost.video.presentation === 'gif');
   }
 
   // Interactions

@@ -707,7 +707,7 @@ func (s *SocialService) Follow(actorDID string) error {
 				Val: &bsky.GraphFollow{
 					LexiconTypeID: "app.bsky.graph.follow",
 					Subject:       actorDID,
-					CreatedAt:     time.Now().Format(time.RFC3339),
+					CreatedAt:     nowISO8601(),
 				},
 			},
 		}
@@ -903,7 +903,7 @@ func (s *SocialService) CreateList(name, purpose, description string) error {
 			Name:          name,
 			Purpose:       &purpose,
 			Description:   &description,
-			CreatedAt:     time.Now().Format(time.RFC3339),
+			CreatedAt:     nowISO8601(),
 		}
 
 		input := &atproto.RepoCreateRecord_Input{
@@ -934,7 +934,7 @@ func (s *SocialService) EditList(uri, name, purpose, description string) error {
 			Name:          name,
 			Purpose:       &purpose,
 			Description:   &description,
-			CreatedAt:     time.Now().Format(time.RFC3339),
+			CreatedAt:     nowISO8601(),
 		}
 
 		input := &atproto.RepoPutRecord_Input{
@@ -963,7 +963,7 @@ func (s *SocialService) SubscribeList(listUri string) error {
 					LexiconTypeID: "app.bsky.graph.listitem",
 					Subject:       c.Auth.Did,
 					List:          listUri,
-					CreatedAt:     time.Now().Format(time.RFC3339),
+					CreatedAt:     nowISO8601(),
 				},
 			},
 		}
@@ -981,7 +981,7 @@ func (s *SocialService) CreateStarterPack(name, description, listUri string) err
 			Name:          name,
 			Description:   &description,
 			List:          listUri,
-			CreatedAt:     time.Now().Format(time.RFC3339),
+			CreatedAt:     nowISO8601(),
 		}
 
 		input := &atproto.RepoCreateRecord_Input{
@@ -1206,7 +1206,7 @@ func (s *SocialService) BlockList(uri string) error {
 				Val: &bsky.GraphListblock{
 					LexiconTypeID: "app.bsky.graph.listblock",
 					Subject:       uri,
-					CreatedAt:     time.Now().Format(time.RFC3339),
+					CreatedAt:     nowISO8601(),
 				},
 			},
 		}
@@ -1620,7 +1620,7 @@ func (s *SocialService) AddUserToList(listUri string, subjectDid string) (string
 					LexiconTypeID: "app.bsky.graph.listitem",
 					Subject:       subjectDid,
 					List:          listUri,
-					CreatedAt:     time.Now().Format(time.RFC3339),
+					CreatedAt:     nowISO8601(),
 				},
 			},
 		}
@@ -1695,7 +1695,7 @@ func (s *SocialService) FollowAllInList(listUri string) (int, error) {
 							Val: &bsky.GraphFollow{
 								LexiconTypeID: "app.bsky.graph.follow",
 								Subject:       item.Subject.Did,
-								CreatedAt:     time.Now().Format(time.RFC3339),
+								CreatedAt:     nowISO8601(),
 							},
 						},
 					}

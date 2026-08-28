@@ -8,6 +8,7 @@ import {
     pagesLoadedFor,
     resetPagesLoaded,
     restoreFocusAfterReload,
+    restoreKeyOf,
 } from './pagination.js';
 
 /** A stand-in for a rendered post article: just the bits the restore logic touches. */
@@ -208,4 +209,69 @@ test('does nothing without a target', async () => {
     assert.equal(ok, false);
     assert.equal(calls, 0);
     assert.equal(state.focusedPostIndex, -1);
+});
+
+/**
+ * A notification row. Several rows can concern the same subject post, so the
+ * uri alone does not identify one; `restoreKey` does.
+ */
+function fakeNotifRow(uri: string, restoreKey: string, onFocus: (key: string) => void) {
+    return { dataset: { uri, restoreKey }, focus: () => onFocus(restoreKey) } as unknown as HTMLElement;
+}
+
+test('restoreKeyOf prefers the explicit key and falls back to the uri', () => {
+    assert.equal(restoreKeyOf(fakeArticle('at://post/1', () => {})), 'at://post/1');
+    assert.equal(restoreKeyOf(fakeNotifRow('at://post/1', 'like:at://post/1', () => {})), 'like:at://post/1');
+    assert.equal(restoreKeyOf(undefined), '');
+    assert.equal(restoreKeyOf({ dataset: {} } as unknown as HTMLElement), '');
+});
+
+test('tells apart notification rows that share a subject post', async () => {
+    reset();
+    const focused: string[] = [];
+    // Both rows are about the same post of ours: one groups the reposts, the
+    // other the likes. Matching on the uri cannot choose between them.
+    state.currentPosts = [
+        fakeNotifRow('at://post/1', 'repost:at://post/1', k => focused.push(k)),
+        fakeNotifRow('at://post/1', 'like:at://post/1', k => focused.push(k)),
+    ];
+    markPageLoaded('timeline');
+
+    const restored = await restoreFocusAfterReload({
+        tab: 'timeline',
+        targetUri: 'like:at://post/1',
+        pagesBefore: 1,
+        hasMore: () => false,
+        loadMore: async () => { throw new Error('must not page: the row is already here'); },
+    });
+
+    assert.equal(restored, true);
+    assert.equal(state.focusedPostIndex, 1);
+    assert.deepEqual(focused, ['like:at://post/1']);
+});
+
+test('does not page back through history for a row already on the first page', async () => {
+    reset();
+    const focused: string[] = [];
+    let pagesFetched = 0;
+
+    // The row the user was on is present, but an older row about the same post
+    // sits further down. Identity has to stop the search here.
+    state.currentPosts = [
+        fakeNotifRow('at://post/9', 'like:at://post/9', k => focused.push(k)),
+        fakeNotifRow('at://post/9', 'repost:at://post/9', k => focused.push(k)),
+    ];
+    markPageLoaded('timeline');
+
+    const restored = await restoreFocusAfterReload({
+        tab: 'timeline',
+        targetUri: 'like:at://post/9',
+        pagesBefore: 6,
+        hasMore: () => true,
+        loadMore: async () => { pagesFetched++; markPageLoaded('timeline'); },
+    });
+
+    assert.equal(restored, true);
+    assert.equal(pagesFetched, 0, 'refetching pages is what dragged focus into the past');
+    assert.deepEqual(focused, ['like:at://post/9']);
 });
