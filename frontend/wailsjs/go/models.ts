@@ -52,6 +52,7 @@ export namespace bsky {
 	export class GraphDefs_ListViewerState {
 	    blocked?: string;
 	    muted?: boolean;
+	    referenceListOptOut?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new GraphDefs_ListViewerState(source);
@@ -61,6 +62,7 @@ export namespace bsky {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.blocked = source["blocked"];
 	        this.muted = source["muted"];
+	        this.referenceListOptOut = source["referenceListOptOut"];
 	    }
 	}
 	export class GraphDefs_ListViewBasic {
@@ -2313,6 +2315,7 @@ export namespace services {
 	    rootAuthorName?: string;
 	    rootUri: string;
 	    parentPost?: PostDTO;
+	    rootPost?: PostDTO;
 	    repostedBy: string;
 	    repostedByHandle: string;
 	    quotePost?: PostDTO;
@@ -2349,6 +2352,7 @@ export namespace services {
 	        this.rootAuthorName = source["rootAuthorName"];
 	        this.rootUri = source["rootUri"];
 	        this.parentPost = this.convertValues(source["parentPost"], PostDTO);
+	        this.rootPost = this.convertValues(source["rootPost"], PostDTO);
 	        this.repostedBy = source["repostedBy"];
 	        this.repostedByHandle = source["repostedByHandle"];
 	        this.quotePost = this.convertValues(source["quotePost"], PostDTO);

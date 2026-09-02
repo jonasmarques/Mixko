@@ -1,6 +1,6 @@
 import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
-import { createPostArticle } from '../components/post';
+import { createPostArticle, cleanupContainerVideos, bindContainerVideos } from '../components/post';
 import { i18n } from '../utils/i18n';
 import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload, restoreKeyOf } from '../utils/pagination';
 
@@ -130,6 +130,7 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
       if (res) markPageLoaded('notifications');
       if (res && res.notifications) {
         if (!loadMore) {
+          cleanupContainerVideos(container);
           container.innerHTML = '';
           state.currentPosts = [];
         }
@@ -286,6 +287,7 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
             state.currentPosts.push(article);
         }
       });
+      bindContainerVideos(container);
       state.notificationsCursor = res.cursor || "";
       if (!silent) announcePolite(i18n.t('notif.notifsLoaded', { count: state.currentPosts.length.toString() }));
       window.go.services.NotificationsService.UpdateSeen(new Date().toISOString()).catch((e: any) => console.error(e));

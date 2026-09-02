@@ -1183,8 +1183,10 @@ export function setupShortcuts() {
                 if (state.currentTab === 'chat' || state.currentTab === 'settings') break;
                 e.preventDefault();
                 if (state.focusedPostIndex >= 0) {
-                    const btn = state.currentPosts[state.focusedPostIndex].querySelector('.btn-quote') as HTMLButtonElement;
-                    if (btn) btn.click();
+                    const p = state.currentPosts[state.focusedPostIndex];
+                    if (p && p.dataset.uri) {
+                        openComposeModal('quote', {uri: p.dataset.uri, cid: p.dataset.cid || '', authorHandle: p.dataset.authorHandle || p.dataset.author});
+                    }
                 }
                 break;
             case 'r':
@@ -1205,13 +1207,9 @@ export function setupShortcuts() {
                 }
                 if (state.currentTab === 'settings') break;
                 if (state.focusedPostIndex >= 0) {
-                    const btn = state.currentPosts[state.focusedPostIndex].querySelector('.btn-reply') as HTMLButtonElement;
-                    if (btn) btn.click();
-                    else {
-                        const p = state.currentPosts[state.focusedPostIndex];
-                        if (p.dataset.uri) {
-                            openComposeModal('reply', {uri: p.dataset.uri, cid: p.dataset.cid!, authorHandle: p.dataset.author});
-                        }
+                    const p = state.currentPosts[state.focusedPostIndex];
+                    if (p && p.dataset.uri) {
+                        openComposeModal('reply', {uri: p.dataset.uri, cid: p.dataset.cid || '', authorHandle: p.dataset.authorHandle || p.dataset.author});
                     }
                 }
                 break;

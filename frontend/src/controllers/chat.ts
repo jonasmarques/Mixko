@@ -2,7 +2,7 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { linkify, esc, escUrl } from '../utils/helpers';
 import { confirmDialog, promptDialog } from '../utils/dialog';
-import { createPostArticle, registerInlineVideo } from '../components/post';
+import { createPostArticle, registerInlineVideo, cleanupContainerVideos } from '../components/post';
 import { formatPostDate } from '../utils/format';
 import { openGifPicker } from '../components/gif_modal';
 import { i18n } from '../utils/i18n';
@@ -112,6 +112,7 @@ export async function openChatConvo(convoId: string, members?: string, silent = 
   }
   const container = document.getElementById('chat-list') as HTMLDivElement;
   if (!silent) {
+    cleanupContainerVideos(container);
     container.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
         <button id="btn-back-chat" tabindex="0">${i18n.t('chat.backToList')}</button>
@@ -252,6 +253,7 @@ export async function openChatConvo(convoId: string, members?: string, silent = 
     const res = await window.go.services.ChatService.GetMessages(convoId, "");
     const msgsContainer = document.getElementById('chat-messages') as HTMLDivElement;
     if (!msgsContainer) return;
+    cleanupContainerVideos(msgsContainer);
     msgsContainer.innerHTML = '';
     if (res && res.messages) {
       if (res.messages.length > 0) {

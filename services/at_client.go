@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -15,6 +16,24 @@ import (
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/bluesky-social/indigo/xrpc"
 )
+
+var sharedTransport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   15 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	ForceAttemptHTTP2:     true,
+	MaxIdleConns:          100,
+	MaxIdleConnsPerHost:   20,
+	IdleConnTimeout:       90 * time.Second,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ExpectContinueTimeout: 1 * time.Second,
+}
+
+var sharedHTTPClient = &http.Client{
+	Transport: sharedTransport,
+}
 
 // DefaultPDSHost is used when a user's own PDS cannot be resolved from their
 // DID document.
@@ -95,6 +114,9 @@ func (c *ATClient) NewContextTimeout(d time.Duration) (context.Context, context.
 func (c *ATClient) SetClient(client *xrpc.Client) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if client != nil && client.Client == nil {
+		client.Client = sharedHTTPClient
+	}
 	c.client = client
 }
 
@@ -109,10 +131,16 @@ func (c *ATClient) GetClient() (*xrpc.Client, error) {
 	return client, nil
 }
 
+// HTTPClient returns the shared pooled HTTP client.
+func (c *ATClient) HTTPClient() *http.Client {
+	return sharedHTTPClient
+}
+
 // NewPublicClient returns an unauthenticated client targeting the public AppView.
 func (c *ATClient) NewPublicClient() *xrpc.Client {
 	return &xrpc.Client{
-		Host: PublicAppViewHost,
+		Client: sharedHTTPClient,
+		Host:   PublicAppViewHost,
 	}
 }
 

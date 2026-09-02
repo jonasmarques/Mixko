@@ -85,7 +85,11 @@ function forgetVideo(video: HTMLVideoElement): void {
 
 function sweepDetachedVideos(): void {
   for (const video of [...registeredVideos]) {
-    if (!video.isConnected) forgetVideo(video);
+    if (!video.isConnected) {
+      forgetVideo(video);
+    } else if (visibilityObserver) {
+      visibilityObserver.observe(video);
+    }
   }
   if (registeredVideos.size === 0) stopSweep();
 }
@@ -102,21 +106,29 @@ function releasePlayer(video: HTMLVideoElement): void {
   if (video.dataset.src) {
     if (video.getAttribute('src')) {
       video.removeAttribute('src');
-      // Makes the element actually drop the buffered data.
+      video.srcObject = null;
+      // Makes the element actually drop the buffered data and hardware decoder.
       try { video.load(); } catch { /* already gone */ }
     }
     return;
   }
 
   const hls = activePlayers.get(video);
-  if (!hls) return;
+  if (hls) {
+    activePlayers.delete(video);
+    try {
+      hls.detachMedia();
+      hls.destroy();
+    } catch {
+      // A player whose element is already gone can throw on teardown; the
+      // instance is dropped either way.
+    }
+  }
 
-  activePlayers.delete(video);
-  try {
-    hls.destroy();
-  } catch {
-    // A player whose element is already gone can throw on teardown; the
-    // instance is dropped either way.
+  if (video.getAttribute('src') || video.srcObject) {
+    video.removeAttribute('src');
+    video.srcObject = null;
+    try { video.load(); } catch { /* already gone */ }
   }
 }
 
@@ -199,18 +211,41 @@ export function registerInlineVideo(video: HTMLVideoElement, src: string, autopl
 }
 
 function observeVideo(video: HTMLVideoElement): void {
-  if (!visibilityObserver) {
-    // A margin keeps playback from starting exactly at the viewport edge, so
-    // moving focus through the feed does not stutter.
-    visibilityObserver = new IntersectionObserver(onVisibilityChange, { rootMargin: '200px' });
-  }
-
   registeredVideos.add(video);
-  visibilityObserver.observe(video);
+
+  if (video.isConnected) {
+    if (!visibilityObserver) {
+      visibilityObserver = new IntersectionObserver(onVisibilityChange, { rootMargin: '200px' });
+    }
+    visibilityObserver.observe(video);
+  }
 
   if (sweepTimer === null) {
     sweepTimer = window.setInterval(sweepDetachedVideos, SWEEP_INTERVAL_MS);
   }
+}
+
+export function bindContainerVideos(container: HTMLElement): void {
+  if (!visibilityObserver) {
+    visibilityObserver = new IntersectionObserver(onVisibilityChange, { rootMargin: '200px' });
+  }
+  const videos = container.querySelectorAll<HTMLVideoElement>('video');
+  videos.forEach(v => {
+    if (v.dataset.playlist || v.dataset.src) {
+      registeredVideos.add(v);
+      if (v.isConnected) {
+        visibilityObserver?.observe(v);
+      }
+    }
+  });
+  if (registeredVideos.size > 0 && sweepTimer === null) {
+    sweepTimer = window.setInterval(sweepDetachedVideos, SWEEP_INTERVAL_MS);
+  }
+}
+
+export function cleanupContainerVideos(container: HTMLElement): void {
+  const videos = container.querySelectorAll<HTMLVideoElement>('video');
+  videos.forEach(v => forgetVideo(v));
 }
 
 export function createPostArticle(post: PostView, index: number, isNotification = false, notifReason = ""): HTMLElement {
@@ -479,65 +514,6 @@ export function createPostArticle(post: PostView, index: number, isNotification 
       }
   }
 
-  article.querySelector('.btn-mute-thread')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    try {
-      announcePolite(i18n.t('post.mutingThread'));
-      await window.go.services.ModerationService.MuteThread(uri);
-      announceAssertive(i18n.t('post.muteThreadSuccess'));
-    } catch (err: any) {
-      announceAssertive(i18n.t('post.error', { error: err }));
-    }
-  });
-
-  article.querySelector('.btn-report-post')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    const cid = article.dataset.cid;
-    if (!uri || !cid) return;
-    const { promptDialog } = await import('../utils/dialog');
-    const reason = await promptDialog(i18n.t('post.reportPrompt'), "", i18n.t('post.reportTitle'));
-    if (reason) {
-      try {
-        announcePolite(i18n.t('post.reporting'));
-        await window.go.services.ModerationService.ReportPost(uri, cid, 'com.atproto.moderation.defs#reasonOther', reason);
-        announceAssertive(i18n.t('post.reportSuccess'));
-      } catch (err: any) {
-        announceAssertive(i18n.t('post.error', { error: err }));
-      }
-    }
-  });
-
-  article.querySelector('.btn-hide-reply')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
-    try {
-      announcePolite(i18n.t('post.hidingReply'));
-      await window.go.services.PostBuilderService.HideReply(rootUri, uri);
-      announceAssertive(i18n.t('post.hideReplySuccess'));
-    } catch (err: any) {
-      announceAssertive(i18n.t('post.error', { error: err }));
-    }
-  });
-
-  article.querySelector('.btn-pin-post')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    const cid = article.dataset.cid;
-    if (!uri || !cid) return;
-    try {
-      announcePolite(i18n.t('post.pinning'));
-      await window.go.services.SocialService.PinPost(uri, cid);
-      announceAssertive(i18n.t('post.pinSuccess'));
-    } catch (err: any) {
-      announceAssertive(i18n.t('post.error', { error: err }));
-    }
-  });
-
   const formattedTime = formatPostDate(post.createdAt || post.indexedAt || "");
   const authorDisplay = formatAuthor(post.authorName ?? '', post.authorHandle);
   const showHandleSpan = (state.nameDisplayFormat !== 'handle') && post.authorHandle && (post.authorHandle !== authorDisplay);
@@ -714,18 +690,71 @@ export function createPostArticle(post: PostView, index: number, isNotification 
       }
     });
   });
-  
-  // Interactions
-  article.addEventListener('focus', () => {
-      const idxStr = article.dataset.index;
-      if (idxStr !== undefined) state.focusedPostIndex = parseInt(idxStr, 10);
+
+  article.querySelector('.btn-mute-thread')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    if (!uri) return;
+    try {
+      announcePolite(i18n.t('post.mutingThread'));
+      await window.go.services.ModerationService.MuteThread(uri);
+      announceAssertive(i18n.t('post.muteThreadSuccess'));
+    } catch (err: any) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
   });
-  
-  article.addEventListener('focus', () => {
-      const idx = parseInt(article.dataset.index || "-1");
-      if (!isNaN(idx) && idx >= 0) {
-          state.focusedPostIndex = idx;
+
+  article.querySelector('.btn-report-post')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    const cid = article.dataset.cid;
+    if (!uri || !cid) return;
+    const { promptDialog } = await import('../utils/dialog');
+    const reason = await promptDialog(i18n.t('post.reportPrompt'), "", i18n.t('post.reportTitle'));
+    if (reason) {
+      try {
+        announcePolite(i18n.t('post.reporting'));
+        await window.go.services.ModerationService.ReportPost(uri, cid, 'com.atproto.moderation.defs#reasonOther', reason);
+        announceAssertive(i18n.t('post.reportSuccess'));
+      } catch (err: any) {
+        announceAssertive(i18n.t('post.error', { error: String(err) }));
       }
+    }
+  });
+
+  article.querySelector('.btn-hide-reply')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    if (!uri) return;
+    const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
+    try {
+      announcePolite(i18n.t('post.hidingReply'));
+      await window.go.services.PostBuilderService.HideReply(rootUri, uri);
+      announceAssertive(i18n.t('post.hideReplySuccess'));
+    } catch (err: any) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-pin-post')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    const cid = article.dataset.cid;
+    if (!uri || !cid) return;
+    try {
+      announcePolite(i18n.t('post.pinning'));
+      await window.go.services.SocialService.PinPost(uri, cid);
+      announceAssertive(i18n.t('post.pinSuccess'));
+    } catch (err: any) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.addEventListener('focus', () => {
+    const idx = parseInt(article.dataset.index || "-1", 10);
+    if (!isNaN(idx) && idx >= 0) {
+      state.focusedPostIndex = idx;
+    }
   });
 
   article.setAttribute('aria-label', getPostAccessibleLabel(article));

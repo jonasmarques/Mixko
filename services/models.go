@@ -83,6 +83,7 @@ type PostDTO struct {
 	RootAuthorName    string   `json:"rootAuthorName,omitempty"`
 	RootURI           string   `json:"rootUri"`
 	ParentPost        *PostDTO `json:"parentPost"`
+	RootPost          *PostDTO `json:"rootPost"`
 	RepostedBy       string   `json:"repostedBy"`
 	RepostedByHandle string   `json:"repostedByHandle"`
 	QuotePost     *PostDTO `json:"quotePost"`

@@ -77,6 +77,7 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 						dto.RootAuthor = rootPV.Author.Handle
 						dto.RootAuthorName = rootName
 						dto.RootURI = rootPV.Uri
+					dto.RootPost = ParsePostView(rootPV)
 					}
 				}
 				out.Posts = append(out.Posts, dto)
@@ -391,6 +392,7 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 						dto.RootAuthor = rootPV.Author.Handle
 						dto.RootAuthorName = rootName
 						dto.RootURI = rootPV.Uri
+						dto.RootPost = ParsePostView(rootPV)
 					}
 				}
 				out.Posts = append(out.Posts, dto)
@@ -543,6 +545,7 @@ func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*
 						dto.RootAuthor = rootPV.Author.Handle
 						dto.RootAuthorName = rootName
 						dto.RootURI = rootPV.Uri
+						dto.RootPost = ParsePostView(rootPV)
 					}
 				}
 				out.Posts = append(out.Posts, dto)
@@ -681,6 +684,7 @@ func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) 
 						dto.RootAuthor = rootPV.Author.Handle
 						dto.RootAuthorName = rootName
 						dto.RootURI = rootPV.Uri
+						dto.RootPost = ParsePostView(rootPV)
 					}
 				}
 				out.Posts = append(out.Posts, dto)

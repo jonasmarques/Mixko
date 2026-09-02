@@ -98,11 +98,19 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
   }
   loadUserListsForThreadgate();
 
-  if (DOM.composeModal) DOM.composeModal.showModal();
+  if (DOM.composeModal && !DOM.composeModal.open) {
+      DOM.composeModal.showModal();
+  }
   
   if (postTextInput) {
       postTextInput.value = "";
       postTextInput.focus();
+      requestAnimationFrame(() => {
+          postTextInput.focus();
+      });
+      setTimeout(() => {
+          postTextInput.focus();
+      }, 50);
   }
   updateCharCounter("");
   

@@ -10,6 +10,7 @@ import (
 	_ "image/png"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,11 +33,24 @@ const maxRemoteBodyBytes = 8 << 20 // 8 MiB
 // remoteFetchTimeout bounds a single fetch of third-party content.
 const remoteFetchTimeout = 15 * time.Second
 
+var remoteTransport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	ForceAttemptHTTP2:   true,
+	MaxIdleConns:        50,
+	MaxIdleConnsPerHost: 10,
+	IdleConnTimeout:     90 * time.Second,
+}
+
 // remoteClient is used for every request to a URL we did not choose. It has an
 // explicit timeout (http.DefaultClient has none) and refuses to follow long
 // redirect chains.
 var remoteClient = &http.Client{
-	Timeout: remoteFetchTimeout,
+	Timeout:   remoteFetchTimeout,
+	Transport: remoteTransport,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
 			return fmt.Errorf("stopped after %d redirects", len(via))

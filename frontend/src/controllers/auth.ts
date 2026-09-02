@@ -69,11 +69,8 @@ export function setupAuth() {
 
     // Hook into Wails Events for background sync updates
     (window as any).runtime.EventsOn("new_timeline_posts", () => {
-        if (state.currentTab === 'timeline') {
-            if (window.scrollY < 100) {
-                // Reload timeline silently if at top
-                updateTimeline();
-            }
+        if (state.currentTab !== 'timeline') {
+            state.tabStates['timeline'].loaded = false;
         }
     });
 
@@ -96,25 +93,6 @@ export function setupAuth() {
             announcePolite(i18n.t('auth.newChatMessages'));
         }
     });
-
-    if (state.autoUpdateInterval) clearInterval(state.autoUpdateInterval);
-    state.autoUpdateInterval = window.setInterval(() => {
-        if (!state.isAppReady || !state.loggedInHandle) return;
-
-        if (state.currentTab === 'notifications') {
-            if (window.scrollY < 100) {
-                updateNotifications();
-            }
-        } else {
-            state.tabStates['notifications'].loaded = false;
-        }
-
-        if (state.currentTab === 'chat') {
-            updateChat();
-        } else {
-            state.tabStates['chat'].loaded = false;
-        }
-    }, 60000);
 }
 
 export async function updateTimeline() {

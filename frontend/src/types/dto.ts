@@ -47,6 +47,7 @@ export interface PostDTO {
     rootAuthorName?: string;
     rootUri: string;
     parentPost: PostDTO | null;
+    rootPost: PostDTO | null;
     repostedBy: string;
     repostedByHandle: string;
     quotePost: PostDTO | null;

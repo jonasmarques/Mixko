@@ -76,11 +76,12 @@
       </section>
 
       <!-- Composer Modal -->
-      <dialog id="compose-modal" aria-labelledby="post-form-title">
+      <dialog id="compose-modal" role="dialog" aria-modal="true" aria-labelledby="post-form-title" aria-describedby="compose-dialog-desc">
         <h2 id="post-form-title" data-i18n="compose.title">Criar Nova Publicação</h2>
+        <span id="compose-dialog-desc" class="sr-only"></span>
         <form id="compose-form" method="dialog">
           <label for="post-text" data-i18n="compose.textLabel">Texto da publicação:</label>
-          <textarea id="post-text" rows="4" required aria-required="true" placeholder="O que está acontecendo?" data-i18n="compose.placeholder"></textarea>
+          <textarea id="post-text" autofocus rows="4" required aria-required="true" placeholder="O que está acontecendo?" data-i18n="compose.placeholder"></textarea>
           <div id="char-counter" style="font-size: 0.85em; color: #555; margin-bottom: 10px;" data-i18n="compose.charsRemainingInitial">300 caracteres restantes</div>
           
           <div id="compose-link-preview" class="hidden" style="margin: 10px 0; border: 1px solid #ccc; padding: 10px; border-radius: 6px; position: relative;"></div>
