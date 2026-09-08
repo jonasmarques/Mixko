@@ -28,6 +28,10 @@ if (helpTab) {
         const modal = document.getElementById('help-modal') as HTMLDialogElement;
         if (modal && !modal.open) {
             modal.showModal();
+            const closeBtn = document.getElementById('btn-close-help') as HTMLElement | null;
+            requestAnimationFrame(() => {
+                closeBtn?.focus();
+            });
         }
     });
 }

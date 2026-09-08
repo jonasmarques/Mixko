@@ -38,10 +38,12 @@ export function openGifPicker(onSelect: (url: string, alt: string) => void) {
     const modal = document.getElementById('gif-picker-modal') as HTMLDialogElement;
     const searchInput = document.getElementById('gif-search-input') as HTMLInputElement;
     if (modal) {
-        modal.showModal();
+        if (!modal.open) modal.showModal();
         if (searchInput) {
             searchInput.value = '';
-            searchInput.focus();
+            requestAnimationFrame(() => {
+                searchInput.focus();
+            });
         }
         loadTrendingGifs();
     }

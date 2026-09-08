@@ -147,28 +147,30 @@
       </dialog>
 
       <!-- Confirm Discard Modal -->
-      <dialog id="confirm-discard-modal" aria-labelledby="confirm-discard-title" style="max-width: 400px; padding: 20px; border-radius: 8px;">
+      <dialog id="confirm-discard-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-discard-title" aria-describedby="confirm-discard-desc" style="max-width: 400px; padding: 20px; border-radius: 8px;">
         <h2 id="confirm-discard-title" data-i18n="compose.confirmDiscardTitle" style="margin-top: 0;">Descartar publicação?</h2>
-        <p data-i18n="compose.confirmDiscardMessage">Deseja realmente fechar e descartar esta publicação?</p>
+        <p id="confirm-discard-desc" data-i18n="compose.confirmDiscardMessage">Deseja realmente fechar e descartar esta publicação?</p>
         <div class="actions" style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
-          <button type="button" id="btn-confirm-discard-no" data-i18n="compose.confirmDiscardNo">Não, continuar editando</button>
+          <button type="button" id="btn-confirm-discard-no" autofocus data-i18n="compose.confirmDiscardNo">Não, continuar editando</button>
           <button type="button" id="btn-confirm-discard-yes" data-i18n="compose.confirmDiscardYes" style="background-color: var(--danger-bg, #d32f2f); color: white;">Sim, descartar</button>
         </div>
       </dialog>
 
       <!-- Profile Picker Modal -->
-      <dialog id="profile-picker-modal" aria-labelledby="profile-picker-title">
+      <dialog id="profile-picker-modal" role="dialog" aria-modal="true" aria-labelledby="profile-picker-title" aria-describedby="profile-picker-desc">
         <h2 id="profile-picker-title" data-i18n="modals.profilePicker">Ir para o perfil de...</h2>
+        <span id="profile-picker-desc" class="sr-only"></span>
         <div id="profile-picker-list" role="menu"></div>
         <button id="btn-close-profile-picker" data-i18n="app.cancel">Cancelar (Esc)</button>
       </dialog>
 
       <!-- Direct Profile Modal -->
-      <dialog id="direct-profile-modal" aria-labelledby="direct-profile-title">
+      <dialog id="direct-profile-modal" role="dialog" aria-modal="true" aria-labelledby="direct-profile-title" aria-describedby="direct-profile-desc">
         <h2 id="direct-profile-title" data-i18n="modals.directProfile">Ir para Perfil</h2>
+        <span id="direct-profile-desc" class="sr-only"></span>
         <form id="direct-profile-form" method="dialog">
           <label for="direct-profile-input" data-i18n="modals.directProfileInput">Digite o handle (ex: alice.bsky.social):</label>
-          <input type="text" id="direct-profile-input" aria-required="true" tabindex="0" />
+          <input type="text" id="direct-profile-input" autofocus aria-required="true" tabindex="0" />
           <div class="actions" style="margin-top: 15px;">
             <button type="button" id="btn-close-direct-profile" data-i18n="app.cancel">Cancelar (Esc)</button>
             <button type="submit" data-i18n="app.go">Ir (Enter)</button>
@@ -177,11 +179,12 @@
       </dialog>
 
       <!-- Edit Profile Modal -->
-      <dialog id="edit-profile-modal" aria-labelledby="edit-profile-title">
+      <dialog id="edit-profile-modal" role="dialog" aria-modal="true" aria-labelledby="edit-profile-title" aria-describedby="edit-profile-desc-sr">
         <h2 id="edit-profile-title" data-i18n="modals.editProfile">Editar Perfil</h2>
+        <span id="edit-profile-desc-sr" class="sr-only"></span>
         <form id="edit-profile-form">
           <label for="edit-profile-name" data-i18n="modals.editName">Nome de Exibição:</label>
-          <input type="text" id="edit-profile-name" aria-required="true" tabindex="0" />
+          <input type="text" id="edit-profile-name" autofocus aria-required="true" tabindex="0" />
           
           <label for="edit-profile-desc" style="margin-top: 10px; display: block;" data-i18n="modals.editDesc">Descrição (Bio):</label>
           <textarea id="edit-profile-desc" rows="4" tabindex="0" style="width: 100%;"></textarea>
@@ -211,10 +214,11 @@
       </dialog>
 
       <!-- Klipy GIF Picker Modal -->
-      <dialog id="gif-picker-modal" aria-labelledby="gif-picker-title">
+      <dialog id="gif-picker-modal" role="dialog" aria-modal="true" aria-labelledby="gif-picker-title" aria-describedby="gif-picker-desc">
         <h2 id="gif-picker-title" data-i18n="modals.gifPicker">Buscar GIF</h2>
+        <span id="gif-picker-desc" class="sr-only"></span>
         <div style="margin-bottom: 10px;">
-           <input type="search" id="gif-search-input" placeholder="Pesquisar GIFs..." data-i18n="modals.gifSearch" style="width: 100%; padding: 8px; box-sizing: border-box;" tabindex="0" />
+           <input type="search" id="gif-search-input" autofocus placeholder="Pesquisar GIFs..." data-i18n="modals.gifSearch" style="width: 100%; padding: 8px; box-sizing: border-box;" tabindex="0" />
         </div>
         <div id="gif-results-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 400px; overflow-y: auto;" tabindex="0">
            <!-- Klipy results will be injected here -->
@@ -365,7 +369,7 @@
         </section>
 
         <!-- Settings -->
-        <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" tabindex="0" class="hidden">
+        <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" class="hidden">
           <h2 data-i18n="settings.title">Configurações</h2>
           <div id="settings-content">
             <form id="settings-form">
@@ -506,36 +510,40 @@
       </div>
 
       <!-- Generic Profiles List Modal -->
-      <dialog id="profiles-list-modal" aria-labelledby="profiles-list-title">
+      <dialog id="profiles-list-modal" role="dialog" aria-modal="true" aria-labelledby="profiles-list-title" aria-describedby="profiles-list-desc">
         <h2 id="profiles-list-title" data-i18n="modals.profilesList">Lista de Perfis</h2>
-        <div id="profiles-list-container" role="list" aria-label="Lista de perfis" data-i18n-aria="modals.profilesList" tabindex="0" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
+        <span id="profiles-list-desc" class="sr-only"></span>
+        <div id="profiles-list-container" role="list" aria-label="Lista de perfis" data-i18n-aria="modals.profilesList" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
         <div class="actions" style="margin-top: 15px;">
           <button type="button" id="btn-close-profiles-list" data-i18n="app.close">Fechar</button>
         </div>
       </dialog>
 
       <!-- Mute Options Modal -->
-      <dialog id="mute-options-modal" aria-labelledby="mute-options-title">
+      <dialog id="mute-options-modal" role="dialog" aria-modal="true" aria-labelledby="mute-options-title" aria-describedby="mute-options-desc">
         <h2 id="mute-options-title" data-i18n="modals.muteOptions">Opções de Silenciar</h2>
-        <div id="mute-options-container" role="list" aria-label="Opções de silenciar" data-i18n-aria="modals.muteOptions" tabindex="0" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
+        <span id="mute-options-desc" class="sr-only"></span>
+        <div id="mute-options-container" role="list" aria-label="Opções de silenciar" data-i18n-aria="modals.muteOptions" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;"></div>
         <div class="actions" style="margin-top: 15px;">
           <button type="button" id="btn-close-mute-options" data-i18n="app.close">Fechar</button>
         </div>
       </dialog>
 
       <!-- Generic Posts List Modal -->
-      <dialog id="posts-list-modal" aria-labelledby="posts-list-title">
+      <dialog id="posts-list-modal" role="dialog" aria-modal="true" aria-labelledby="posts-list-title" aria-describedby="posts-list-desc">
         <h2 id="posts-list-title" data-i18n="modals.postsList">Lista de Posts</h2>
-        <div id="posts-list-container" role="feed" aria-label="Lista de posts" data-i18n-aria="modals.postsList" tabindex="0" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;"></div>
+        <span id="posts-list-desc" class="sr-only"></span>
+        <div id="posts-list-container" role="feed" aria-label="Lista de posts" data-i18n-aria="modals.postsList" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;"></div>
         <div class="actions" style="margin-top: 15px;">
           <button type="button" id="btn-close-posts-list" data-i18n="app.close">Fechar</button>
         </div>
       </dialog>
 
       <!-- Help / Shortcuts Modal -->
-      <dialog id="help-modal" aria-labelledby="help-modal-title">
+      <dialog id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title" aria-describedby="help-modal-desc">
         <h2 id="help-modal-title" data-i18n="help.title">Atalhos de Teclado e Ajuda</h2>
-        <div id="help-shortcuts-list" role="region" aria-label="Lista de atalhos de teclado" data-i18n-aria="modals.helpAria" tabindex="0">
+        <span id="help-modal-desc" class="sr-only"></span>
+        <div id="help-shortcuts-list" role="region" aria-label="Lista de atalhos de teclado" data-i18n-aria="modals.helpAria">
           
           <div class="shortcuts-section">
             <h3 data-i18n="help.sec1Title">Navegação Principal (Abas e Feeds)</h3>
@@ -623,16 +631,16 @@
 
         </div>
         <div class="actions">
-          <button type="button" id="btn-close-help" data-i18n="help.close">Fechar (Esc / Alt+F1)</button>
+          <button type="button" id="btn-close-help" autofocus data-i18n="help.close">Fechar (Esc / Alt+F1)</button>
         </div>
       </dialog>
       <!-- Update Notification Modal -->
-      <dialog id="update-modal" aria-labelledby="update-modal-title" aria-describedby="update-modal-text">
+      <dialog id="update-modal" role="alertdialog" aria-modal="true" aria-labelledby="update-modal-title" aria-describedby="update-modal-text">
         <h2 id="update-modal-title" data-i18n="modals.updateTitle">Nova Atualização Disponível</h2>
         <p id="update-modal-text" style="margin: 15px 0; font-size: 1.05em; line-height: 1.4;"></p>
         <div class="actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
           <button type="button" id="btn-update-ignore" data-i18n="modals.updateIgnore">Ignorar por enquanto</button>
-          <button type="button" id="btn-update-now" style="background-color: var(--primary-bg, #0085ff); color: #fff; font-weight: bold; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;" data-i18n="modals.updateNow">Atualizar agora</button>
+          <button type="button" id="btn-update-now" autofocus style="background-color: var(--primary-bg, #0085ff); color: #fff; font-weight: bold; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;" data-i18n="modals.updateNow">Atualizar agora</button>
         </div>
       </dialog>
 

@@ -369,7 +369,10 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                       console.error("Error loading self-labels:", err);
                     }
 
-                    dialog.showModal();
+                    if (!dialog.open) dialog.showModal();
+                    requestAnimationFrame(() => {
+                      nameInput?.focus();
+                    });
                   } else {
                     switchTab('settings');
                   }

@@ -182,9 +182,12 @@ export function requestCloseComposeModal() {
 
     const confirmModal = document.getElementById('confirm-discard-modal') as HTMLDialogElement;
     if (confirmModal) {
-        confirmModal.showModal();
+        if (!confirmModal.open) confirmModal.showModal();
         const btnYes = document.getElementById('btn-confirm-discard-yes');
         const btnNo = document.getElementById('btn-confirm-discard-no');
+        requestAnimationFrame(() => {
+            (btnNo as HTMLElement | null)?.focus();
+        });
 
         const onYes = () => {
             confirmModal.close();

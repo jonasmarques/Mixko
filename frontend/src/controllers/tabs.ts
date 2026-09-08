@@ -71,6 +71,12 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
           state.currentPosts[state.focusedPostIndex].focus();
       }
   }
+  if (tabId === 'settings') {
+      requestAnimationFrame(() => {
+          const firstSetting = document.getElementById('lang-override-select') as HTMLElement | null;
+          firstSetting?.focus();
+      });
+  }
 }
 
 export function reloadCurrentTab(keepFocus = true) {

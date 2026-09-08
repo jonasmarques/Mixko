@@ -33,8 +33,10 @@ export async function checkAppUpdates() {
                     };
                 }
 
-                modal.showModal();
-                btnNow?.focus();
+                if (!modal.open) modal.showModal();
+                requestAnimationFrame(() => {
+                    btnNow?.focus();
+                });
                 announceAssertive(i18n.t('updater.attention', { latest: res.latestVersion, current: res.currentVersion }));
             }
         }

@@ -97,14 +97,12 @@ function showProfilesModal(title: string, profiles: any[]) {
             }
         }
     };
-    modal.showModal();
+    if (!modal.open) modal.showModal();
     announceAssertive(i18n.t('shortcuts.modalOpen', { title, count: profiles.length.toString() }));
-    const firstItem = container.querySelector('.profile-list-item') as HTMLElement;
-    if (firstItem) {
-        setTimeout(() => firstItem.focus(), 0);
-    } else {
-        setTimeout(() => closeBtn.focus(), 0);
-    }
+    const firstItem = container.querySelector('.profile-list-item') as HTMLElement | null;
+    requestAnimationFrame(() => {
+        (firstItem || closeBtn)?.focus();
+    });
 }
 
 function showPostsModal(title: string, posts: any[]) {
@@ -163,13 +161,15 @@ function showPostsModal(title: string, posts: any[]) {
             }
         }
     };
-    modal.showModal();
+    if (!modal.open) modal.showModal();
     announceAssertive(i18n.t('shortcuts.postsModalOpen', { title, count: posts.length.toString() }));
-    if (modalPosts.length > 0) {
-        setTimeout(() => modalPosts[0].focus(), 0);
-    } else {
-        setTimeout(() => closeBtn.focus(), 0);
-    }
+    requestAnimationFrame(() => {
+        if (modalPosts.length > 0) {
+            modalPosts[0].focus();
+        } else {
+            closeBtn?.focus();
+        }
+    });
 }
 
 interface MuteMenuOption {
@@ -308,10 +308,12 @@ export async function showMuteMenu(did: string, handle: string) {
         }
     };
 
-    modal.showModal();
+    if (!modal.open) modal.showModal();
     announceAssertive(i18n.t('shortcuts.muteMenuOpen', { handle, state: currentState }));
-    const firstItem = container.querySelector('.mute-option-item') as HTMLElement;
-    setTimeout(() => (firstItem || closeBtn).focus(), 0);
+    const firstItem = container.querySelector('.mute-option-item') as HTMLElement | null;
+    requestAnimationFrame(() => {
+        (firstItem || closeBtn)?.focus();
+    });
 }
 
 /**
@@ -413,7 +415,10 @@ export function setupShortcuts() {
             if (modal) {
                 if (!modal.open) {
                     modal.showModal();
-                    document.getElementById('help-shortcuts-list')?.focus();
+                    const closeBtn = document.getElementById('btn-close-help') as HTMLElement | null;
+                    requestAnimationFrame(() => {
+                        closeBtn?.focus();
+                    });
                     announceAssertive(i18n.t('shortcuts.helpOpen'));
                 } else {
                     modal.close();
@@ -438,8 +443,9 @@ export function setupShortcuts() {
                 if (!directProfileModal.open) {
                     directProfileModal.showModal();
                 }
-                directProfileInput.focus();
-                announcePolite(i18n.t('shortcuts.enterHandle'));
+                requestAnimationFrame(() => {
+                    directProfileInput.focus();
+                });
             }
             return;
         }
@@ -964,8 +970,10 @@ export function setupShortcuts() {
                         const closeBtn = document.getElementById('btn-close-profile-picker') as HTMLButtonElement;
                         if (closeBtn) closeBtn.onclick = () => modal.close();
                         
-                        modal.showModal();
-                        if (options.length > 0) options[0].focus();
+                        if (!modal.open) modal.showModal();
+                        requestAnimationFrame(() => {
+                            if (options.length > 0) options[0].focus();
+                        });
                         announcePolite(i18n.t('shortcuts.multipleProfilesFound'));
                     }
                 }

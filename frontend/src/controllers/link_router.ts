@@ -54,9 +54,15 @@ async function routePost(handle: string, rkey: string): Promise<void> {
         }
 
         announcePolite(i18n.t('router.threadLoaded', { count: posts.length.toString() }));
-        modal.showModal();
+        if (!modal.open) modal.showModal();
         const closeBtn = modal.querySelector('#btn-close-posts-list') as HTMLElement | null;
-        closeBtn?.focus();
+        requestAnimationFrame(() => {
+            if (state.currentPosts.length > 0) {
+                state.currentPosts[0]?.focus();
+            } else {
+                closeBtn?.focus();
+            }
+        });
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         announceAssertive(i18n.t('router.errorPost', { msg }));
@@ -102,7 +108,9 @@ async function routeStarterPack(handle: string, rkey: string): Promise<void> {
         const dialog = document.createElement('dialog');
         dialog.className = 'custom-dialog modal-content';
         dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
         dialog.setAttribute('aria-labelledby', 'sp-modal-title');
+        dialog.setAttribute('aria-describedby', 'sp-modal-desc-sr');
         dialog.style.cssText = 'padding:20px; border-radius:8px; border:1px solid var(--border-color,#444); background:var(--bg-color,#1e1e2e); color:var(--text-color,#fff); max-width:440px; width:90%;';
 
         const packs = await window.go.services.SocialService.GetActorStarterPacks(did, '');
@@ -111,7 +119,8 @@ async function routeStarterPack(handle: string, rkey: string): Promise<void> {
         dialog.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <h3 id="sp-modal-title" style="margin:0;">Starter Pack</h3>
-                <button type="button" id="btn-close-sp-modal" style="padding:4px 10px;">${i18n.t('router.close')}</button>
+                <span id="sp-modal-desc-sr" class="sr-only"></span>
+                <button type="button" id="btn-close-sp-modal" autofocus style="padding:4px 10px;">${i18n.t('router.close')}</button>
             </div>
             ${pack ? `
                 <p><strong>${esc(pack.name)}</strong></p>
@@ -128,7 +137,9 @@ async function routeStarterPack(handle: string, rkey: string): Promise<void> {
         const cleanup = () => { dialog.close(); dialog.remove(); };
         closeBtn?.addEventListener('click', cleanup);
         dialog.addEventListener('keydown', (e) => { if (e.key === 'Escape') cleanup(); });
-        closeBtn?.focus();
+        requestAnimationFrame(() => {
+            closeBtn?.focus();
+        });
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         announceAssertive(i18n.t('router.errorStarterPack', { msg }));

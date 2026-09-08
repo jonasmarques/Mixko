@@ -111,7 +111,9 @@ export async function viewListMembers(listUri: string, listName: string) {
         const dialog = document.createElement('dialog');
         dialog.className = 'custom-dialog modal-content';
         dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
         dialog.setAttribute('aria-labelledby', 'list-members-title');
+        dialog.setAttribute('aria-describedby', 'list-members-desc-sr');
         dialog.style.cssText = 'padding:20px; border-radius:8px; border:1px solid var(--border-color, #444); background:var(--bg-color, #1e1e2e); color:var(--text-color, #fff); max-width:500px; width:90%; max-height:80vh; overflow-y:auto;';
 
         let membersHtml = '';
@@ -132,7 +134,8 @@ export async function viewListMembers(listUri: string, listName: string) {
         dialog.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;">
                 <h3 id="list-members-title" style="margin:0;">${i18n.t('lists.listMembersTitle', { name: listName })}</h3>
-                <button type="button" id="btn-close-members-modal" style="padding:4px 10px;">${i18n.t('lists.close')}</button>
+                <span id="list-members-desc-sr" class="sr-only"></span>
+                <button type="button" id="btn-close-members-modal" autofocus style="padding:4px 10px;">${i18n.t('lists.close')}</button>
             </div>
             <div id="members-list-body">${membersHtml}</div>
         `;
@@ -167,7 +170,9 @@ export async function viewListMembers(listUri: string, listName: string) {
         });
 
         dialog.showModal();
-        closeBtn?.focus();
+        requestAnimationFrame(() => {
+            closeBtn?.focus();
+        });
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         announceAssertive(i18n.t('lists.loadMembersError', { msg }));
