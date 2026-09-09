@@ -444,22 +444,16 @@ export function setupSettings() {
         });
     }
 
-    const radioHide = document.getElementById('muted-behavior-hide') as HTMLInputElement | null;
-    const radioWarn = document.getElementById('muted-behavior-warn') as HTMLInputElement | null;
-    if (radioHide && radioWarn) {
-        radioHide.addEventListener('change', () => {
-            if (radioHide.checked) {
-                state.mutedWordsBehavior = 'hide';
-                localStorage.setItem('mutedWordsBehavior', 'hide');
-            }
-        });
-        radioWarn.addEventListener('change', () => {
-            if (radioWarn.checked) {
-                state.mutedWordsBehavior = 'warn';
-                localStorage.setItem('mutedWordsBehavior', 'warn');
-            }
+    const btnCancelSettings = document.getElementById('btn-cancel-settings');
+    if (btnCancelSettings) {
+        btnCancelSettings.addEventListener('click', async (e) => {
+            e.preventDefault();
+            await loadSettings();
+            announcePolite(i18n.t('settingsMsgs.cancelSuccess'));
+            switchTab('timeline');
         });
     }
+
 
     const btnAddLabeler = document.getElementById('btn-add-labeler');
     if (btnAddLabeler) {

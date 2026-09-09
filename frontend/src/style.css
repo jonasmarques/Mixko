@@ -660,4 +660,55 @@ kbd {
   font-weight: 600 !important;
 }
 
+/* Settings Expandable Sections */
+details.settings-group {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+details.settings-group > summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  background-color: var(--button-bg);
+  color: var(--text-color);
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+details.settings-group > summary:hover {
+  background-color: var(--button-hover);
+}
+
+details.settings-group > summary:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: -2px;
+}
+
+details.settings-group > summary h3 {
+  display: inline;
+  margin: 0;
+  font-size: calc(1.15rem * var(--font-scale));
+  vertical-align: middle;
+}
+
+.settings-group-body {
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.btn-cancel {
+  background-color: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.btn-cancel:hover {
+  background-color: var(--button-hover);
+  color: var(--text-color);
+}
+
+
 

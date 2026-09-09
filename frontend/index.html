@@ -373,147 +373,154 @@
           <h2 data-i18n="settings.title">Configurações</h2>
           <div id="settings-content">
             <form id="settings-form">
-              <fieldset>
-                <legend data-i18n="settings.themeTitle">Aparência e Timeline</legend>
-                
-                <div style="margin-bottom: 10px;">
-                  <label for="lang-override-select" data-i18n="settings.langOverride">Idioma do aplicativo:</label>
-                  <select id="lang-override-select">
-                    <option value="" data-i18n="settings.langAuto">Automático</option>
-                    <option value="pt_br">Português (Brasil)</option>
-                    <option value="en_us">English</option>
-                    <option value="es_es">Español</option>
-                  </select>
-                </div>
-
-                <div style="margin-bottom: 10px;">
-                  <label for="theme-select" data-i18n="settings.theme">Tema:</label>
-                  <select id="theme-select">
-                    <option value="system" data-i18n="settings.themeSystem">Padrão do Sistema</option>
-                    <option value="light" data-i18n="settings.themeLight">Claro</option>
-                    <option value="dark" data-i18n="settings.themeDark">Escuro</option>
-                  </select>
-                </div>
-                <div style="margin-bottom: 10px;">
-                  <label for="name-display-format-select" data-i18n="settings.nameFormat">Formato de exibição de nome:</label>
-                  <select id="name-display-format-select">
-                    <option value="name" data-i18n="settings.nameFormatName">Nome de perfil</option>
-                    <option value="nameAndHandle" data-i18n="settings.nameFormatBoth">Nome de perfil + handle</option>
-                    <option value="handle" data-i18n="settings.nameFormatHandle">Só o handle</option>
-                  </select>
-                </div>
-                <div style="margin-bottom: 10px;">
-                  <label for="date-format-select" data-i18n="settings.dateFormat">Formato de Data:</label>
-                  <select id="date-format-select">
-                    <option value="relative" data-i18n="settings.dateRelative">Data Relativa (ex: há 5 minutos)</option>
-                    <option value="exact" data-i18n="settings.dateExact">Data Exata (ex: 27 de julho de 2026 às 22:41)</option>
-                  </select>
-                </div>
-                <div style="margin-bottom: 10px;">
-                  <label for="notification-format-select" data-i18n="settings.notifFormat">Formato de notificação:</label>
-                  <select id="notification-format-select">
-                    <option value="combined" data-i18n="settings.notifCombined">COMBINADO</option>
-                    <option value="individual" data-i18n="settings.notifIndividual">individual</option>
-                  </select>
-                </div>
-                <div style="margin-bottom: 10px;">
-                  <label for="thread-sort-select" data-i18n="settings.threadSort">Ordenação de Threads:</label>
-                  <select id="thread-sort-select">
-                    <option value="oldest" data-i18n="settings.sortOldest">Mais antigas primeiro</option>
-                    <option value="newest" data-i18n="settings.sortNewest">Mais recentes primeiro</option>
-                    <option value="most-likes" data-i18n="settings.sortLikes">Mais curtidas primeiro</option>
-                    <option value="random" data-i18n="settings.sortRandom">Aleatório</option>
-                  </select>
-                </div>
-                <div style="margin-bottom: 10px;">
-                  <label for="font-size-select" data-i18n="settings.fontSize">Tamanho da Fonte (Acessibilidade):</label>
-                  <select id="font-size-select">
-                    <option value="normal" data-i18n="settings.fontNormal">Normal (100%)</option>
-                    <option value="large" data-i18n="settings.fontLarge">Grande (120%)</option>
-                    <option value="x-large" data-i18n="settings.fontXLarge">Muito Grande (140%)</option>
-                    <option value="huge" data-i18n="settings.fontHuge">Máximo (160%)</option>
-                  </select>
-                </div>
-                <div style="margin-bottom: 10px;">
-                  <input type="checkbox" id="setting-hide-replies" />
-                  <label for="setting-hide-replies" data-i18n="settings.hideReplies">Ocultar respostas na Timeline (Alt+R)</label>
-                </div>
-                <div style="margin-bottom: 10px;">
-                  <input type="checkbox" id="setting-prioritize-followed" />
-                  <label for="setting-prioritize-followed" data-i18n="settings.prioritizeFollowed">Priorizar contas que sigo nas respostas</label>
-                </div>
-              </fieldset>
-
-              <fieldset style="margin-top: 15px;">
-                <legend data-i18n="settings.modTitle">Moderação e Filtros</legend>
-                <div style="margin-bottom: 15px;">
-                  <input type="checkbox" id="setting-adult-content" />
-                  <label for="setting-adult-content" data-i18n="settings.adultContent">Mostrar Conteúdo Adulto</label>
-                </div>
-                
-                <label for="muted-word-input"><strong data-i18n="settings.mutedWords">Palavras e Hashtags Silenciadas:</strong></label>
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                  <input type="text" id="muted-word-input" placeholder="Ex: #bbb, política" data-i18n="settings.mutedPlaceholder" />
-                  <button type="button" id="btn-add-muted-word" data-i18n="app.add">Adicionar</button>
-                </div>
-                <ul id="muted-words-list" aria-live="polite" style="list-style: none; padding-left: 0; margin-bottom: 15px;">
-                  <!-- Items will be injected here -->
-                </ul>
-
-                <fieldset style="margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; border-radius: 4px;">
-                  <legend data-i18n="settings.mutedWordsBehavior">Comportamento ao silenciar palavras:</legend>
-                  <div style="margin-bottom: 8px;">
-                    <input type="radio" id="muted-behavior-hide" name="muted-words-behavior" value="hide" checked />
-                    <label for="muted-behavior-hide" data-i18n="settings.mutedWordsHide">Ocultar totalmente do feed</label>
+              <details class="settings-group" open>
+                <summary><h3 data-i18n="settings.themeTitle">Aparência e Timeline</h3></summary>
+                <div class="settings-group-body">
+                  <div style="margin-bottom: 10px;">
+                    <label for="lang-override-select" data-i18n="settings.langOverride">Idioma do aplicativo:</label>
+                    <select id="lang-override-select">
+                      <option value="" data-i18n="settings.langAuto">Automático</option>
+                      <option value="pt_br">Português (Brasil)</option>
+                      <option value="en_us">English</option>
+                      <option value="es_es">Español</option>
+                    </select>
                   </div>
-                  <div>
-                    <input type="radio" id="muted-behavior-warn" name="muted-words-behavior" value="warn" />
-                    <label for="muted-behavior-warn" data-i18n="settings.mutedWordsWarn">Mostrar aviso com opção de exibir</label>
+
+                  <div style="margin-bottom: 10px;">
+                    <label for="theme-select" data-i18n="settings.theme">Tema:</label>
+                    <select id="theme-select">
+                      <option value="system" data-i18n="settings.themeSystem">Padrão do Sistema</option>
+                      <option value="light" data-i18n="settings.themeLight">Claro</option>
+                      <option value="dark" data-i18n="settings.themeDark">Escuro</option>
+                    </select>
                   </div>
-                </fieldset>
-
-                <label><strong data-i18n="settings.contentFilters">Filtros de Conteúdo:</strong></label>
-                <div id="content-filters-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;" data-i18n="app.loading">
-                    Carregando...
+                  <div style="margin-bottom: 10px;">
+                    <label for="name-display-format-select" data-i18n="settings.nameFormat">Formato de exibição de nome:</label>
+                    <select id="name-display-format-select">
+                      <option value="name" data-i18n="settings.nameFormatName">Nome de perfil</option>
+                      <option value="nameAndHandle" data-i18n="settings.nameFormatBoth">Nome de perfil + handle</option>
+                      <option value="handle" data-i18n="settings.nameFormatHandle">Só o handle</option>
+                    </select>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <label for="date-format-select" data-i18n="settings.dateFormat">Formato de Data:</label>
+                    <select id="date-format-select">
+                      <option value="relative" data-i18n="settings.dateRelative">Data Relativa (ex: há 5 minutos)</option>
+                      <option value="exact" data-i18n="settings.dateExact">Data Exata (ex: 27 de julho de 2026 às 22:41)</option>
+                    </select>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <label for="notification-format-select" data-i18n="settings.notifFormat">Formato de notificação:</label>
+                    <select id="notification-format-select">
+                      <option value="combined" data-i18n="settings.notifCombined">COMBINADO</option>
+                      <option value="individual" data-i18n="settings.notifIndividual">individual</option>
+                    </select>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <label for="thread-sort-select" data-i18n="settings.threadSort">Ordenação de Threads:</label>
+                    <select id="thread-sort-select">
+                      <option value="oldest" data-i18n="settings.sortOldest">Mais antigas primeiro</option>
+                      <option value="newest" data-i18n="settings.sortNewest">Mais recentes primeiro</option>
+                      <option value="most-likes" data-i18n="settings.sortLikes">Mais curtidas primeiro</option>
+                      <option value="random" data-i18n="settings.sortRandom">Aleatório</option>
+                    </select>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <label for="font-size-select" data-i18n="settings.fontSize">Tamanho da Fonte (Acessibilidade):</label>
+                    <select id="font-size-select">
+                      <option value="normal" data-i18n="settings.fontNormal">Normal (100%)</option>
+                      <option value="large" data-i18n="settings.fontLarge">Grande (120%)</option>
+                      <option value="x-large" data-i18n="settings.fontXLarge">Muito Grande (140%)</option>
+                      <option value="huge" data-i18n="settings.fontHuge">Máximo (160%)</option>
+                    </select>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <input type="checkbox" id="setting-hide-replies" />
+                    <label for="setting-hide-replies" data-i18n="settings.hideReplies">Ocultar respostas na Timeline (Alt+R)</label>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <input type="checkbox" id="setting-prioritize-followed" />
+                    <label for="setting-prioritize-followed" data-i18n="settings.prioritizeFollowed">Priorizar contas que sigo nas respostas</label>
+                  </div>
                 </div>
+              </details>
 
-                <label style="margin-top: 15px; display: block;"><strong data-i18n="settings.labelers">Rotuladores Assinados (Labelers):</strong></label>
-                <p style="font-size: 0.85em; color: #aaa; margin: 4px 0 8px 0;" data-i18n="settings.labelersDesc">Assine rotuladores para aplicar novos rótulos e políticas de moderação personalizadas da comunidade.</p>
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                  <input type="text" id="subscribe-labeler-input" placeholder="Handle ou DID do rotulador (ex: labeler.bsky.social)" data-i18n="settings.labelerPlaceholder" />
-                  <button type="button" id="btn-add-labeler" data-i18n="settings.addLabeler">Assinar Rotulador</button>
-                </div>
-                <div id="subscribed-labelers-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;" data-i18n="app.loading">
-                    Carregando rotuladores...
-                </div>
-              </fieldset>
+              <details class="settings-group">
+                <summary><h3 data-i18n="settings.modTitle">Moderação e Filtros</h3></summary>
+                <div class="settings-group-body">
+                  <div style="margin-bottom: 15px;">
+                    <input type="checkbox" id="setting-adult-content" />
+                    <label for="setting-adult-content" data-i18n="settings.adultContent">Mostrar Conteúdo Adulto</label>
+                  </div>
+                  
+                  <label for="muted-word-input"><strong data-i18n="settings.mutedWords">Palavras e Hashtags Silenciadas:</strong></label>
+                  <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" id="muted-word-input" placeholder="Ex: #bbb, política" data-i18n="settings.mutedPlaceholder" />
+                    <button type="button" id="btn-add-muted-word" data-i18n="app.add">Adicionar</button>
+                  </div>
+                  <ul id="muted-words-list" aria-live="polite" style="list-style: none; padding-left: 0; margin-bottom: 15px;">
+                    <!-- Items will be injected here -->
+                  </ul>
 
-              <fieldset style="margin-top: 15px;">
-                <legend data-i18n="settings.privacyTitle">Privacidade</legend>
-                
-                <h3 style="margin-top: 0; font-size: 1rem;" data-i18n="settings.mutedUsers">Usuários Silenciados</h3>
-                <div id="muted-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
-                    Carregando...
-                </div>
+                  <fieldset style="margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; border-radius: 4px;">
+                    <legend data-i18n="settings.mutedWordsBehavior">Comportamento ao silenciar palavras:</legend>
+                    <div style="margin-bottom: 8px;">
+                      <input type="radio" id="muted-behavior-hide" name="muted-words-behavior" value="hide" checked />
+                      <label for="muted-behavior-hide" data-i18n="settings.mutedWordsHide">Ocultar totalmente do feed</label>
+                    </div>
+                    <div>
+                      <input type="radio" id="muted-behavior-warn" name="muted-words-behavior" value="warn" />
+                      <label for="muted-behavior-warn" data-i18n="settings.mutedWordsWarn">Mostrar aviso com opção de exibir</label>
+                    </div>
+                  </fieldset>
 
-                <h3 style="font-size: 1rem;" data-i18n="settings.blockedUsers">Usuários Bloqueados</h3>
-                <div id="blocked-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
-                    Carregando...
-                </div>
-              </fieldset>
+                  <label><strong data-i18n="settings.contentFilters">Filtros de Conteúdo:</strong></label>
+                  <div id="content-filters-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;" data-i18n="app.loading">
+                      Carregando...
+                  </div>
 
-              <div class="actions" style="margin-top: 15px;">
-                <fieldset style="margin-top: 15px;">
-                <legend data-i18n="settings.selfLabels">Auto-Rotulagem da Conta (Self Labels)</legend>
-                <p><small data-i18n="settings.selfLabelsDesc">Aplique avisos de conteúdo à sua conta caso publique conteúdo sensível:</small></p>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
-                  <button type="button" class="btn-self-label" data-label="sexually-suggestive" data-i18n="settings.slSexual">Conteúdo Sexualmente Sugestivo</button>
-                  <button type="button" class="btn-self-label" data-label="nudity" data-i18n="settings.slNudity">Nudez</button>
-                  <button type="button" class="btn-self-label" data-label="graphic-media" data-i18n="settings.slGraphic">Mídia Chocante/Violenta</button>
+                  <label style="margin-top: 15px; display: block;"><strong data-i18n="settings.labelers">Rotuladores Assinados (Labelers):</strong></label>
+                  <p style="font-size: 0.85em; color: #aaa; margin: 4px 0 8px 0;" data-i18n="settings.labelersDesc">Assine rotuladores para aplicar novos rótulos e políticas de moderação personalizadas da comunidade.</p>
+                  <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" id="subscribe-labeler-input" placeholder="Handle ou DID do rotulador (ex: labeler.bsky.social)" data-i18n="settings.labelerPlaceholder" />
+                    <button type="button" id="btn-add-labeler" data-i18n="settings.addLabeler">Assinar Rotulador</button>
+                  </div>
+                  <div id="subscribed-labelers-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;" data-i18n="app.loading">
+                      Carregando rotuladores...
+                  </div>
                 </div>
-              </fieldset>
+              </details>
 
-              <button type="submit" style="margin-top: 20px;" data-i18n="settings.save">Salvar Configurações</button>
+              <details class="settings-group">
+                <summary><h3 data-i18n="settings.privacyTitle">Privacidade</h3></summary>
+                <div class="settings-group-body">
+                  <h4 style="margin-top: 0; font-size: 1rem;" data-i18n="settings.mutedUsers">Usuários Silenciados</h4>
+                  <div id="muted-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
+                      Carregando...
+                  </div>
+
+                  <h4 style="font-size: 1rem;" data-i18n="settings.blockedUsers">Usuários Bloqueados</h4>
+                  <div id="blocked-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
+                      Carregando...
+                  </div>
+                </div>
+              </details>
+
+              <details class="settings-group">
+                <summary><h3 data-i18n="settings.selfLabels">Auto-Rotulagem da Conta (Self Labels)</h3></summary>
+                <div class="settings-group-body">
+                  <p><small data-i18n="settings.selfLabelsDesc">Aplique avisos de conteúdo à sua conta caso publique conteúdo sensível:</small></p>
+                  <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                    <button type="button" class="btn-self-label" data-label="sexually-suggestive" data-i18n="settings.slSexual">Conteúdo Sexualmente Sugestivo</button>
+                    <button type="button" class="btn-self-label" data-label="nudity" data-i18n="settings.slNudity">Nudez</button>
+                    <button type="button" class="btn-self-label" data-label="graphic-media" data-i18n="settings.slGraphic">Mídia Chocante/Violenta</button>
+                  </div>
+                </div>
+              </details>
+
+              <div class="actions" style="margin-top: 20px; display: flex; gap: 10px; align-items: center;">
+                <button type="submit" id="btn-save-settings" data-i18n="settings.save">Salvar Configurações</button>
+                <button type="button" id="btn-cancel-settings" class="btn-cancel" data-i18n="settings.cancel">Cancelar</button>
               </div>
             </form>
           </div>
