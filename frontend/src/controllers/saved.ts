@@ -50,8 +50,10 @@ export async function loadSavedPosts(loadMore = false, keepFocus = false) {
       
       if (!state.currentPosts.some(el => el.dataset.uri === p.uri)) {
         const article = createPostArticle(p, state.currentPosts.length);
-        container.appendChild(article);
-        state.currentPosts.push(article);
+        if (article) {
+          container.appendChild(article);
+          state.currentPosts.push(article);
+        }
       }
     });
 

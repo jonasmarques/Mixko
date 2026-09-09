@@ -265,6 +265,7 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
            } : undefined)
         };
         const article = createPostArticle(mockPost, idx, true, notif.reason);
+        if (!article) return;
 
         // Identity for focus restore. A row's uri is the subject post, which
         // every like and repost of it shares, so it cannot tell rows apart. In

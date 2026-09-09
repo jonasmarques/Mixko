@@ -458,8 +458,8 @@ export async function openChatConvo(convoId: string, members?: string, silent = 
             const embedEl = document.getElementById(embedContainerId);
             if (embedEl && postRes && postRes.posts && postRes.posts.length > 0) {
               embedEl.innerHTML = '';
-              const article = createPostArticle(postRes.posts[0], 0);
-              embedEl.appendChild(article);
+              const article = createPostArticle(postRes.posts[0], 0, false, "", true);
+              if (article) embedEl.appendChild(article);
             } else if (embedEl) {
               embedEl.innerHTML = `<strong>${i18n.t('chat.attachedLink')}</strong> ${linkify(targetEmbedUri)}`;
             }

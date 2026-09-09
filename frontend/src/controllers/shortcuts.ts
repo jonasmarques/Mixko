@@ -123,8 +123,8 @@ function showPostsModal(title: string, posts: any[]) {
         container.innerHTML = `<p role="alert">${i18n.t('shortcuts.noPostsFound')}</p>`;
     } else {
         posts.forEach((p, i) => {
-            const article = createPostArticle(p, i);
-            container.appendChild(article);
+            const article = createPostArticle(p, i, false, "", true);
+            if (article) container.appendChild(article);
         });
     }
     

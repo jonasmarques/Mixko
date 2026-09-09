@@ -460,6 +460,18 @@
                   <!-- Items will be injected here -->
                 </ul>
 
+                <fieldset style="margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; border-radius: 4px;">
+                  <legend data-i18n="settings.mutedWordsBehavior">Comportamento ao silenciar palavras:</legend>
+                  <div style="margin-bottom: 8px;">
+                    <input type="radio" id="muted-behavior-hide" name="muted-words-behavior" value="hide" checked />
+                    <label for="muted-behavior-hide" data-i18n="settings.mutedWordsHide">Ocultar totalmente do feed</label>
+                  </div>
+                  <div>
+                    <input type="radio" id="muted-behavior-warn" name="muted-words-behavior" value="warn" />
+                    <label for="muted-behavior-warn" data-i18n="settings.mutedWordsWarn">Mostrar aviso com opção de exibir</label>
+                  </div>
+                </fieldset>
+
                 <label><strong data-i18n="settings.contentFilters">Filtros de Conteúdo:</strong></label>
                 <div id="content-filters-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 10px; margin-top: 5px;" data-i18n="app.loading">
                     Carregando...

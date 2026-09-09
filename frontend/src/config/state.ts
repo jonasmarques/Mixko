@@ -28,6 +28,7 @@ export const state = {
     feedsTabMode: 'saved' as 'saved' | 'lists' | 'discover' | 'trending',
     profileTabMode: 'posts' as 'posts' | 'replies' | 'media' | 'likes' | 'lists' | 'starterPacks' | 'followers' | 'following',
     mutedWordsCache: [] as string[],
+    mutedWordsBehavior: 'hide' as 'hide' | 'warn',
     adultContentCache: false,
     dateFormat: 'relative' as 'relative' | 'exact',
     nameDisplayFormat: 'name' as 'name' | 'nameAndHandle' | 'handle',

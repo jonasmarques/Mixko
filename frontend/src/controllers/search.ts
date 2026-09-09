@@ -47,8 +47,10 @@ export function setupSearch() {
                     if (res && res.posts && res.posts.length > 0) {
                         res.posts.forEach((post: any) => {
                             const article = createPostArticle(post, state.currentPosts.length);
-                            container.appendChild(article);
-                            state.currentPosts.push(article);
+                            if (article) {
+                                container.appendChild(article);
+                                state.currentPosts.push(article);
+                            }
                         });
                         announcePolite(i18n.t('search.postsFound', { count: res.posts.length.toString() }));
                     } else {

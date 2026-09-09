@@ -47,9 +47,11 @@ async function routePost(handle: string, rkey: string): Promise<void> {
             container.innerHTML = `<p>${i18n.t('router.postNotFound')}</p>`;
         } else {
             posts.forEach((post, idx: number) => {
-                const article = createPostArticle(post, idx);
-                container.appendChild(article);
-                state.currentPosts.push(article);
+                const article = createPostArticle(post, idx, false, "", true);
+                if (article) {
+                    container.appendChild(article);
+                    state.currentPosts.push(article);
+                }
             });
         }
 

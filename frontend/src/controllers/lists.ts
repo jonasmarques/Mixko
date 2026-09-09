@@ -207,10 +207,12 @@ export async function viewListFeed(listUri: string, listName: string, targetCont
         state.currentPosts = [];
 
         if (res && res.posts && res.posts.length > 0) {
-            res.posts.forEach((post, idx: number) => {
-                const article = createPostArticle(post, idx);
-                feedContainer.appendChild(article);
-                state.currentPosts.push(article);
+            res.posts.forEach((post) => {
+                const article = createPostArticle(post, state.currentPosts.length);
+                if (article) {
+                    feedContainer.appendChild(article);
+                    state.currentPosts.push(article);
+                }
             });
             announcePolite(i18n.t('lists.listFeedLoaded', { count: res.posts.length.toString() }));
         } else {

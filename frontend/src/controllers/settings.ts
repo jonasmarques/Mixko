@@ -104,6 +104,18 @@ export function loadLocalSettings() {
     const savedNotifFormat = (localStorage.getItem('notificationFormat') as 'combined' | 'individual') || 'combined';
     state.notificationFormat = savedNotifFormat;
     if (notificationFormatSelect) notificationFormatSelect.value = savedNotifFormat;
+
+    const savedMutedBehavior = (localStorage.getItem('mutedWordsBehavior') as 'hide' | 'warn') || 'hide';
+    state.mutedWordsBehavior = savedMutedBehavior;
+    const radioHide = document.getElementById('muted-behavior-hide') as HTMLInputElement | null;
+    const radioWarn = document.getElementById('muted-behavior-warn') as HTMLInputElement | null;
+    if (radioHide && radioWarn) {
+        if (savedMutedBehavior === 'warn') {
+            radioWarn.checked = true;
+        } else {
+            radioHide.checked = true;
+        }
+    }
 }
 
 export async function loadSettings() {
@@ -371,6 +383,11 @@ export function setupSettings() {
 
                 await window.go.services.SocialService.UpdateAllPreferences(threadSort, adultContent, mutedWords, filtersToSave);
 
+                const radioWarn = document.getElementById('muted-behavior-warn') as HTMLInputElement | null;
+                const selectedBehavior: 'hide' | 'warn' = radioWarn && radioWarn.checked ? 'warn' : 'hide';
+                localStorage.setItem('mutedWordsBehavior', selectedBehavior);
+                state.mutedWordsBehavior = selectedBehavior;
+
                 state.tabStates['timeline'].loaded = false;
                 state.tabStates['notifications'].loaded = false;
                 state.tabStates['feeds'].loaded = false;
@@ -423,6 +440,23 @@ export function setupSettings() {
                 e.preventDefault();
                 e.stopPropagation();
                 handleAddMutedWords();
+            }
+        });
+    }
+
+    const radioHide = document.getElementById('muted-behavior-hide') as HTMLInputElement | null;
+    const radioWarn = document.getElementById('muted-behavior-warn') as HTMLInputElement | null;
+    if (radioHide && radioWarn) {
+        radioHide.addEventListener('change', () => {
+            if (radioHide.checked) {
+                state.mutedWordsBehavior = 'hide';
+                localStorage.setItem('mutedWordsBehavior', 'hide');
+            }
+        });
+        radioWarn.addEventListener('change', () => {
+            if (radioWarn.checked) {
+                state.mutedWordsBehavior = 'warn';
+                localStorage.setItem('mutedWordsBehavior', 'warn');
             }
         });
     }

@@ -214,7 +214,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 pinnedHeader.innerHTML = i18n.t('profile.pinnedPost');
                 const pinnedArticle = createPostArticle(pinnedRes.posts[0], state.currentPosts.length);
                 const profileContentDiv = document.getElementById('profile-content');
-                if (profileContentDiv) {
+                if (pinnedArticle && profileContentDiv) {
                   profileContentDiv.appendChild(pinnedHeader);
                   profileContentDiv.appendChild(pinnedArticle);
                   state.currentPosts.push(pinnedArticle);
@@ -392,8 +392,10 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             feedRes.posts.forEach((post) => {
                 if (!state.currentPosts.some(p => p.dataset.uri === post.uri)) {
                     const article = createPostArticle(post, state.currentPosts.length);
-                    contentContainer.appendChild(article);
-                    state.currentPosts.push(article);
+                    if (article) {
+                        contentContainer.appendChild(article);
+                        state.currentPosts.push(article);
+                    }
                 }
             });
             state.profileCursor = feedRes.cursor;
@@ -404,8 +406,10 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             feedRes.posts.forEach((post) => {
                 if (!state.currentPosts.some(p => p.dataset.uri === post.uri)) {
                     const article = createPostArticle(post, state.currentPosts.length);
-                    contentContainer.appendChild(article);
-                    state.currentPosts.push(article);
+                    if (article) {
+                        contentContainer.appendChild(article);
+                        state.currentPosts.push(article);
+                    }
                 }
             });
             state.profileCursor = feedRes.cursor;

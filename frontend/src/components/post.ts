@@ -248,7 +248,13 @@ export function cleanupContainerVideos(container: HTMLElement): void {
   videos.forEach(v => forgetVideo(v));
 }
 
-export function createPostArticle(post: PostView, index: number, isNotification = false, notifReason = ""): HTMLElement {
+export function createPostArticle(
+  post: PostView,
+  index: number,
+  isNotification = false,
+  notifReason = "",
+  forceWarning = false
+): HTMLElement | null {
   const article = document.createElement('article');
   article.setAttribute('role', 'article');
   article.setAttribute('tabindex', '0');
@@ -553,6 +559,9 @@ export function createPostArticle(post: PostView, index: number, isNotification 
   `;
 
   if (postHasMutedWord) {
+      if (state.mutedWordsBehavior === 'hide' && !forceWarning && !isNotification) {
+          return null;
+      }
       article.dataset.mutedWord = triggeredMutedWord;
       article.dataset.mutedShown = "false";
       article.innerHTML = `

@@ -44,28 +44,34 @@ async function fetchTimelinePage(container: HTMLDivElement): Promise<number> {
               if (idx === 0 && !post.repostedBy) {
                   if (post.rootPost && !state.currentPosts.some(p => p.dataset.uri === post.rootPost.uri)) {
                       const rootArticle = createPostArticle(post.rootPost, state.currentPosts.length);
-                      rootArticle.classList.add('thread-parent');
-                      container.appendChild(rootArticle);
-                      state.currentPosts.push(rootArticle);
-                      addedCount++;
+                      if (rootArticle) {
+                          rootArticle.classList.add('thread-parent');
+                          container.appendChild(rootArticle);
+                          state.currentPosts.push(rootArticle);
+                          addedCount++;
+                      }
                   }
 
                   if (post.parentPost &&
                       (!post.rootPost || post.parentPost.uri !== post.rootPost.uri) &&
                       !state.currentPosts.some(p => p.dataset.uri === post.parentPost.uri)) {
                       const parentArticle = createPostArticle(post.parentPost, state.currentPosts.length);
-                      parentArticle.classList.add('thread-child');
-                      container.appendChild(parentArticle);
-                      state.currentPosts.push(parentArticle);
-                      addedCount++;
+                      if (parentArticle) {
+                          parentArticle.classList.add('thread-child');
+                          container.appendChild(parentArticle);
+                          state.currentPosts.push(parentArticle);
+                          addedCount++;
+                      }
                   }
               }
 
               const article = createPostArticle(post, state.currentPosts.length);
-              if (post.rootPost || post.parentPost || idx > 0) article.classList.add('thread-child');
-              container.appendChild(article);
-              state.currentPosts.push(article);
-              addedCount++;
+              if (article) {
+                  if (post.rootPost || post.parentPost || idx > 0) article.classList.add('thread-child');
+                  container.appendChild(article);
+                  state.currentPosts.push(article);
+                  addedCount++;
+              }
           }
       });
   });
