@@ -196,3 +196,96 @@ func TestPutActivitySubscription(t *testing.T) {
 	}
 }
 
+func TestGetNotificationPreferences(t *testing.T) {
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/app.bsky.notification.getPreferences":
+			w.Write([]byte(`{
+				"preferences": {
+					"like": {"include": "follows", "list": true, "push": false},
+					"repost": {"include": "all", "list": false, "push": true},
+					"chat": {"include": "accepted", "push": true},
+					"subscribedPost": {"list": true, "push": true}
+				}
+			}`))
+		case "/xrpc/app.bsky.notification.listNotifications":
+			w.Write([]byte(`{"notifications":[],"priority":true}`))
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			w.Write([]byte(`{}`))
+		}
+	})
+
+	svc := NewNotificationsService(mgr)
+	prefs, err := svc.GetNotificationPreferences()
+	if err != nil {
+		t.Fatalf("GetNotificationPreferences failed: %v", err)
+	}
+	if prefs == nil {
+		t.Fatal("expected non-nil prefs")
+	}
+	if !prefs.Priority {
+		t.Errorf("priority = %v, want true", prefs.Priority)
+	}
+	if prefs.Like.Include != "follows" || !prefs.Like.List || prefs.Like.Push {
+		t.Errorf("like = %+v, want follows/true/false", prefs.Like)
+	}
+	if prefs.Repost.Include != "all" || prefs.Repost.List || !prefs.Repost.Push {
+		t.Errorf("repost = %+v, want all/false/true", prefs.Repost)
+	}
+	if prefs.Chat.Include != "accepted" || !prefs.Chat.Push {
+		t.Errorf("chat = %+v, want accepted/true", prefs.Chat)
+	}
+	if !prefs.SubscribedPost.List || !prefs.SubscribedPost.Push {
+		t.Errorf("subscribedPost = %+v, want true/true", prefs.SubscribedPost)
+	}
+}
+
+func TestPutNotificationPreferences(t *testing.T) {
+	var gotV2Body map[string]interface{}
+	var gotPriorityBody map[string]interface{}
+
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/app.bsky.notification.putPreferencesV2":
+			if err := json.NewDecoder(r.Body).Decode(&gotV2Body); err != nil {
+				t.Errorf("failed to decode v2 body: %v", err)
+			}
+			w.Write([]byte(`{"preferences":{}}`))
+		case "/xrpc/app.bsky.notification.putPreferences":
+			if err := json.NewDecoder(r.Body).Decode(&gotPriorityBody); err != nil {
+				t.Errorf("failed to decode priority body: %v", err)
+			}
+			w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			w.Write([]byte(`{}`))
+		}
+	})
+
+	svc := NewNotificationsService(mgr)
+	input := &NotificationPreferencesDTO{
+		Priority: true,
+		Like:     &NotificationFilterablePrefDTO{Include: "follows", List: true, Push: false},
+		Repost:   &NotificationFilterablePrefDTO{Include: "all", List: true, Push: true},
+		Chat:     &NotificationChatPrefDTO{Include: "accepted", Push: true},
+	}
+	res, err := svc.PutNotificationPreferences(input)
+	if err != nil {
+		t.Fatalf("PutNotificationPreferences failed: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if gotPriorityBody["priority"] != true {
+		t.Errorf("got priority %v, want true", gotPriorityBody["priority"])
+	}
+	likeMap, ok := gotV2Body["like"].(map[string]interface{})
+	if !ok || likeMap["include"] != "follows" {
+		t.Errorf("got like in v2 %v, want include follows", gotV2Body["like"])
+	}
+}
+
+

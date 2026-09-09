@@ -172,6 +172,39 @@ export interface NotificationListDTO {
     notifications: NotificationDTO[] | null;
 }
 
+export interface NotificationFilterablePrefDTO {
+    include: string;
+    list: boolean;
+    push: boolean;
+}
+
+export interface NotificationChatPrefDTO {
+    include: string;
+    push: boolean;
+}
+
+export interface NotificationSimplePrefDTO {
+    list: boolean;
+    push: boolean;
+}
+
+export interface NotificationPreferencesDTO {
+    priority: boolean;
+    chat: NotificationChatPrefDTO;
+    follow: NotificationFilterablePrefDTO;
+    like: NotificationFilterablePrefDTO;
+    likeViaRepost: NotificationFilterablePrefDTO;
+    mention: NotificationFilterablePrefDTO;
+    quote: NotificationFilterablePrefDTO;
+    reply: NotificationFilterablePrefDTO;
+    repost: NotificationFilterablePrefDTO;
+    repostViaRepost: NotificationFilterablePrefDTO;
+    starterpackJoined: NotificationSimplePrefDTO;
+    subscribedPost: NotificationSimplePrefDTO;
+    unverified: NotificationSimplePrefDTO;
+    verified: NotificationSimplePrefDTO;
+}
+
 export interface SavedFeedDTO {
     uri: string;
     cid: string;

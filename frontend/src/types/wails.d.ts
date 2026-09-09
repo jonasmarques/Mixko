@@ -5,6 +5,7 @@ import type {
   FeedDTO,
   MuteScopeDTO,
   NotificationListDTO,
+  NotificationPreferencesDTO,
   PostDTO,
   PostRefDTO,
   ProfileDTO,
@@ -61,6 +62,8 @@ declare global {
           GetNotifications(cursor: string): Promise<NotificationListDTO>;
           UpdateSeen(seenAt: string): Promise<void>;
           PutActivitySubscription(subject: string, post: boolean, reply: boolean): Promise<ActivitySubscriptionDTO>;
+          GetNotificationPreferences(): Promise<NotificationPreferencesDTO>;
+          PutNotificationPreferences(prefs: NotificationPreferencesDTO): Promise<NotificationPreferencesDTO>;
         };
         SocialService: {
           GetProfile(actor: string): Promise<ProfileDTO>;

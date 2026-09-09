@@ -518,6 +518,215 @@
                 </div>
               </details>
 
+              <details class="settings-group" id="settings-group-notifications">
+                <summary><h3 data-i18n="settings.notifTitle">Controles e Filtros de Notificações</h3></summary>
+                <div class="settings-group-body">
+                  <p style="margin-top: 0; color: var(--text-muted);" data-i18n="settings.notifDesc">Configure quais notificações você recebe na lista e por push, além de quem pode gerá-las.</p>
+
+                  <div class="notif-pref-card notif-priority-card" style="margin-bottom: 15px;">
+                    <label for="notif-pref-priority" style="display: flex; align-items: center; gap: 8px; font-weight: bold; cursor: pointer;">
+                      <input type="checkbox" id="notif-pref-priority" />
+                      <span data-i18n="settings.notifPriority">Filtro de notificações prioritárias</span>
+                    </label>
+                    <p style="margin: 4px 0 0 28px; font-size: 0.9em; color: var(--text-muted);" data-i18n="settings.notifPriorityDesc">Quando ativado, exibe na lista de notificações apenas interações prioritárias ou de pessoas que você segue.</p>
+                  </div>
+
+                  <div class="notif-prefs-list" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div class="notif-pref-card" data-key="like">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifLike">Curtidas</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-like" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-like" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-like">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="repost">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifRepost">Reposts</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-repost" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-repost" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-repost">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="reply">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifReply">Respostas</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-reply" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-reply" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-reply">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="mention">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifMention">Menções</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-mention" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-mention" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-mention">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="quote">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifQuote">Citações</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-quote" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-quote" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-quote">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="follow">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifFollow">Novos Seguidores</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-follow" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-follow" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-follow">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="likeViaRepost">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifLikeViaRepost">Curtidas em seus Reposts</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-likeViaRepost" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-likeViaRepost" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-likeViaRepost">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="repostViaRepost">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifRepostViaRepost">Reposts de seus Reposts</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-repostViaRepost" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-repostViaRepost" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-repostViaRepost">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="follows" data-i18n="settings.notifFromFollows">Pessoas que sigo</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="chat">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifChat">Mensagens Diretas (DMs)</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-push-chat" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                          <label>
+                            <span data-i18n="settings.notifFromLabel">Notificar de:</span>
+                            <select id="notif-include-chat">
+                              <option value="all" data-i18n="settings.notifFromAll">Todos</option>
+                              <option value="accepted" data-i18n="settings.notifFromAccepted">Conversas aceitas</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="subscribedPost">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifSubscribedPost">Publicações de Contas Assinadas</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-subscribedPost" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-subscribedPost" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="starterpackJoined">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifStarterpackJoined">Entrada em Pacotes Iniciais</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-starterpackJoined" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-starterpackJoined" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="verified">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifVerified">Contas Verificadas</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-verified" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-verified" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="notif-pref-card" data-key="unverified">
+                      <div class="notif-pref-row">
+                        <strong data-i18n="settings.notifUnverified">Contas Não Verificadas</strong>
+                        <div class="notif-pref-toggles">
+                          <label><input type="checkbox" id="notif-list-unverified" /> <span data-i18n="settings.notifListLabel">Na lista</span></label>
+                          <label><input type="checkbox" id="notif-push-unverified" /> <span data-i18n="settings.notifPushLabel">Push</span></label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
               <div class="actions" style="margin-top: 20px; display: flex; gap: 10px; align-items: center;">
                 <button type="submit" id="btn-save-settings" data-i18n="settings.save">Salvar Configurações</button>
                 <button type="button" id="btn-cancel-settings" class="btn-cancel" data-i18n="settings.cancel">Cancelar</button>

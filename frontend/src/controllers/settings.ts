@@ -4,6 +4,97 @@ import { announcePolite, announceAssertive, getPostAccessibleLabel } from '../ut
 import { confirmDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
 import { i18n } from '../utils/i18n';
+import { NotificationPreferencesDTO, NotificationFilterablePrefDTO, NotificationSimplePrefDTO } from '../types/dto';
+
+type FilterableKey = 'like' | 'repost' | 'reply' | 'mention' | 'quote' | 'follow' | 'likeViaRepost' | 'repostViaRepost';
+type SimpleKey = 'subscribedPost' | 'starterpackJoined' | 'verified' | 'unverified';
+
+const FILTERABLE_KEYS: FilterableKey[] = [
+    'like', 'repost', 'reply', 'mention', 'quote', 'follow', 'likeViaRepost', 'repostViaRepost'
+];
+
+const SIMPLE_KEYS: SimpleKey[] = [
+    'subscribedPost', 'starterpackJoined', 'verified', 'unverified'
+];
+
+export function populateNotificationPreferences(prefs: NotificationPreferencesDTO): void {
+    const priorityCheckbox = document.getElementById('notif-pref-priority') as HTMLInputElement | null;
+    if (priorityCheckbox) {
+        priorityCheckbox.checked = Boolean(prefs.priority);
+    }
+
+    FILTERABLE_KEYS.forEach(key => {
+        const pref = prefs[key];
+        const listEl = document.getElementById(`notif-list-${key}`) as HTMLInputElement | null;
+        const pushEl = document.getElementById(`notif-push-${key}`) as HTMLInputElement | null;
+        const includeEl = document.getElementById(`notif-include-${key}`) as HTMLSelectElement | null;
+        if (listEl && pref) listEl.checked = Boolean(pref.list);
+        if (pushEl && pref) pushEl.checked = Boolean(pref.push);
+        if (includeEl && pref) includeEl.value = pref.include || 'all';
+    });
+
+    const chatPref = prefs.chat;
+    const chatPushEl = document.getElementById('notif-push-chat') as HTMLInputElement | null;
+    const chatIncludeEl = document.getElementById('notif-include-chat') as HTMLSelectElement | null;
+    if (chatPushEl && chatPref) chatPushEl.checked = Boolean(chatPref.push);
+    if (chatIncludeEl && chatPref) chatIncludeEl.value = chatPref.include || 'all';
+
+    SIMPLE_KEYS.forEach(key => {
+        const pref = prefs[key];
+        const listEl = document.getElementById(`notif-list-${key}`) as HTMLInputElement | null;
+        const pushEl = document.getElementById(`notif-push-${key}`) as HTMLInputElement | null;
+        if (listEl && pref) listEl.checked = Boolean(pref.list);
+        if (pushEl && pref) pushEl.checked = Boolean(pref.push);
+    });
+}
+
+export function getNotificationPreferencesFromDOM(): NotificationPreferencesDTO {
+    const priorityCheckbox = document.getElementById('notif-pref-priority') as HTMLInputElement | null;
+    const priority = priorityCheckbox ? priorityCheckbox.checked : false;
+
+    const chatPushEl = document.getElementById('notif-push-chat') as HTMLInputElement | null;
+    const chatIncludeEl = document.getElementById('notif-include-chat') as HTMLSelectElement | null;
+
+    const readFilterable = (key: FilterableKey): NotificationFilterablePrefDTO => {
+        const listEl = document.getElementById(`notif-list-${key}`) as HTMLInputElement | null;
+        const pushEl = document.getElementById(`notif-push-${key}`) as HTMLInputElement | null;
+        const includeEl = document.getElementById(`notif-include-${key}`) as HTMLSelectElement | null;
+        return {
+            list: listEl ? listEl.checked : true,
+            push: pushEl ? pushEl.checked : true,
+            include: includeEl ? includeEl.value : 'all',
+        };
+    };
+
+    const readSimple = (key: SimpleKey): NotificationSimplePrefDTO => {
+        const listEl = document.getElementById(`notif-list-${key}`) as HTMLInputElement | null;
+        const pushEl = document.getElementById(`notif-push-${key}`) as HTMLInputElement | null;
+        return {
+            list: listEl ? listEl.checked : true,
+            push: pushEl ? pushEl.checked : true,
+        };
+    };
+
+    return {
+        priority,
+        chat: {
+            push: chatPushEl ? chatPushEl.checked : true,
+            include: chatIncludeEl ? chatIncludeEl.value : 'all',
+        },
+        like: readFilterable('like'),
+        repost: readFilterable('repost'),
+        reply: readFilterable('reply'),
+        mention: readFilterable('mention'),
+        quote: readFilterable('quote'),
+        follow: readFilterable('follow'),
+        likeViaRepost: readFilterable('likeViaRepost'),
+        repostViaRepost: readFilterable('repostViaRepost'),
+        subscribedPost: readSimple('subscribedPost'),
+        starterpackJoined: readSimple('starterpackJoined'),
+        verified: readSimple('verified'),
+        unverified: readSimple('unverified'),
+    };
+}
 
 const STANDARD_LABELS = ['nsfw', 'porn', 'sexual', 'nudity', 'graphic-media', 'gore', 'spam'];
 
@@ -251,6 +342,15 @@ export async function loadSettings() {
             }
         }
 
+        try {
+            const notifPrefs = await window.go.services.NotificationsService.GetNotificationPreferences();
+            if (notifPrefs) {
+                populateNotificationPreferences(notifPrefs);
+            }
+        } catch (notifErr) {
+            console.error("Error loading notification preferences:", notifErr);
+        }
+
         state.tabStates['settings'].loaded = true;
     } catch (err) {
         console.error(err);
@@ -382,6 +482,9 @@ export function setupSettings() {
                 });
 
                 await window.go.services.SocialService.UpdateAllPreferences(threadSort, adultContent, mutedWords, filtersToSave);
+
+                const notifPrefs = getNotificationPreferencesFromDOM();
+                await window.go.services.NotificationsService.PutNotificationPreferences(notifPrefs);
 
                 const radioWarn = document.getElementById('muted-behavior-warn') as HTMLInputElement | null;
                 const selectedBehavior: 'hide' | 'warn' = radioWarn && radioWarn.checked ? 'warn' : 'hide';

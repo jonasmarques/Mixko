@@ -763,3 +763,66 @@ input[type="radio"] {
   color: var(--text-color);
   font-weight: bold;
 }
+
+/* Notification Preferences Styling */
+.notif-priority-card {
+  padding: 14px 16px;
+  background-color: var(--button-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.notif-pref-card {
+  padding: 12px 16px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.notif-pref-card:hover {
+  border-color: var(--primary-bg);
+}
+
+.notif-pref-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.notif-pref-row strong {
+  font-size: calc(1rem * var(--font-scale));
+  color: var(--text-color);
+  flex: 1 1 200px;
+}
+
+.notif-pref-toggles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.notif-pref-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(0.95rem * var(--font-scale));
+  color: var(--text-color);
+  cursor: pointer;
+  margin: 0;
+}
+
+.notif-pref-toggles select {
+  width: auto;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: calc(0.9rem * var(--font-scale));
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-panel);
+  color: var(--text-color);
+}
+

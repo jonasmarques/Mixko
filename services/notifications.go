@@ -249,3 +249,166 @@ func (s *NotificationsService) PutActivitySubscription(subject string, post bool
 	return out, err
 }
 
+func mapFilterablePrefToDTO(pref *bsky.NotificationDefs_FilterablePreference) *NotificationFilterablePrefDTO {
+	if pref == nil {
+		return &NotificationFilterablePrefDTO{Include: "all", List: true, Push: true}
+	}
+	include := pref.Include
+	if include == "" {
+		include = "all"
+	}
+	return &NotificationFilterablePrefDTO{
+		Include: include,
+		List:    pref.List,
+		Push:    pref.Push,
+	}
+}
+
+func mapChatPrefToDTO(pref *bsky.NotificationDefs_ChatPreference) *NotificationChatPrefDTO {
+	if pref == nil {
+		return &NotificationChatPrefDTO{Include: "all", Push: true}
+	}
+	include := pref.Include
+	if include == "" {
+		include = "all"
+	}
+	return &NotificationChatPrefDTO{
+		Include: include,
+		Push:    pref.Push,
+	}
+}
+
+func mapSimplePrefToDTO(pref *bsky.NotificationDefs_Preference) *NotificationSimplePrefDTO {
+	if pref == nil {
+		return &NotificationSimplePrefDTO{List: true, Push: true}
+	}
+	return &NotificationSimplePrefDTO{
+		List: pref.List,
+		Push: pref.Push,
+	}
+}
+
+func mapDTOToFilterablePref(dto *NotificationFilterablePrefDTO) *bsky.NotificationDefs_FilterablePreference {
+	if dto == nil {
+		return nil
+	}
+	include := dto.Include
+	if include == "" {
+		include = "all"
+	}
+	return &bsky.NotificationDefs_FilterablePreference{
+		Include: include,
+		List:    dto.List,
+		Push:    dto.Push,
+	}
+}
+
+func mapDTOToChatPref(dto *NotificationChatPrefDTO) *bsky.NotificationDefs_ChatPreference {
+	if dto == nil {
+		return nil
+	}
+	include := dto.Include
+	if include == "" {
+		include = "all"
+	}
+	return &bsky.NotificationDefs_ChatPreference{
+		Include: include,
+		Push:    dto.Push,
+	}
+}
+
+func mapDTOToSimplePref(dto *NotificationSimplePrefDTO) *bsky.NotificationDefs_Preference {
+	if dto == nil {
+		return nil
+	}
+	return &bsky.NotificationDefs_Preference{
+		List: dto.List,
+		Push: dto.Push,
+	}
+}
+
+func (s *NotificationsService) GetNotificationPreferences() (*NotificationPreferencesDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *NotificationPreferencesDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.NotificationGetPreferences(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		priority := false
+		notifListRes, listErr := bsky.NotificationListNotifications(ctx, c, "", 1, false, nil, "")
+		if listErr == nil && notifListRes != nil && notifListRes.Priority != nil {
+			priority = *notifListRes.Priority
+		}
+
+		p := res.Preferences
+		if p == nil {
+			p = &bsky.NotificationDefs_Preferences{}
+		}
+
+		out = &NotificationPreferencesDTO{
+			Priority:          priority,
+			Chat:              mapChatPrefToDTO(p.Chat),
+			Follow:            mapFilterablePrefToDTO(p.Follow),
+			Like:              mapFilterablePrefToDTO(p.Like),
+			LikeViaRepost:     mapFilterablePrefToDTO(p.LikeViaRepost),
+			Mention:           mapFilterablePrefToDTO(p.Mention),
+			Quote:             mapFilterablePrefToDTO(p.Quote),
+			Reply:             mapFilterablePrefToDTO(p.Reply),
+			Repost:            mapFilterablePrefToDTO(p.Repost),
+			RepostViaRepost:   mapFilterablePrefToDTO(p.RepostViaRepost),
+			StarterpackJoined: mapSimplePrefToDTO(p.StarterpackJoined),
+			SubscribedPost:    mapSimplePrefToDTO(p.SubscribedPost),
+			Unverified:        mapSimplePrefToDTO(p.Unverified),
+			Verified:          mapSimplePrefToDTO(p.Verified),
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *NotificationsService) PutNotificationPreferences(input *NotificationPreferencesDTO) (*NotificationPreferencesDTO, error) {
+	if input == nil {
+		return nil, nil
+	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		v2Input := &bsky.NotificationPutPreferencesV2_Input{
+			Chat:              mapDTOToChatPref(input.Chat),
+			Follow:            mapDTOToFilterablePref(input.Follow),
+			Like:              mapDTOToFilterablePref(input.Like),
+			LikeViaRepost:     mapDTOToFilterablePref(input.LikeViaRepost),
+			Mention:           mapDTOToFilterablePref(input.Mention),
+			Quote:             mapDTOToFilterablePref(input.Quote),
+			Reply:             mapDTOToFilterablePref(input.Reply),
+			Repost:            mapDTOToFilterablePref(input.Repost),
+			RepostViaRepost:   mapDTOToFilterablePref(input.RepostViaRepost),
+			StarterpackJoined: mapDTOToSimplePref(input.StarterpackJoined),
+			SubscribedPost:    mapDTOToSimplePref(input.SubscribedPost),
+			Unverified:        mapDTOToSimplePref(input.Unverified),
+			Verified:          mapDTOToSimplePref(input.Verified),
+		}
+
+		_, err := bsky.NotificationPutPreferencesV2(ctx, c, v2Input)
+		if err != nil {
+			return err
+		}
+
+		_ = bsky.NotificationPutPreferences(ctx, c, &bsky.NotificationPutPreferences_Input{
+			Priority: input.Priority,
+		})
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
+

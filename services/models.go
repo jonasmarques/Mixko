@@ -184,6 +184,39 @@ type NotificationListDTO struct {
 	Notifications []*NotificationDTO `json:"notifications"`
 }
 
+type NotificationFilterablePrefDTO struct {
+	Include string `json:"include"`
+	List    bool   `json:"list"`
+	Push    bool   `json:"push"`
+}
+
+type NotificationChatPrefDTO struct {
+	Include string `json:"include"`
+	Push    bool   `json:"push"`
+}
+
+type NotificationSimplePrefDTO struct {
+	List bool `json:"list"`
+	Push bool `json:"push"`
+}
+
+type NotificationPreferencesDTO struct {
+	Priority          bool                           `json:"priority"`
+	Chat              *NotificationChatPrefDTO       `json:"chat"`
+	Follow            *NotificationFilterablePrefDTO `json:"follow"`
+	Like              *NotificationFilterablePrefDTO `json:"like"`
+	LikeViaRepost     *NotificationFilterablePrefDTO `json:"likeViaRepost"`
+	Mention           *NotificationFilterablePrefDTO `json:"mention"`
+	Quote             *NotificationFilterablePrefDTO `json:"quote"`
+	Reply             *NotificationFilterablePrefDTO `json:"reply"`
+	Repost            *NotificationFilterablePrefDTO `json:"repost"`
+	RepostViaRepost   *NotificationFilterablePrefDTO `json:"repostViaRepost"`
+	StarterpackJoined *NotificationSimplePrefDTO     `json:"starterpackJoined"`
+	SubscribedPost    *NotificationSimplePrefDTO     `json:"subscribedPost"`
+	Unverified        *NotificationSimplePrefDTO     `json:"unverified"`
+	Verified          *NotificationSimplePrefDTO     `json:"verified"`
+}
+
 type LabelerPolicyDefinitionDTO struct {
 	Identifier     string `json:"identifier"`
 	Severity       string `json:"severity"`
