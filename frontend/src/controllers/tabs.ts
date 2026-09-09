@@ -8,6 +8,7 @@ import { loadChat } from './chat';
 import { loadFeedsTab } from './feeds';
 import { loadSavedPosts } from './saved';
 import { loadListsTab } from './lists';
+import { loadSettings } from './settings';
 import { i18n } from '../utils/i18n';
 
 export async function updateCurrentTab() {
@@ -65,6 +66,7 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
       else if (tabId === 'feeds') loadFeedsTab();
       else if (tabId === 'saved') loadSavedPosts();
       else if (tabId === 'lists') loadListsTab();
+      else if (tabId === 'settings') loadSettings();
   } else {
       announcePolite(i18n.t('tabs.tabItems', { tab: tabId, count: state.currentPosts.length.toString() }));
       if (state.focusedPostIndex >= 0 && state.focusedPostIndex < state.currentPosts.length) {
@@ -88,4 +90,5 @@ export function reloadCurrentTab(keepFocus = true) {
   else if (state.currentTab === 'feeds') loadFeedsTab();
   else if (state.currentTab === 'saved') loadSavedPosts(false, keepFocus);
   else if (state.currentTab === 'lists') loadListsTab(false);
+  else if (state.currentTab === 'settings') loadSettings();
 }

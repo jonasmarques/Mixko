@@ -112,6 +112,9 @@ export function getPostAccessibleLabel(article: HTMLElement): string {
     if (article.dataset.notifReason) {
         prefix = `${author}${dateFormatted ? `, ${dateFormatted}` : ""}: `;
     }
+    if (article.dataset.mutedWord && article.dataset.mutedShown !== "true") {
+        return `${repostText}${replyContext}${prefix}${i18n.t('post.mutedWarning', { word: article.dataset.mutedWord })}`;
+    }
     return `${repostText}${replyContext}${prefix}${text}${linkText}${altsText}${quoteText}${metricsText}`;
 }
 

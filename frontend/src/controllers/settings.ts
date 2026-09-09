@@ -69,14 +69,8 @@ export function applyFontSize(size: string) {
     document.documentElement.style.setProperty('--font-scale', scale.toString());
 }
 
-export async function loadSettings() {
-    const mutedList = document.getElementById('muted-words-list') as HTMLUListElement;
-    const adultContentCheckbox = document.getElementById('setting-adult-content') as HTMLInputElement;
+export function loadLocalSettings() {
     const themeSelect = document.getElementById('theme-select') as HTMLSelectElement;
-    const sortSelect = document.getElementById('thread-sort-select') as HTMLSelectElement;
-    const prioCheckbox = document.getElementById('setting-prioritize-followed') as HTMLInputElement;
-    const contentFiltersContainer = document.getElementById('content-filters-list') as HTMLDivElement;
-
     const dateFormatSelect = document.getElementById('date-format-select') as HTMLSelectElement;
     const nameDisplayFormatSelect = document.getElementById('name-display-format-select') as HTMLSelectElement;
     const notificationFormatSelect = document.getElementById('notification-format-select') as HTMLSelectElement;
@@ -110,6 +104,16 @@ export async function loadSettings() {
     const savedNotifFormat = (localStorage.getItem('notificationFormat') as 'combined' | 'individual') || 'combined';
     state.notificationFormat = savedNotifFormat;
     if (notificationFormatSelect) notificationFormatSelect.value = savedNotifFormat;
+}
+
+export async function loadSettings() {
+    loadLocalSettings();
+
+    const mutedList = document.getElementById('muted-words-list') as HTMLUListElement;
+    const adultContentCheckbox = document.getElementById('setting-adult-content') as HTMLInputElement;
+    const sortSelect = document.getElementById('thread-sort-select') as HTMLSelectElement;
+    const prioCheckbox = document.getElementById('setting-prioritize-followed') as HTMLInputElement;
+    const contentFiltersContainer = document.getElementById('content-filters-list') as HTMLDivElement;
 
     try {
         const prefs = await window.go.services.SocialService.GetPreferences();
@@ -117,7 +121,7 @@ export async function loadSettings() {
             state.adultContentCache = prefs.adultContentEnabled || false;
             if (adultContentCheckbox) adultContentCheckbox.checked = state.adultContentCache;
 
-            state.mutedWordsCache = (prefs.mutedWords || []).map((mw: any) => mw.value);
+            state.mutedWordsCache = (prefs.mutedWords || []).map((mw: { value: string }) => mw.value);
             if (mutedList) renderMutedWords(mutedList);
 
             if (sortSelect && prefs.threadSort) sortSelect.value = prefs.threadSort;
@@ -238,7 +242,9 @@ export async function loadSettings() {
         state.tabStates['settings'].loaded = true;
     } catch (err) {
         console.error(err);
-        announceAssertive(i18n.t('settingsMsgs.loadSettingsError'));
+        if (state.loggedInHandle) {
+            announceAssertive(i18n.t('settingsMsgs.loadSettingsError'));
+        }
     }
 }
 
@@ -365,6 +371,10 @@ export function setupSettings() {
 
                 await window.go.services.SocialService.UpdateAllPreferences(threadSort, adultContent, mutedWords, filtersToSave);
 
+                state.tabStates['timeline'].loaded = false;
+                state.tabStates['notifications'].loaded = false;
+                state.tabStates['feeds'].loaded = false;
+
                 announceAssertive(i18n.t('settingsMsgs.saveSuccess'));
                 switchTab('timeline');
             } catch (err) {
@@ -374,17 +384,45 @@ export function setupSettings() {
         });
     }
 
+    const inputMutedWord = document.getElementById('muted-word-input') as HTMLInputElement | null;
     const btnAddMutedWord = document.getElementById('btn-add-muted-word');
+    const mutedListEl = document.getElementById('muted-words-list') as HTMLUListElement | null;
+
+    const handleAddMutedWords = () => {
+        if (!inputMutedWord) return;
+        const raw = inputMutedWord.value.trim();
+        if (!raw) return;
+
+        const words = raw.split(/[,;\n]+/).map(w => w.trim()).filter(w => w.length > 0);
+        const addedWords: string[] = [];
+
+        for (const w of words) {
+            if (!state.mutedWordsCache.includes(w)) {
+                state.mutedWordsCache.push(w);
+                addedWords.push(w);
+            }
+        }
+
+        inputMutedWord.value = '';
+        if (mutedListEl) renderMutedWords(mutedListEl);
+        if (addedWords.length > 0) {
+            announcePolite(i18n.t('settingsMsgs.wordAdded', { word: addedWords.join(', ') }));
+        }
+    };
+
     if (btnAddMutedWord) {
-        btnAddMutedWord.addEventListener('click', () => {
-            const input = document.getElementById('muted-word-input') as HTMLInputElement;
-            const word = input.value.trim();
-            if (word && !state.mutedWordsCache.includes(word)) {
-                state.mutedWordsCache.push(word);
-                input.value = '';
-                const mutedList = document.getElementById('muted-words-list') as HTMLUListElement;
-                if (mutedList) renderMutedWords(mutedList);
-                announcePolite(i18n.t('settingsMsgs.wordAdded', { word }));
+        btnAddMutedWord.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleAddMutedWords();
+        });
+    }
+
+    if (inputMutedWord) {
+        inputMutedWord.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                handleAddMutedWords();
             }
         });
     }

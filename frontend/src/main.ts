@@ -3,7 +3,7 @@ import { DOM } from './config/dom';
 import { setupAuth, initApp } from './controllers/auth';
 import { setupShortcuts } from './controllers/shortcuts';
 import { setupSearch } from './controllers/search';
-import { setupSettings, loadSettings } from './controllers/settings';
+import { setupSettings, loadLocalSettings } from './controllers/settings';
 import { setupCompose, openComposeModal } from './controllers/compose';
 import { setupProfile } from './controllers/profile';
 import { switchTab } from './controllers/tabs';
@@ -51,7 +51,6 @@ setupCompose();
 setupProfile();
 setupLinkDelegation();
 
-// Load initial settings and initialize app
-loadSettings().then(() => {
-    initApp();
-});
+// Load local settings and initialize app
+loadLocalSettings();
+initApp();

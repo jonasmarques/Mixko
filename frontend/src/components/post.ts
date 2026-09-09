@@ -502,13 +502,27 @@ export function createPostArticle(post: PostView, index: number, isNotification 
 
   let postHasMutedWord = false;
   let triggeredMutedWord = "";
-  if (post.text) {
-      const lowerText = post.text.toLowerCase();
-      const cache = state.mutedWordsCache || [];
-      for (const word of cache) {
-          if (lowerText.includes(word.toLowerCase())) {
+  const cache = state.mutedWordsCache || [];
+  if (cache.length > 0) {
+      const textsToCheck: string[] = [];
+      if (post.text) textsToCheck.push(post.text);
+      if (post.imageAlts) textsToCheck.push(...post.imageAlts);
+      if (post.external?.title) textsToCheck.push(post.external.title);
+      if (post.external?.description) textsToCheck.push(post.external.description);
+      if (post.quotePost) {
+          if (post.quotePost.text) textsToCheck.push(post.quotePost.text);
+          if (post.quotePost.imageAlts) textsToCheck.push(...post.quotePost.imageAlts);
+          if (post.quotePost.external?.title) textsToCheck.push(post.quotePost.external.title);
+          if (post.quotePost.external?.description) textsToCheck.push(post.quotePost.external.description);
+      }
+
+      const combinedText = textsToCheck.join(' ').toLowerCase();
+      for (const rawWord of cache) {
+          const word = rawWord.trim().toLowerCase();
+          if (!word) continue;
+          if (combinedText.includes(word)) {
               postHasMutedWord = true;
-              triggeredMutedWord = word;
+              triggeredMutedWord = rawWord.trim();
               break;
           }
       }
@@ -539,6 +553,8 @@ export function createPostArticle(post: PostView, index: number, isNotification 
   `;
 
   if (postHasMutedWord) {
+      article.dataset.mutedWord = triggeredMutedWord;
+      article.dataset.mutedShown = "false";
       article.innerHTML = `
         <div class="muted-warning" style="padding: 15px; background: #fff3cd; color: #856404; border-radius: 5px; text-align: center;">
             <p>${esc(i18n.t('post.mutedWarning', { word: triggeredMutedWord }))}</p>
@@ -556,6 +572,8 @@ export function createPostArticle(post: PostView, index: number, isNotification 
           const warningDiv = article.querySelector('.muted-warning') as HTMLElement;
           if (contentDiv) contentDiv.style.display = 'block';
           if (warningDiv) warningDiv.style.display = 'none';
+          article.dataset.mutedShown = "true";
+          article.setAttribute('aria-label', getPostAccessibleLabel(article));
           announcePolite(i18n.t('post.contentShown'));
       });
   } else {

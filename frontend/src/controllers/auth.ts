@@ -6,6 +6,7 @@ import { loadTimeline } from './timeline';
 import { loadNotifications } from './notifications';
 import { loadChat, openChatConvo } from './chat';
 import { checkAppUpdates } from './updater';
+import { loadSettings } from './settings';
 import { i18n } from '../utils/i18n';
 
 /**
@@ -53,6 +54,7 @@ export function setupAuth() {
                 const newPostBtn = document.getElementById('btn-new-post-visual');
                 if (newPostBtn) newPostBtn.classList.remove('hidden');
                 state.isAppReady = true;
+                try { await loadSettings(); } catch(e) {}
                 try { state.savedFeeds = await window.go.services.FeedService.GetSavedFeeds() || []; } catch(e) {}
                 switchTab('timeline');
             } catch (err: any) { 
@@ -155,6 +157,7 @@ export async function initApp() {
             const newPostBtn = document.getElementById('btn-new-post-visual');
             if (newPostBtn) newPostBtn.classList.remove('hidden');
             state.isAppReady = true;
+            try { await loadSettings(); } catch(e) {}
             try { state.savedFeeds = await window.go.services.FeedService.GetSavedFeeds() || []; } catch(e) {}
             switchTab('timeline');
         } else {
