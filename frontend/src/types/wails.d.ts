@@ -1,4 +1,5 @@
 import type {
+  ActivitySubscriptionDTO,
   ChatConvoDTO,
   ChatMessagesDTO,
   FeedDTO,
@@ -59,6 +60,7 @@ declare global {
         NotificationsService: {
           GetNotifications(cursor: string): Promise<NotificationListDTO>;
           UpdateSeen(seenAt: string): Promise<void>;
+          PutActivitySubscription(subject: string, post: boolean, reply: boolean): Promise<ActivitySubscriptionDTO>;
         };
         SocialService: {
           GetProfile(actor: string): Promise<ProfileDTO>;

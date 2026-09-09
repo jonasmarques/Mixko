@@ -155,3 +155,44 @@ func TestGetNotificationsMarksARepliedToPostOfOurOwn(t *testing.T) {
 		}
 	}
 }
+
+func TestPutActivitySubscription(t *testing.T) {
+	targetDID := "did:plc:targetuser"
+	var gotBody map[string]interface{}
+
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xrpc/app.bsky.notification.putActivitySubscription" {
+			t.Errorf("path = %q, want /xrpc/app.bsky.notification.putActivitySubscription", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want POST", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("failed to decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"subject": "` + targetDID + `",
+			"activitySubscription": {
+				"post": true,
+				"reply": false
+			}
+		}`))
+	})
+
+	svc := NewNotificationsService(mgr)
+	res, err := svc.PutActivitySubscription(targetDID, true, false)
+	if err != nil {
+		t.Fatalf("PutActivitySubscription failed: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if !res.Post || res.Reply {
+		t.Errorf("got post=%v reply=%v, want post=true reply=false", res.Post, res.Reply)
+	}
+	if gotBody["subject"] != targetDID {
+		t.Errorf("sent subject = %v, want %s", gotBody["subject"], targetDID)
+	}
+}
+

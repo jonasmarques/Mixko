@@ -710,5 +710,56 @@ details.settings-group > summary h3 {
   color: var(--text-color);
 }
 
+/* Activity Subscription Modal & Options */
+#activity-sub-modal {
+  max-width: 480px;
+  width: 90%;
+  padding: 2rem;
+}
 
+.activity-sub-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background-color: var(--button-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: calc(1.05rem * var(--font-scale));
+  font-weight: 500;
+  color: var(--text-color);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
 
+.activity-sub-option:hover {
+  background-color: var(--button-hover);
+}
+
+.activity-sub-option:focus-within {
+  border-color: var(--primary-bg);
+  outline: var(--focus-outline);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--primary-bg);
+}
+
+.activity-sub-option input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+}
+
+#btn-notify-activity.active {
+  border-color: var(--primary-bg);
+  background-color: rgba(13, 110, 253, 0.15);
+  color: var(--text-color);
+  font-weight: bold;
+}

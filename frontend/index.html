@@ -525,8 +525,32 @@
             </form>
           </div>
         </section>
-
       </div>
+
+      <!-- Activity Subscription Modal -->
+      <dialog id="activity-sub-modal" role="dialog" aria-modal="true" aria-labelledby="activity-sub-title" aria-describedby="activity-sub-desc">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h2 id="activity-sub-title" style="margin: 0;" data-i18n="profile.activitySubTitle">Mantenha-me informado</h2>
+          <button type="button" id="btn-close-activity-sub" aria-label="Fechar" data-i18n-aria="app.close" style="background: transparent; border: none; font-size: 1.25rem; cursor: pointer; color: var(--text-color); min-height: auto; padding: 4px 8px;">✕</button>
+        </div>
+        <p id="activity-sub-desc" style="margin-top: 0; margin-bottom: 20px; color: var(--text-muted);" data-i18n="profile.activitySubDesc">Seja notificado da atividade desta conta</p>
+        <form id="activity-sub-form" method="dialog">
+          <div class="activity-sub-options" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
+            <label class="activity-sub-option" for="activity-sub-posts">
+              <span data-i18n="profile.activitySubPosts">Postagens</span>
+              <input type="checkbox" id="activity-sub-posts" />
+            </label>
+            <label class="activity-sub-option" for="activity-sub-replies">
+              <span data-i18n="profile.activitySubReplies">Respostas</span>
+              <input type="checkbox" id="activity-sub-replies" />
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" id="btn-cancel-activity-sub" class="btn-cancel" data-i18n="app.cancel">Cancelar</button>
+            <button type="submit" id="btn-save-activity-sub" class="btn-primary" data-i18n="profile.activitySubSave">Salvar alterações</button>
+          </div>
+        </form>
+      </dialog>
 
       <!-- Generic Profiles List Modal -->
       <dialog id="profiles-list-modal" role="dialog" aria-modal="true" aria-labelledby="profiles-list-title" aria-describedby="profiles-list-desc">

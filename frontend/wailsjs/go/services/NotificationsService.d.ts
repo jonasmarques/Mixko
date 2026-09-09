@@ -6,4 +6,6 @@ export function GetNotifications(arg1:string):Promise<services.NotificationListD
 
 export function GetUnreadCount():Promise<number>;
 
+export function PutActivitySubscription(arg1:string,arg2:boolean,arg3:boolean):Promise<services.ActivitySubscriptionDTO>;
+
 export function UpdateSeen(arg1:string):Promise<void>;

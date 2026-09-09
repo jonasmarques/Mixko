@@ -10,6 +10,10 @@ export function GetUnreadCount() {
   return window['go']['services']['NotificationsService']['GetUnreadCount']();
 }
 
+export function PutActivitySubscription(arg1, arg2, arg3) {
+  return window['go']['services']['NotificationsService']['PutActivitySubscription'](arg1, arg2, arg3);
+}
+
 export function UpdateSeen(arg1) {
   return window['go']['services']['NotificationsService']['UpdateSeen'](arg1);
 }

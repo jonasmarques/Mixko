@@ -592,24 +592,33 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 			}
 		}
 
+		var viewerActivitySubscription *ActivitySubscriptionDTO
+		if res.Viewer != nil && res.Viewer.ActivitySubscription != nil {
+			viewerActivitySubscription = &ActivitySubscriptionDTO{
+				Post:  res.Viewer.ActivitySubscription.Post,
+				Reply: res.Viewer.ActivitySubscription.Reply,
+			}
+		}
+
 		out = &ProfileDTO{
-			DID:                    res.Did,
-			Handle:                 res.Handle,
-			DisplayName:            name,
-			Description:            desc,
-			Followers:              followers,
-			Follows:                follows,
-			Posts:                  posts,
-			ViewerFollowing:        viewerFollowing,
-			ViewerFollowedBy:       viewerFollowedBy,
-			ViewerMuted:            viewerMuted,
-			ViewerBlocking:         viewerBlocking,
-			ViewerBlockedBy:        viewerBlockedBy,
-			PinnedPostUri:          pinnedPostUri,
-			IsMe:                   res.Did == c.Auth.Did,
-			IsLabeler:              isLabeler,
-			ViewerSubscribedLabeler: viewerSubscribedLabeler,
-			LabelerInfo:            labelerInfo,
+			DID:                        res.Did,
+			Handle:                     res.Handle,
+			DisplayName:                name,
+			Description:                desc,
+			Followers:                  followers,
+			Follows:                    follows,
+			Posts:                      posts,
+			ViewerFollowing:            viewerFollowing,
+			ViewerFollowedBy:           viewerFollowedBy,
+			ViewerMuted:                viewerMuted,
+			ViewerBlocking:             viewerBlocking,
+			ViewerBlockedBy:            viewerBlockedBy,
+			PinnedPostUri:              pinnedPostUri,
+			IsMe:                       res.Did == c.Auth.Did,
+			IsLabeler:                  isLabeler,
+			ViewerSubscribedLabeler:    viewerSubscribedLabeler,
+			ViewerActivitySubscription: viewerActivitySubscription,
+			LabelerInfo:                labelerInfo,
 		}
 		return nil
 	})

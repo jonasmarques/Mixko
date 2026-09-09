@@ -67,8 +67,20 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                   }
               }
 
+              const isSubscribedToActivity = Boolean(
+                res.viewerActivitySubscription && (res.viewerActivitySubscription.post || res.viewerActivitySubscription.reply)
+              );
+              const authorTitle = formatAuthor(res.displayName || '', res.handle);
+              const notifyBtnClass = isSubscribedToActivity ? 'active' : '';
+              const notifyBtnText = isSubscribedToActivity
+                ? i18n.t('profile.notifyActivityActiveBtn', { name: authorTitle })
+                : `🔔 ${i18n.t('profile.notifyActivityBtn', { name: authorTitle })}`;
+              const notifyBtnAria = i18n.t('profile.notifyActivityAria', { name: authorTitle });
+              const notifyBtn = `<button id="btn-notify-activity" class="${notifyBtnClass}" aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(notifyBtnAria)}">${esc(notifyBtnText)}</button>`;
+
               actionsHtml = `
                 ${followBtn}
+                ${notifyBtn}
                 ${muteBtn}
                 ${blockBtn}
                 ${labelerBtn}
@@ -76,34 +88,6 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 <button id="btn-manage-lists" data-did="${res.did}" aria-label="${i18n.t('profile.manageListsAria')}">${i18n.t('profile.manageListsBtn')}</button>
                 <button id="btn-report-user" data-did="${res.did}" aria-label="${i18n.t('profile.reportAria')}">${i18n.t('profile.reportBtn')}</button>
               `;
-
-              document.getElementById('btn-manage-lists')?.addEventListener('click', async (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  try {
-                      announcePolite(i18n.t('profile.loadingLists'));
-                      const listsRes = await window.go.services.SocialService.GetActorLists(state.loggedInHandle, "");
-                      if (!listsRes || !listsRes.lists || listsRes.lists.length === 0) {
-                          announceAssertive(i18n.t('profile.noListsCreated'));
-                          return;
-                      }
-                      const options = listsRes.lists.map((l: any, i: number) => `${i + 1}. ${l.name}`).join("\n");
-                      const chosen = await promptDialog(i18n.t('profile.chooseListPrompt', { handle: res.handle, options }), "1", i18n.t('profile.addToListTitle'));
-                      if (chosen) {
-                          const idx = parseInt(chosen, 10) - 1;
-                          if (idx >= 0 && idx < listsRes.lists.length) {
-                              const selectedList = listsRes.lists[idx];
-                              announcePolite(i18n.t('profile.addingToList', { handle: res.handle, name: selectedList.name }));
-                              await window.go.services.SocialService.AddUserToList(selectedList.uri, res.did);
-                              announceAssertive(i18n.t('profile.addedToList', { handle: res.handle, name: selectedList.name }));
-                          } else {
-                              announceAssertive(i18n.t('profile.invalidOption'));
-                          }
-                      }
-                  } catch (err: any) {
-                      announceAssertive(i18n.t('profile.manageListsError', { err: String(err) }));
-                  }
-              });
           } else {
               actionsHtml = `
                 <button id="btn-edit-profile" aria-label="${i18n.t('profile.editProfileAria')}">${i18n.t('profile.editProfileBtn')}</button>
@@ -332,10 +316,114 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                     try {
                       await window.go.services.ModerationService.ReportAccount(res.did, 'com.atproto.moderation.defs#reasonOther', reason);
                       announceAssertive(i18n.t('profile.reportSuccess'));
-                    } catch (err: any) {
+                    } catch (err: unknown) {
                       console.error("ReportAccount error:", err);
                       announceAssertive(i18n.t('profile.reportError', { err: String(err) }));
                     }
+                  }
+              });
+
+              document.getElementById('btn-notify-activity')?.addEventListener('click', (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+
+                  const modal = document.getElementById('activity-sub-modal') as HTMLDialogElement | null;
+                  if (!modal) return;
+
+                  const triggerBtn = e.currentTarget as HTMLButtonElement;
+                  triggerBtn.setAttribute('aria-expanded', 'true');
+
+                  const postsCheckbox = document.getElementById('activity-sub-posts') as HTMLInputElement | null;
+                  const repliesCheckbox = document.getElementById('activity-sub-replies') as HTMLInputElement | null;
+                  const form = document.getElementById('activity-sub-form') as HTMLFormElement | null;
+                  const closeBtn = document.getElementById('btn-close-activity-sub') as HTMLButtonElement | null;
+                  const cancelBtn = document.getElementById('btn-cancel-activity-sub') as HTMLButtonElement | null;
+
+                  if (postsCheckbox) {
+                      postsCheckbox.checked = res.viewerActivitySubscription?.post ?? false;
+                  }
+                  if (repliesCheckbox) {
+                      repliesCheckbox.checked = res.viewerActivitySubscription?.reply ?? false;
+                  }
+
+                  const handleModalClose = () => {
+                      cleanup();
+                      triggerBtn.setAttribute('aria-expanded', 'false');
+                  };
+
+                  const closeModal = () => {
+                      cleanup();
+                      modal.close();
+                      triggerBtn.setAttribute('aria-expanded', 'false');
+                      triggerBtn.focus();
+                  };
+
+                  const handleClose = (evt: Event) => {
+                      evt.preventDefault();
+                      evt.stopPropagation();
+                      closeModal();
+                  };
+
+                  const handleSubmit = async (evt: Event) => {
+                      evt.preventDefault();
+                      evt.stopPropagation();
+
+                      const postVal = postsCheckbox ? postsCheckbox.checked : false;
+                      const replyVal = repliesCheckbox ? repliesCheckbox.checked : false;
+
+                      try {
+                          announcePolite(i18n.t('profile.activitySubSaving'));
+                          const updated = await window.go.services.NotificationsService.PutActivitySubscription(res.did, postVal, replyVal);
+                          res.viewerActivitySubscription = updated || { post: postVal, reply: replyVal };
+                          announceAssertive(i18n.t('profile.activitySubSaved'));
+                          closeModal();
+                          loadProfile(false, true);
+                      } catch (err: unknown) {
+                          announceAssertive(i18n.t('profile.activitySubError', { err: String(err) }));
+                      }
+                  };
+
+                  const cleanup = () => {
+                      closeBtn?.removeEventListener('click', handleClose);
+                      cancelBtn?.removeEventListener('click', handleClose);
+                      form?.removeEventListener('submit', handleSubmit);
+                      modal.removeEventListener('close', handleModalClose);
+                  };
+
+                  closeBtn?.addEventListener('click', handleClose);
+                  cancelBtn?.addEventListener('click', handleClose);
+                  form?.addEventListener('submit', handleSubmit);
+                  modal.addEventListener('close', handleModalClose, { once: true });
+
+                  modal.showModal();
+                  postsCheckbox?.focus();
+              });
+
+              document.getElementById('btn-manage-lists')?.addEventListener('click', async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                      announcePolite(i18n.t('profile.loadingLists'));
+                      const listsRes = await window.go.services.SocialService.GetActorLists(state.loggedInHandle, "");
+                      if (!listsRes || !listsRes.lists || listsRes.lists.length === 0) {
+                          announceAssertive(i18n.t('profile.noListsCreated'));
+                          return;
+                      }
+                      const options = listsRes.lists.map((l: { name: string }, i: number) => `${i + 1}. ${l.name}`).join("\n");
+                      const chosen = await promptDialog(i18n.t('profile.chooseListPrompt', { handle: res.handle, options }), "1", i18n.t('profile.addToListTitle'));
+                      if (chosen) {
+                          const idx = parseInt(chosen, 10) - 1;
+                          if (idx >= 0 && idx < listsRes.lists.length) {
+                              const selectedList = listsRes.lists[idx];
+                              announcePolite(i18n.t('profile.addingToList', { handle: res.handle, name: selectedList.name }));
+                              await window.go.services.SocialService.AddUserToList(selectedList.uri, res.did);
+                              announceAssertive(i18n.t('profile.addedToList', { handle: res.handle, name: selectedList.name }));
+                          } else {
+                              announceAssertive(i18n.t('profile.invalidOption'));
+                          }
+                      }
+                  } catch (err: unknown) {
+                      announceAssertive(i18n.t('profile.manageListsError', { err: String(err) }));
                   }
               });
           } else {

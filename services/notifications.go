@@ -217,3 +217,35 @@ func (s *NotificationsService) GetUnreadCount() (int64, error) {
 	})
 	return count, err
 }
+
+func (s *NotificationsService) PutActivitySubscription(subject string, post bool, reply bool) (*ActivitySubscriptionDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ActivitySubscriptionDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.NotificationPutActivitySubscription(ctx, c, &bsky.NotificationPutActivitySubscription_Input{
+			Subject: subject,
+			ActivitySubscription: &bsky.NotificationDefs_ActivitySubscription{
+				Post:  post,
+				Reply: reply,
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if res != nil && res.ActivitySubscription != nil {
+			out = &ActivitySubscriptionDTO{
+				Post:  res.ActivitySubscription.Post,
+				Reply: res.ActivitySubscription.Reply,
+			}
+		} else {
+			out = &ActivitySubscriptionDTO{
+				Post:  post,
+				Reply: reply,
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+

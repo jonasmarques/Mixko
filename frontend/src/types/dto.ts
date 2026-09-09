@@ -112,6 +112,11 @@ export interface LabelerDTO {
     policies: LabelerPolicyDTO[] | null;
 }
 
+export interface ActivitySubscriptionDTO {
+    post: boolean;
+    reply: boolean;
+}
+
 export interface ProfileDTO {
     did: string;
     handle: string;
@@ -130,6 +135,7 @@ export interface ProfileDTO {
     isMe: boolean;
     isLabeler: boolean;
     viewerSubscribedLabeler: boolean;
+    viewerActivitySubscription?: ActivitySubscriptionDTO | null;
     labelerInfo?: LabelerDTO;
 }
 

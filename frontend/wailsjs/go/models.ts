@@ -2058,6 +2058,20 @@ export namespace bsky {
 
 export namespace services {
 	
+	export class ActivitySubscriptionDTO {
+	    post: boolean;
+	    reply: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ActivitySubscriptionDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.post = source["post"];
+	        this.reply = source["reply"];
+	    }
+	}
 	export class ChatMemberDTO {
 	    did: string;
 	    handle: string;
@@ -2851,6 +2865,7 @@ export namespace services {
 	    isMe: boolean;
 	    isLabeler: boolean;
 	    viewerSubscribedLabeler: boolean;
+	    viewerActivitySubscription?: ActivitySubscriptionDTO;
 	    labelerInfo?: LabelerDTO;
 	
 	    static createFrom(source: any = {}) {
@@ -2876,6 +2891,7 @@ export namespace services {
 	        this.isMe = source["isMe"];
 	        this.isLabeler = source["isLabeler"];
 	        this.viewerSubscribedLabeler = source["viewerSubscribedLabeler"];
+	        this.viewerActivitySubscription = this.convertValues(source["viewerActivitySubscription"], ActivitySubscriptionDTO);
 	        this.labelerInfo = this.convertValues(source["labelerInfo"], LabelerDTO);
 	    }
 	

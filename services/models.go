@@ -208,25 +208,31 @@ type LabelerDTO struct {
 	Policies     []LabelerPolicyDefinitionDTO `json:"policies"`
 }
 
+type ActivitySubscriptionDTO struct {
+	Post  bool `json:"post"`
+	Reply bool `json:"reply"`
+}
+
 type ProfileDTO struct {
-	DID                    string      `json:"did"`
-	Handle                 string      `json:"handle"`
-	DisplayName            string      `json:"displayName"`
-	Description            string      `json:"description"`
-	Avatar                 string      `json:"avatar"`
-	Followers              int64       `json:"followersCount"`
-	Follows                int64       `json:"followsCount"`
-	Posts                  int64       `json:"postsCount"`
-	ViewerFollowing        string      `json:"viewerFollowing"`
-	ViewerFollowedBy       string      `json:"viewerFollowedBy"`
-	ViewerMuted            bool        `json:"viewerMuted"`
-	ViewerBlocking         string      `json:"viewerBlocking"`
-	ViewerBlockedBy        bool        `json:"viewerBlockedBy"`
-	PinnedPostUri          string      `json:"pinnedPostUri"`
-	IsMe                   bool        `json:"isMe"`
-	IsLabeler              bool        `json:"isLabeler"`
-	ViewerSubscribedLabeler bool       `json:"viewerSubscribedLabeler"`
-	LabelerInfo            *LabelerDTO `json:"labelerInfo,omitempty"`
+	DID                        string                   `json:"did"`
+	Handle                     string                   `json:"handle"`
+	DisplayName                string                   `json:"displayName"`
+	Description                string                   `json:"description"`
+	Avatar                     string                   `json:"avatar"`
+	Followers                  int64                    `json:"followersCount"`
+	Follows                    int64                    `json:"followsCount"`
+	Posts                      int64                    `json:"postsCount"`
+	ViewerFollowing            string                   `json:"viewerFollowing"`
+	ViewerFollowedBy           string                   `json:"viewerFollowedBy"`
+	ViewerMuted                bool                     `json:"viewerMuted"`
+	ViewerBlocking             string                   `json:"viewerBlocking"`
+	ViewerBlockedBy            bool                     `json:"viewerBlockedBy"`
+	PinnedPostUri              string                   `json:"pinnedPostUri"`
+	IsMe                       bool                     `json:"isMe"`
+	IsLabeler                  bool                     `json:"isLabeler"`
+	ViewerSubscribedLabeler    bool                     `json:"viewerSubscribedLabeler"`
+	ViewerActivitySubscription *ActivitySubscriptionDTO `json:"viewerActivitySubscription,omitempty"`
+	LabelerInfo                *LabelerDTO              `json:"labelerInfo,omitempty"`
 }
 
 type ProfileListDTO struct {
