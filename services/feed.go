@@ -139,6 +139,13 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 			images = append(images, dto)
 		}
 	}
+	if len(images) == 0 && recVal != nil {
+		recAlts, recImages := ExtractImagesFromRecord(recVal, post.Author.Did)
+		if len(recImages) > 0 {
+			images = recImages
+			imageAlts = recAlts
+		}
+	}
 
 	var quotePost *PostDTO
 	if post.Embed != nil {
@@ -165,6 +172,8 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 			if rv.Author.DisplayName != nil {
 				quotePost.AuthorName = *rv.Author.DisplayName
 			}
+			CacheAuthor(rv.Author.Did, rv.Author.Handle, quotePost.AuthorName)
+
 			for _, emb := range rv.Embeds {
 				if emb == nil {
 					continue
@@ -193,7 +202,57 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 					}
 					quotePost.HasMedia = true
 				}
-				if emb.EmbedVideo_View != nil {
+				if emb.EmbedRecordWithMedia_View != nil && emb.EmbedRecordWithMedia_View.Media != nil {
+					media := emb.EmbedRecordWithMedia_View.Media
+					if media.EmbedImages_View != nil {
+						for _, img := range media.EmbedImages_View.Images {
+							if img == nil {
+								continue
+							}
+							alt := img.Alt
+							if alt != "" {
+								quotePost.ImageAlts = append(quotePost.ImageAlts, alt)
+							} else {
+								quotePost.ImageAlts = append(quotePost.ImageAlts, "")
+							}
+							dto := &ImageDTO{
+								Thumb:    img.Thumb,
+								Fullsize: img.Fullsize,
+								Alt:      img.Alt,
+							}
+							if img.AspectRatio != nil {
+								dto.Width = img.AspectRatio.Width
+								dto.Height = img.AspectRatio.Height
+							}
+							quotePost.Images = append(quotePost.Images, dto)
+						}
+						quotePost.HasMedia = true
+					}
+					if media.EmbedVideo_View != nil && quotePost.Video == nil {
+						v := media.EmbedVideo_View
+						quotePost.Video = &VideoEmbedDTO{
+							Playlist:     v.Playlist,
+							Thumbnail:    safeString(v.Thumbnail),
+							Alt:          safeString(v.Alt),
+							Presentation: safeString(v.Presentation),
+						}
+						if quotePost.Video.Alt == "" {
+							quotePost.Video.Alt = ExtractVideoAltFromRecord(quoteRecVal)
+						}
+						quotePost.HasMedia = true
+					}
+					if media.EmbedExternal_View != nil && media.EmbedExternal_View.External != nil && quotePost.External == nil {
+						ext := media.EmbedExternal_View.External
+						quotePost.External = &ExternalEmbedDTO{
+							URI:         ext.Uri,
+							Title:       ext.Title,
+							Description: ext.Description,
+							Thumb:       safeString(ext.Thumb),
+						}
+						quotePost.HasMedia = true
+					}
+				}
+				if emb.EmbedVideo_View != nil && quotePost.Video == nil {
 					v := emb.EmbedVideo_View
 					quotePost.Video = &VideoEmbedDTO{
 						Playlist:     v.Playlist,
@@ -206,7 +265,7 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 					}
 					quotePost.HasMedia = true
 				}
-				if emb.EmbedExternal_View != nil && emb.EmbedExternal_View.External != nil {
+				if emb.EmbedExternal_View != nil && emb.EmbedExternal_View.External != nil && quotePost.External == nil {
 					ext := emb.EmbedExternal_View.External
 					quotePost.External = &ExternalEmbedDTO{
 						URI:         ext.Uri,
@@ -214,6 +273,14 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 						Description: ext.Description,
 						Thumb:       safeString(ext.Thumb),
 					}
+					quotePost.HasMedia = true
+				}
+			}
+			if len(quotePost.Images) == 0 && quoteRecVal != nil {
+				recAlts, recImages := ExtractImagesFromRecord(quoteRecVal, rv.Author.Did)
+				if len(recImages) > 0 {
+					quotePost.Images = recImages
+					quotePost.ImageAlts = recAlts
 					quotePost.HasMedia = true
 				}
 			}

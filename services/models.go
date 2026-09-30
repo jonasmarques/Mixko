@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -457,6 +458,78 @@ func ExtractExternalFromRecord(record interface{}) *ExternalEmbedDTO {
 		}
 	}
 	return nil
+}
+
+func ExtractImagesFromRecord(record interface{}, authorDID string) ([]string, []*ImageDTO) {
+	if record == nil {
+		return nil, nil
+	}
+	bytes, err := json.Marshal(record)
+	if err != nil {
+		return nil, nil
+	}
+	var rec struct {
+		Embed *struct {
+			Type   string `json:"$type"`
+			Images []struct {
+				Alt   string `json:"alt"`
+				Image struct {
+					Ref struct {
+						Link string `json:"$link"`
+					} `json:"ref"`
+				} `json:"image"`
+				AspectRatio *struct {
+					Width  int64 `json:"width"`
+					Height int64 `json:"height"`
+				} `json:"aspectRatio"`
+			} `json:"images"`
+			Media *struct {
+				Type   string `json:"$type"`
+				Images []struct {
+					Alt   string `json:"alt"`
+					Image struct {
+						Ref struct {
+							Link string `json:"$link"`
+						} `json:"ref"`
+					} `json:"image"`
+					AspectRatio *struct {
+						Width  int64 `json:"width"`
+						Height int64 `json:"height"`
+					} `json:"aspectRatio"`
+				} `json:"images"`
+			} `json:"media"`
+		} `json:"embed"`
+	}
+	if err := json.Unmarshal(bytes, &rec); err != nil || rec.Embed == nil {
+		return nil, nil
+	}
+
+	imagesList := rec.Embed.Images
+	if len(imagesList) == 0 && rec.Embed.Media != nil {
+		imagesList = rec.Embed.Media.Images
+	}
+	if len(imagesList) == 0 {
+		return nil, nil
+	}
+
+	var alts []string
+	var images []*ImageDTO
+	for _, img := range imagesList {
+		alts = append(alts, img.Alt)
+		dto := &ImageDTO{
+			Alt: img.Alt,
+		}
+		if img.Image.Ref.Link != "" && authorDID != "" {
+			dto.Thumb = fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", authorDID, img.Image.Ref.Link)
+			dto.Fullsize = fmt.Sprintf("https://cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", authorDID, img.Image.Ref.Link)
+		}
+		if img.AspectRatio != nil {
+			dto.Width = img.AspectRatio.Width
+			dto.Height = img.AspectRatio.Height
+		}
+		images = append(images, dto)
+	}
+	return alts, images
 }
 
 // Helper para extrair metadados de resposta do Record em CBOR/JSON

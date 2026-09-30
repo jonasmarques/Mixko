@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
@@ -127,3 +129,118 @@ func TestExtractReplyMetaFromRecord(t *testing.T) {
 		t.Errorf("unexpected identity2: %+v", identity2)
 	}
 }
+
+func TestExtractImagesFromRecord(t *testing.T) {
+	record := map[string]interface{}{
+		"$type": "app.bsky.feed.post",
+		"text":  "Post with image",
+		"embed": map[string]interface{}{
+			"$type": "app.bsky.embed.images",
+			"images": []interface{}{
+				map[string]interface{}{
+					"alt": "Foto de um gatinho",
+					"image": map[string]interface{}{
+						"$type": "blob",
+						"ref": map[string]interface{}{
+							"$link": "bafkreia123",
+						},
+					},
+					"aspectRatio": map[string]interface{}{
+						"width":  800,
+						"height": 600,
+					},
+				},
+			},
+		},
+	}
+
+	alts, images := ExtractImagesFromRecord(record, "did:plc:author1")
+	if len(alts) != 1 || alts[0] != "Foto de um gatinho" {
+		t.Fatalf("unexpected alts: %+v", alts)
+	}
+	if len(images) != 1 || images[0].Alt != "Foto de um gatinho" {
+		t.Fatalf("unexpected images: %+v", images)
+	}
+	if images[0].Width != 800 || images[0].Height != 600 {
+		t.Errorf("unexpected aspect ratio: width=%d height=%d", images[0].Width, images[0].Height)
+	}
+	expectedThumb := "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:author1/bafkreia123@jpeg"
+	if images[0].Thumb != expectedThumb {
+		t.Errorf("thumb = %q, want %q", images[0].Thumb, expectedThumb)
+	}
+}
+
+func TestParsePostViewQuoteWithRecordWithMedia(t *testing.T) {
+	cDisplayName := "Carol"
+	pv := &bsky.FeedDefs_PostView{
+		Uri: "at://did:plc:bob/app.bsky.feed.post/postB",
+		Cid: "cidB",
+		Author: &bsky.ActorDefs_ProfileViewBasic{
+			Did:    "did:plc:bob",
+			Handle: "bob.bsky.social",
+		},
+		Record: &util.LexiconTypeDecoder{
+			Val: &bsky.FeedPost{
+				Text: "Quote by Bob",
+			},
+		},
+		Embed: &bsky.FeedDefs_PostView_Embed{
+			EmbedRecord_View: &bsky.EmbedRecord_View{
+				Record: &bsky.EmbedRecord_View_Record{
+					EmbedRecord_ViewRecord: &bsky.EmbedRecord_ViewRecord{
+						Uri: "at://did:plc:carol/app.bsky.feed.post/postC",
+						Cid: "cidC",
+						Author: &bsky.ActorDefs_ProfileViewBasic{
+							Did:         "did:plc:carol",
+							Handle:      "carol.bsky.social",
+							DisplayName: &cDisplayName,
+						},
+						Value: &util.LexiconTypeDecoder{
+							Val: &bsky.FeedPost{
+								Text: "Post original de Carol",
+							},
+						},
+						Embeds: []*bsky.EmbedRecord_ViewRecord_Embeds_Elem{
+							{
+								EmbedRecordWithMedia_View: &bsky.EmbedRecordWithMedia_View{
+									Media: &bsky.EmbedRecordWithMedia_View_Media{
+										EmbedImages_View: &bsky.EmbedImages_View{
+											Images: []*bsky.EmbedImages_ViewImage{
+												{
+													Alt:      "Gatinho da Carol",
+													Thumb:    "https://example.com/thumb.jpg",
+													Fullsize: "https://example.com/full.jpg",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	dto := ParsePostView(pv)
+	if dto == nil {
+		t.Fatalf("expected dto to be non-nil")
+	}
+	if dto.QuotePost == nil {
+		t.Fatalf("expected QuotePost to be non-nil")
+	}
+	if dto.QuotePost.AuthorHandle != "carol.bsky.social" || dto.QuotePost.AuthorName != "Carol" {
+		t.Errorf("unexpected quote author: %+v", dto.QuotePost)
+	}
+	if len(dto.QuotePost.Images) != 1 || dto.QuotePost.Images[0].Alt != "Gatinho da Carol" {
+		t.Errorf("unexpected quote images: %+v", dto.QuotePost.Images)
+	}
+	if len(dto.QuotePost.ImageAlts) != 1 || dto.QuotePost.ImageAlts[0] != "Gatinho da Carol" {
+		t.Errorf("unexpected quote imageAlts: %+v", dto.QuotePost.ImageAlts)
+	}
+	if !dto.QuotePost.HasMedia {
+		t.Errorf("expected QuotePost.HasMedia to be true")
+	}
+}
+

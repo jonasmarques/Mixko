@@ -59,12 +59,15 @@ export function getPostAccessibleLabel(article: HTMLElement): string {
         repostText = i18n.t('a11y.repostedBy', { author: article.dataset.repostedBy }) + ": ";
     }
     let quoteText = "";
-    if (article.dataset.quoteText || article.dataset.quoteImageAlts || article.dataset.quoteVideoAlt !== undefined || article.dataset.quoteExternalTitle) {
-        const qAuthor = article.dataset.quoteAuthorHandle ? `${formatAuthor("", article.dataset.quoteAuthorHandle)}: ` : "";
-        const qBody = article.dataset.quoteText ? article.dataset.quoteText : "";
+    if (article.dataset.quoteAuthorHandle || article.dataset.quoteText || article.dataset.quoteImageAlts || article.dataset.quoteHasImage === 'true' || article.dataset.quoteVideoAlt !== undefined || article.dataset.quoteExternalTitle || article.dataset.quoteExternalUrl) {
+        const qAuthorDisplay = formatAuthor(article.dataset.quoteAuthorName || "", article.dataset.quoteAuthorHandle || "");
+        const qAuthor = qAuthorDisplay ? `${qAuthorDisplay}: ` : "";
+        let qBody = article.dataset.quoteText ? article.dataset.quoteText : "";
         let qMedia = "";
         if (article.dataset.quoteImageAlts) {
             qMedia += ` [${i18n.t('a11y.images')}: ${article.dataset.quoteImageAlts}]`;
+        } else if (article.dataset.quoteHasImage === 'true') {
+            qMedia += ` [${i18n.t('a11y.images')}: ${i18n.t('post.noImageDescription')}]`;
         }
         if (article.dataset.quoteVideoAlt !== undefined) {
             const isGif = article.dataset.quoteVideoIsGif === 'true';
@@ -74,6 +77,11 @@ export function getPostAccessibleLabel(article: HTMLElement): string {
         }
         if (article.dataset.quoteExternalTitle) {
             qMedia += ` [${i18n.t('a11y.link')}: ${article.dataset.quoteExternalTitle}${article.dataset.quoteExternalDesc ? ` - ${article.dataset.quoteExternalDesc}` : ""}]`;
+        } else if (article.dataset.quoteExternalUrl) {
+            qMedia += ` [${i18n.t('a11y.link')}: ${article.dataset.quoteExternalUrl}]`;
+        }
+        if (!qBody && !qMedia) {
+            qBody = i18n.t('post.contentUnavailableFallback');
         }
         quoteText = ` ` + i18n.t('a11y.quoting', { text: `${qAuthor}${qBody}${qMedia}` });
     }

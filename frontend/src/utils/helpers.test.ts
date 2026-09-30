@@ -99,3 +99,13 @@ test('parseAppUrl refuses look-alike hosts', () => {
     assert.equal(parseAppUrl('not a url'), null);
     assert.equal(parseAppUrl('https://bsky.app/unknown/thing'), null);
 });
+
+test('extracts link from combined text and quote text', () => {
+    const textWithoutLink = "Concordo totalmente com isso";
+    const quoteTextWithLink = "Veja esta notícia https://example.com/noticia sobre o projeto";
+    const combined = `${textWithoutLink} ${quoteTextWithLink}`.trim();
+    const match = combined.match(/(https?:\/\/[^\s]+)/);
+    assert.ok(match, 'should find URL in combined quote text');
+    assert.equal(match![0], 'https://example.com/noticia');
+});
+

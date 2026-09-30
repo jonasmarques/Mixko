@@ -341,12 +341,21 @@ export function createPostArticle(
   let quoteContext = "";
   if (post.quotePost) {
     article.dataset.quoteAuthorHandle = post.quotePost.authorHandle;
+    article.dataset.quoteAuthorName = post.quotePost.authorName || post.quotePost.authorHandle;
     article.dataset.quoteText = post.quotePost.text || "";
     article.dataset.quoteUri = post.quotePost.uri;
     article.dataset.quoteCid = post.quotePost.cid;
-    if (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0) {
-      article.dataset.quoteImageAlts = post.quotePost.imageAlts.join(" | ");
+
+    const quoteAlts = (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0)
+      ? post.quotePost.imageAlts
+      : (post.quotePost.images ? post.quotePost.images.map((img: ImageDTO) => img.alt || "") : []);
+    if (quoteAlts.length > 0) {
+      article.dataset.quoteHasImage = "true";
+      article.dataset.quoteImageAlts = formatAltList(quoteAlts);
+    } else if (post.quotePost.images && post.quotePost.images.length > 0) {
+      article.dataset.quoteHasImage = "true";
     }
+
     if (post.quotePost.video) {
       article.dataset.hasVideo = "true";
       article.dataset.hasQuoteVideo = "true";
@@ -356,6 +365,7 @@ export function createPostArticle(
       article.dataset.quoteVideoAlt = post.quotePost.video.alt || "";
     }
     if (post.quotePost.external) {
+      article.dataset.quoteExternalUrl = post.quotePost.external.uri || "";
       article.dataset.quoteExternalTitle = post.quotePost.external.title || post.quotePost.external.uri;
       article.dataset.quoteExternalDesc = post.quotePost.external.description || "";
     }
@@ -375,8 +385,8 @@ export function createPostArticle(
       }).join('');
       quoteMediaHtml += `<div class="post-images-grid ${layoutClass}" style="margin-top: 8px;">${qImgElements}</div>`;
     }
-    if (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0) {
-      quoteMediaHtml += `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${esc(formatAltList(post.quotePost.imageAlts))}</small></div>`;
+    if (quoteAlts.length > 0) {
+      quoteMediaHtml += `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${esc(formatAltList(quoteAlts))}</small></div>`;
     }
     if (post.quotePost.video) {
       const isGif = post.quotePost.video.presentation === 'gif';
@@ -393,8 +403,9 @@ export function createPostArticle(
     }
     if (post.quotePost.external) {
       quoteMediaHtml += `<div class="external-card" style="border:1px solid #ddd;padding:6px;margin-top:6px;border-radius:4px;font-size:0.85em;">
-        <strong>${esc(post.quotePost.external.title || post.quotePost.external.uri)}</strong>
-        ${post.quotePost.external.description ? `<p style="margin:2px 0 0 0;">${esc(post.quotePost.external.description)}</p>` : ""}
+        ${post.quotePost.external.thumb ? `<img src="${escUrl(post.quotePost.external.thumb)}" alt="${esc(i18n.t('post.linkThumbAlt'))}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
+        <strong><a href="#" class="app-link link-external" data-external-url="${escUrl(post.quotePost.external.uri)}">${esc(post.quotePost.external.title || post.quotePost.external.uri)}</a></strong>
+        ${post.quotePost.external.description ? `<p style="margin:2px 0 0 0; color: var(--text-muted, #666);">${esc(post.quotePost.external.description)}</p>` : ""}
       </div>`;
     }
 

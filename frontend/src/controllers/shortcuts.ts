@@ -1010,11 +1010,13 @@ export function setupShortcuts() {
             e.preventDefault();
             if (state.focusedPostIndex >= 0) {
                 const p = state.currentPosts[state.focusedPostIndex];
-                if (p.dataset.externalUrl) {
-                    (window as any).runtime.BrowserOpenURL(p.dataset.externalUrl);
+                const targetUrl = p.dataset.externalUrl || p.dataset.quoteExternalUrl;
+                if (targetUrl) {
+                    (window as any).runtime.BrowserOpenURL(targetUrl);
                     announcePolite(i18n.t('shortcuts.openingLink'));
-                } else if (p.dataset.text) {
-                    const urlMatch = p.dataset.text.match(/(https?:\/\/[^\s]+)/);
+                } else {
+                    const textToSearch = `${p.dataset.text || ""} ${p.dataset.quoteText || ""}`.trim();
+                    const urlMatch = textToSearch.match(/(https?:\/\/[^\s]+)/);
                     if (urlMatch) {
                         (window as any).runtime.BrowserOpenURL(urlMatch[0]);
                         announcePolite(i18n.t('shortcuts.openingLink'));
