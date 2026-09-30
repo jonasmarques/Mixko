@@ -6,6 +6,9 @@
   "compilerOptions": {
     "noEmit": false,
     "outDir": "dist-test",
+    // TypeScript 7 requires rootDir to be explicit; "src" keeps the previously
+    // inferred output layout (dist-test/utils/*.test.js).
+    "rootDir": "src",
     "module": "NodeNext",
     "moduleResolution": "nodenext",
     "allowImportingTsExtensions": false,

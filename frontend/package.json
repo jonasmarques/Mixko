@@ -11,13 +11,10 @@
     "test": "node -e \"require('fs').rmSync('dist-test',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\""
   },
   "devDependencies": {
-    "typescript": "^5.2.2",
-    "vite": "^5.2.0"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
   },
   "dependencies": {
     "hls.js": "^1.7.2"
-  },
-  "allowScripts": {
-    "esbuild@0.21.5": true
   }
 }
