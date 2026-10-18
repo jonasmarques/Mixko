@@ -34,6 +34,10 @@ export function ReportAccount(arg1, arg2, arg3) {
   return window['go']['services']['ModerationService']['ReportAccount'](arg1, arg2, arg3);
 }
 
+export function ReportChatMessage(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['services']['ModerationService']['ReportChatMessage'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function ReportPost(arg1, arg2, arg3, arg4) {
   return window['go']['services']['ModerationService']['ReportPost'](arg1, arg2, arg3, arg4);
 }

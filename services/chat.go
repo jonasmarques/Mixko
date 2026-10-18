@@ -1,7 +1,13 @@
 package services
 
 import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/chat"
+	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
@@ -13,51 +19,92 @@ func NewChatService(clientMgr *ATClient) *ChatService {
 	return &ChatService{clientMgr: clientMgr}
 }
 
+func chatClient(c *xrpc.Client) *xrpc.Client {
+	return &xrpc.Client{
+		Client: c.Client,
+		Host:   "https://api.bsky.chat",
+		Auth:   c.Auth,
+	}
+}
+
+func parseConvoView(convo *chat.ConvoDefs_ConvoView, cursor string) *ChatConvoDTO {
+	if convo == nil {
+		return nil
+	}
+	lastMsg := ""
+	if convo.LastMessage != nil && convo.LastMessage.ConvoDefs_MessageView != nil {
+		lastMsg = convo.LastMessage.ConvoDefs_MessageView.Text
+	}
+	var members []ChatMemberDTO
+	for _, m := range convo.Members {
+		if m == nil {
+			continue
+		}
+		dispName := ""
+		if m.DisplayName != nil {
+			dispName = *m.DisplayName
+		}
+		avatar := ""
+		if m.Avatar != nil {
+			avatar = *m.Avatar
+		}
+		members = append(members, ChatMemberDTO{
+			DID:         m.Did,
+			Handle:      m.Handle,
+			DisplayName: dispName,
+			Avatar:      avatar,
+		})
+	}
+	dto := &ChatConvoDTO{
+		ID:          convo.Id,
+		Rev:         convo.Rev,
+		Members:     members,
+		LastMessage: lastMsg,
+		UnreadCount: convo.UnreadCount,
+		Muted:       convo.Muted,
+		Cursor:      cursor,
+	}
+	if convo.Kind != nil && convo.Kind.ConvoDefs_GroupConvo != nil {
+		gc := convo.Kind.ConvoDefs_GroupConvo
+		dto.IsGroup = true
+		dto.GroupName = gc.Name
+		dto.MemberCount = gc.MemberCount
+		dto.MemberLimit = gc.MemberLimit
+		if gc.LockStatus != nil {
+			dto.LockStatus = *gc.LockStatus
+		}
+		if gc.JoinRequestCount != nil {
+			dto.JoinRequestCount = *gc.JoinRequestCount
+		}
+		if gc.UnreadJoinRequestCount != nil {
+			dto.UnreadJoinRequestCount = *gc.UnreadJoinRequestCount
+		}
+		if gc.JoinLink != nil {
+			dto.JoinLinkCode = gc.JoinLink.Code
+			dto.JoinLinkRequireApproval = gc.JoinLink.RequireApproval
+			dto.JoinLinkEnabled = gc.JoinLink.EnabledStatus != nil && *gc.JoinLink.EnabledStatus == "enabled"
+		}
+	}
+	return dto
+}
+
 func (s *ChatService) ListConvos(cursor string) ([]*ChatConvoDTO, error) {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	var out []*ChatConvoDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
-		res, err := chat.ConvoListConvos(ctx, chatClient, cursor, "", 100, "", "", "")
+		res, err := chat.ConvoListConvos(ctx, cc, cursor, "", 100, "", "", "")
 		if err != nil {
 			return err
 		}
-		
+
+		cur := safeString(res.Cursor)
 		for _, convo := range res.Convos {
-			lastMsg := ""
-			if convo.LastMessage != nil && convo.LastMessage.ConvoDefs_MessageView != nil {
-				lastMsg = convo.LastMessage.ConvoDefs_MessageView.Text
+			if dto := parseConvoView(convo, cur); dto != nil {
+				out = append(out, dto)
 			}
-			var members []ChatMemberDTO
-			for _, m := range convo.Members {
-				dispName := ""
-				if m.DisplayName != nil {
-					dispName = *m.DisplayName
-				}
-				avatar := ""
-				if m.Avatar != nil {
-					avatar = *m.Avatar
-				}
-				members = append(members, ChatMemberDTO{
-					DID:         m.Did,
-					Handle:      m.Handle,
-					DisplayName: dispName,
-					Avatar:      avatar,
-				})
-			}
-			out = append(out, &ChatConvoDTO{
-				ID:          convo.Id,
-				Rev:         convo.Rev,
-				Members:     members,
-				LastMessage: lastMsg,
-				UnreadCount: convo.UnreadCount,
-			})
 		}
 		return nil
 	})
@@ -263,44 +310,26 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 
 
 func (s *ChatService) SendMessage(convoId string, text string) error {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
-
-		msg := &chat.ConvoDefs_MessageInput{
-			Text: text,
-		}
-		_, err := chat.ConvoSendMessage(ctx, chatClient, &chat.ConvoSendMessage_Input{
-			ConvoId: convoId,
-			Message: msg,
-		})
-		return err
-	})
-	return err
+	return s.sendMessageRaw(convoId, text, "", "", "", "")
 }
 
 func (s *ChatService) SendMessageWithGif(convoId string, text string, gifUrl string) error {
-	return s.sendMessageRaw(convoId, text, gifUrl, "")
+	return s.sendMessageRaw(convoId, text, gifUrl, "", "", "")
 }
 
 func (s *ChatService) SendReply(convoId string, replyToMessageId string, text string, gifUrl string) error {
-	return s.sendMessageRaw(convoId, text, gifUrl, replyToMessageId)
+	return s.sendMessageRaw(convoId, text, gifUrl, replyToMessageId, "", "")
 }
 
-func (s *ChatService) sendMessageRaw(convoId string, text string, gifUrl string, replyToMessageId string) error {
+func (s *ChatService) SendMessageWithEmbed(convoId string, text string, embedUri string, embedCid string) error {
+	return s.sendMessageRaw(convoId, text, "", "", embedUri, embedCid)
+}
+
+func (s *ChatService) sendMessageRaw(convoId string, text string, gifUrl string, replyToMessageId string, embedUri string, embedCid string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
 		finalText := text
 		if gifUrl != "" {
@@ -314,9 +343,21 @@ func (s *ChatService) sendMessageRaw(convoId string, text string, gifUrl string,
 		msgPayload := map[string]interface{}{
 			"text": finalText,
 		}
+		if facets := ParseFacets(ctx, c, finalText); len(facets) > 0 {
+			msgPayload["facets"] = facets
+		}
 		if replyToMessageId != "" {
 			msgPayload["replyTo"] = map[string]interface{}{
 				"messageId": replyToMessageId,
+			}
+		}
+		if embedUri != "" && embedCid != "" {
+			msgPayload["embed"] = map[string]interface{}{
+				"$type": "app.bsky.embed.record",
+				"record": map[string]interface{}{
+					"uri": embedUri,
+					"cid": embedCid,
+				},
 			}
 		}
 
@@ -326,7 +367,7 @@ func (s *ChatService) sendMessageRaw(convoId string, text string, gifUrl string,
 		}
 
 		var out interface{}
-		return chatClient.Do(ctx, xrpc.Procedure, "application/json", "chat.bsky.convo.sendMessage", nil, input, &out)
+		return cc.Do(ctx, xrpc.Procedure, "application/json", "chat.bsky.convo.sendMessage", nil, input, &out)
 	})
 	return err
 }
@@ -335,12 +376,8 @@ func (s *ChatService) AddReaction(convoId string, messageId string, emoji string
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
-		_, err := chat.ConvoAddReaction(ctx, chatClient, &chat.ConvoAddReaction_Input{
+		cc := chatClient(c)
+		_, err := chat.ConvoAddReaction(ctx, cc, &chat.ConvoAddReaction_Input{
 			ConvoId:   convoId,
 			MessageId: messageId,
 			Value:     emoji,
@@ -353,12 +390,8 @@ func (s *ChatService) RemoveReaction(convoId string, messageId string, emoji str
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
-		_, err := chat.ConvoRemoveReaction(ctx, chatClient, &chat.ConvoRemoveReaction_Input{
+		cc := chatClient(c)
+		_, err := chat.ConvoRemoveReaction(ctx, cc, &chat.ConvoRemoveReaction_Input{
 			ConvoId:   convoId,
 			MessageId: messageId,
 			Value:     emoji,
@@ -367,18 +400,13 @@ func (s *ChatService) RemoveReaction(convoId string, messageId string, emoji str
 	})
 }
 
-
 func (s *ChatService) UpdateReadStatus(convoId string, messageId string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
-		_, err := chat.ConvoUpdateRead(ctx, chatClient, &chat.ConvoUpdateRead_Input{
+		_, err := chat.ConvoUpdateRead(ctx, cc, &chat.ConvoUpdateRead_Input{
 			ConvoId:   convoId,
 			MessageId: &messageId,
 		})
@@ -386,18 +414,32 @@ func (s *ChatService) UpdateReadStatus(convoId string, messageId string) error {
 	})
 }
 
+func (s *ChatService) UpdateAllRead() (int64, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var updated int64
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.ConvoUpdateAllRead(ctx, cc, &chat.ConvoUpdateAllRead_Input{})
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			updated = res.UpdatedCount
+		}
+		return nil
+	})
+	return updated, err
+}
+
 func (s *ChatService) GetUnreadCount() (int64, error) {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	var count int64
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
-		res, err := chat.ConvoListConvos(ctx, chatClient, "", "", 50, "", "", "")
+		res, err := chat.ConvoListConvos(ctx, cc, "", "", 50, "", "", "")
 		if err != nil {
 			return err
 		}
@@ -413,13 +455,9 @@ func (s *ChatService) MuteConvo(convoId string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
-		_, err := chat.ConvoMuteConvo(ctx, chatClient, &chat.ConvoMuteConvo_Input{
+		_, err := chat.ConvoMuteConvo(ctx, cc, &chat.ConvoMuteConvo_Input{
 			ConvoId: convoId,
 		})
 		return err
@@ -430,13 +468,9 @@ func (s *ChatService) UnmuteConvo(convoId string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
-		_, err := chat.ConvoUnmuteConvo(ctx, chatClient, &chat.ConvoUnmuteConvo_Input{
+		_, err := chat.ConvoUnmuteConvo(ctx, cc, &chat.ConvoUnmuteConvo_Input{
 			ConvoId: convoId,
 		})
 		return err
@@ -447,13 +481,9 @@ func (s *ChatService) LeaveConvo(convoId string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
-		_, err := chat.ConvoLeaveConvo(ctx, chatClient, &chat.ConvoLeaveConvo_Input{
+		_, err := chat.ConvoLeaveConvo(ctx, cc, &chat.ConvoLeaveConvo_Input{
 			ConvoId: convoId,
 		})
 		return err
@@ -465,45 +495,43 @@ func (s *ChatService) GetConvoForMembers(dids []string) (*ChatConvoDTO, error) {
 	defer cancel()
 	var out *ChatConvoDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
-
-		res, err := chat.ConvoGetConvoForMembers(ctx, chatClient, dids)
+		cc := chatClient(c)
+		resolved, err := s.resolveActorsWithClient(ctx, c, dids)
 		if err != nil {
 			return err
 		}
-		
-		convo := res.Convo
-		lastMsg := ""
-		if convo.LastMessage != nil && convo.LastMessage.ConvoDefs_MessageView != nil {
-			lastMsg = convo.LastMessage.ConvoDefs_MessageView.Text
+
+		res, err := chat.ConvoGetConvoForMembers(ctx, cc, resolved)
+		if err != nil {
+			return err
 		}
-		var members []ChatMemberDTO
-		for _, m := range convo.Members {
-			dispName := ""
-			if m.DisplayName != nil {
-				dispName = *m.DisplayName
-			}
-			avatar := ""
-			if m.Avatar != nil {
-				avatar = *m.Avatar
-			}
-			members = append(members, ChatMemberDTO{
-				DID:         m.Did,
-				Handle:      m.Handle,
-				DisplayName: dispName,
-				Avatar:      avatar,
-			})
+
+		out = parseConvoView(res.Convo, "")
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) GetConvoAvailability(actorOrDid string) (*ChatAvailabilityDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatAvailabilityDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		resolved, err := s.resolveActorsWithClient(ctx, c, []string{actorOrDid})
+		if err != nil {
+			return err
 		}
-		out = &ChatConvoDTO{
-			ID:          convo.Id,
-			Rev:         convo.Rev,
-			Members:     members,
-			LastMessage: lastMsg,
-			UnreadCount: convo.UnreadCount,
+		res, err := chat.ConvoGetConvoAvailability(ctx, cc, resolved)
+		if err != nil {
+			return err
+		}
+		out = &ChatAvailabilityDTO{
+			CanChat: res.CanChat,
+		}
+		if res.Convo != nil {
+			out.ConvoID = res.Convo.Id
+			out.Convo = parseConvoView(res.Convo, "")
 		}
 		return nil
 	})
@@ -514,16 +542,377 @@ func (s *ChatService) DeleteMessage(convoId string, messageId string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		chatClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://api.bsky.chat",
-			Auth:   c.Auth,
-		}
+		cc := chatClient(c)
 
-		_, err := chat.ConvoDeleteMessageForSelf(ctx, chatClient, &chat.ConvoDeleteMessageForSelf_Input{
+		_, err := chat.ConvoDeleteMessageForSelf(ctx, cc, &chat.ConvoDeleteMessageForSelf_Input{
 			ConvoId:   convoId,
 			MessageId: messageId,
 		})
 		return err
 	})
 }
+
+func (s *ChatService) GetChatDeclaration() (string, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	allowIncoming := "following"
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := atproto.RepoGetRecord(ctx, c, "", "chat.bsky.actor.declaration", c.Auth.Did, "self")
+		if err != nil {
+			return nil
+		}
+		if res != nil && res.Value != nil {
+			rawBytes, mErr := json.Marshal(res.Value)
+			if mErr == nil {
+				var decl struct {
+					AllowIncoming string `json:"allowIncoming"`
+				}
+				if json.Unmarshal(rawBytes, &decl) == nil && decl.AllowIncoming != "" {
+					allowIncoming = decl.AllowIncoming
+				}
+			}
+		}
+		return nil
+	})
+	return allowIncoming, err
+}
+
+func (s *ChatService) UpdateChatDeclaration(allowIncoming string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	val := strings.TrimSpace(allowIncoming)
+	if val != "all" && val != "following" && val != "none" {
+		val = "following"
+	}
+
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		decl := &chat.ActorDeclaration{
+			LexiconTypeID: "chat.bsky.actor.declaration",
+			AllowIncoming: val,
+		}
+		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "chat.bsky.actor.declaration",
+			Repo:       c.Auth.Did,
+			Rkey:       "self",
+			Record:     &util.LexiconTypeDecoder{Val: decl},
+		})
+		return err
+	})
+}
+
+func (s *ChatService) resolveActorsWithClient(ctx context.Context, c *xrpc.Client, actors []string) ([]string, error) {
+	out := make([]string, 0, len(actors))
+	for _, raw := range actors {
+		trimmed := strings.TrimPrefix(strings.TrimSpace(raw), "@")
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "did:") {
+			out = append(out, trimmed)
+			continue
+		}
+		res, err := atproto.IdentityResolveHandle(ctx, c, trimmed)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, res.Did)
+	}
+	return out, nil
+}
+
+func (s *ChatService) CreateGroup(name string, memberActors []string) (*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		dids, err := s.resolveActorsWithClient(ctx, c, memberActors)
+		if err != nil {
+			return err
+		}
+		res, err := chat.GroupCreateGroup(ctx, cc, &chat.GroupCreateGroup_Input{
+			Name:    strings.TrimSpace(name),
+			Members: dids,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseConvoView(res.Convo, "")
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) EditGroup(convoId string, name string) (*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.GroupEditGroup(ctx, cc, &chat.GroupEditGroup_Input{
+			ConvoId: convoId,
+			Name:    strings.TrimSpace(name),
+		})
+		if err != nil {
+			return err
+		}
+		out = parseConvoView(res.Convo, "")
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) AddGroupMembers(convoId string, memberActors []string) (*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		dids, err := s.resolveActorsWithClient(ctx, c, memberActors)
+		if err != nil {
+			return err
+		}
+		res, err := chat.GroupAddMembers(ctx, cc, &chat.GroupAddMembers_Input{
+			ConvoId: convoId,
+			Members: dids,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseConvoView(res.Convo, "")
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) RemoveGroupMembers(convoId string, memberActors []string) (*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		dids, err := s.resolveActorsWithClient(ctx, c, memberActors)
+		if err != nil {
+			return err
+		}
+		res, err := chat.GroupRemoveMembers(ctx, cc, &chat.GroupRemoveMembers_Input{
+			ConvoId: convoId,
+			Members: dids,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseConvoView(res.Convo, "")
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) LockConvo(convoId string) (*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.ConvoLockConvo(ctx, cc, &chat.ConvoLockConvo_Input{
+			ConvoId: convoId,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseConvoView(res.Convo, "")
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) UnlockConvo(convoId string) (*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.ConvoUnlockConvo(ctx, cc, &chat.ConvoUnlockConvo_Input{
+			ConvoId: convoId,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseConvoView(res.Convo, "")
+		return nil
+	})
+	return out, err
+}
+
+func parseJoinLinkView(jl *chat.GroupDefs_JoinLinkView) *ChatGroupJoinLinkDTO {
+	if jl == nil {
+		return nil
+	}
+	return &ChatGroupJoinLinkDTO{
+		Code:            jl.Code,
+		CreatedAt:       jl.CreatedAt,
+		EnabledStatus:   safeString(jl.EnabledStatus),
+		JoinRule:        safeString(jl.JoinRule),
+		RequireApproval: jl.RequireApproval,
+	}
+}
+
+func (s *ChatService) CreateGroupJoinLink(convoId string, requireApproval bool) (*ChatGroupJoinLinkDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatGroupJoinLinkDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		joinRule := "anyone"
+		res, err := chat.GroupCreateJoinLink(ctx, cc, &chat.GroupCreateJoinLink_Input{
+			ConvoId:         convoId,
+			JoinRule:        &joinRule,
+			RequireApproval: &requireApproval,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseJoinLinkView(res.JoinLink)
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) EnableGroupJoinLink(convoId string) (*ChatGroupJoinLinkDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatGroupJoinLinkDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.GroupEnableJoinLink(ctx, cc, &chat.GroupEnableJoinLink_Input{
+			ConvoId: convoId,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseJoinLinkView(res.JoinLink)
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) DisableGroupJoinLink(convoId string) (*ChatGroupJoinLinkDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatGroupJoinLinkDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.GroupDisableJoinLink(ctx, cc, &chat.GroupDisableJoinLink_Input{
+			ConvoId: convoId,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseJoinLinkView(res.JoinLink)
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) ListGroupJoinRequests(convoId string, cursor string) (*ChatJoinRequestListDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatJoinRequestListDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.GroupListJoinRequests(ctx, cc, convoId, cursor, 50)
+		if err != nil {
+			return err
+		}
+		out = &ChatJoinRequestListDTO{
+			Cursor: safeString(res.Cursor),
+		}
+		for _, r := range res.Requests {
+			if r == nil {
+				continue
+			}
+			var member ChatMemberDTO
+			if r.RequestedBy != nil {
+				member = ChatMemberDTO{
+					DID:         r.RequestedBy.Did,
+					Handle:      r.RequestedBy.Handle,
+					DisplayName: safeString(r.RequestedBy.DisplayName),
+					Avatar:      safeString(r.RequestedBy.Avatar),
+				}
+			}
+			out.Requests = append(out.Requests, &ChatJoinRequestDTO{
+				ConvoID:     r.ConvoId,
+				RequestedAt: r.RequestedAt,
+				RequestedBy: member,
+			})
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) ApproveGroupJoinRequest(convoId string, memberDid string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		_, err := chat.GroupApproveJoinRequest(ctx, cc, &chat.GroupApproveJoinRequest_Input{
+			ConvoId: convoId,
+			Member:  memberDid,
+		})
+		return err
+	})
+}
+
+func (s *ChatService) RejectGroupJoinRequest(convoId string, memberDid string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		_, err := chat.GroupRejectJoinRequest(ctx, cc, &chat.GroupRejectJoinRequest_Input{
+			ConvoId: convoId,
+			Member:  memberDid,
+		})
+		return err
+	})
+}
+
+func (s *ChatService) GetConvoLog(cursor string) (string, bool, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var nextCursor string
+	var hasNewActivity bool
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.ConvoGetLog(ctx, cc, cursor)
+		if err != nil {
+			return err
+		}
+		nextCursor = safeString(res.Cursor)
+		for _, entry := range res.Logs {
+			if entry == nil {
+				continue
+			}
+			if entry.ConvoDefs_LogCreateMessage != nil {
+				hasNewActivity = true
+				if entry.ConvoDefs_LogCreateMessage.Rev > nextCursor {
+					nextCursor = entry.ConvoDefs_LogCreateMessage.Rev
+				}
+			} else if entry.ConvoDefs_LogAddReaction != nil {
+				hasNewActivity = true
+				if entry.ConvoDefs_LogAddReaction.Rev > nextCursor {
+					nextCursor = entry.ConvoDefs_LogAddReaction.Rev
+				}
+			} else if entry.ConvoDefs_LogBeginConvo != nil {
+				hasNewActivity = true
+				if entry.ConvoDefs_LogBeginConvo.Rev > nextCursor {
+					nextCursor = entry.ConvoDefs_LogBeginConvo.Rev
+				}
+			}
+		}
+		return nil
+	})
+	return nextCursor, hasNewActivity, err
+}
+

@@ -2,13 +2,15 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
 import { createListArticle } from '../components/list';
-import { confirmDialog, promptDialog } from '../utils/dialog';
+import { confirmDialog, promptDialog, promptReportDetails } from '../utils/dialog';
 import { switchTab } from './tabs';
+import { loadTimeline } from './timeline';
 import { openChatConvo } from './chat';
 import { showMuteMenu } from './shortcuts';
 import { getFilePathOrDataUrl, esc, linkify } from '../utils/helpers';
 import { i18n } from '../utils/i18n';
 import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
+import type { StarterPackDTO, ProfileDTO } from '../types/dto';
 
 /** @param silent suppresses the "loaded" announcement, for pages fetched to restore focus. */
 export async function loadProfile(loadMore = false, keepFocus = false, silent = false) {
@@ -81,6 +83,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               actionsHtml = `
                 ${followBtn}
                 ${notifyBtn}
+                <button id="btn-known-followers" aria-haspopup="true" aria-expanded="false" aria-label="${esc(i18n.t('profile.knownFollowersAria'))}">${esc(i18n.t('profile.knownFollowersBtn'))}</button>
                 ${muteBtn}
                 ${blockBtn}
                 ${labelerBtn}
@@ -89,27 +92,36 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 <button id="btn-report-user" data-did="${res.did}" aria-label="${i18n.t('profile.reportAria')}">${i18n.t('profile.reportBtn')}</button>
               `;
           } else {
+              state.loggedInPinnedPostUri = res.pinnedPostUri || "";
+              const liveStatusBtns = res.status && res.status.isActive
+                ? `<button id="btn-set-live-status">${esc(i18n.t('sec2.setLiveStatus'))}</button> <button id="btn-clear-live-status">${esc(i18n.t('sec2.clearLiveStatus'))}</button>`
+                : `<button id="btn-set-live-status">${esc(i18n.t('sec2.setLiveStatus'))}</button>`;
               actionsHtml = `
                 <button id="btn-edit-profile" aria-label="${i18n.t('profile.editProfileAria')}">${i18n.t('profile.editProfileBtn')}</button>
+                ${liveStatusBtns}
               `;
-          }
-          
-          let knownFollowersHtml = "";
-          try {
-            if (!res.isMe && window.go.services.SocialService.GetKnownFollowers) {
-              const knownRes = await window.go.services.SocialService.GetKnownFollowers(res.did || res.handle, "");
-              if (knownRes && knownRes.profiles && knownRes.profiles.length > 0) {
-                const names = knownRes.profiles.map((p) => p.displayName || `@${p.handle}`).join(', ');
-                knownFollowersHtml = `<p style="font-size:0.9em; color:#aaa;"><em>${esc(i18n.t('profile.followedByKnown', { names }))}</em></p>`;
-              }
-            }
-          } catch (e) {
-            console.warn("Known followers error:", e);
           }
 
           let blockedNotice = "";
           if (res.viewerBlockedBy) {
             blockedNotice = `<div style="padding:10px; background:#4a1515; color:#ffaaaa; margin-bottom:10px; border-radius:4px;">${i18n.t('profile.userBlockedYou')}</div>`;
+          }
+
+          let verificationBadgeHtml = "";
+          if (!state.hideVerificationBadges) {
+            if (res.trustedVerifier) {
+              verificationBadgeHtml = ` <span title="${esc(i18n.t('sec2.trustedVerifierBadge'))}" aria-label="${esc(i18n.t('sec2.trustedVerifierBadge'))}">🛡️✓</span>`;
+            } else if (res.verified) {
+              verificationBadgeHtml = ` <span title="${esc(i18n.t('sec2.verifiedBadge'))}" aria-label="${esc(i18n.t('sec2.verifiedBadge'))}">✓</span>`;
+            }
+          }
+
+          let liveStatusHtml = "";
+          if (res.status && res.status.isActive) {
+            const linkPart = res.status.uri
+              ? ` — <a href="${esc(res.status.uri)}" target="_blank" rel="noopener noreferrer">${esc(res.status.title || res.status.uri)}</a>`
+              : (res.status.title ? ` — ${esc(res.status.title)}` : '');
+            liveStatusHtml = `<div style="padding: 6px 10px; background: #fee2e2; color: #991b1b; border-radius: 6px; margin-bottom: 8px; font-weight: bold;">${esc(i18n.t('sec2.liveStatusBadge'))}${linkPart}</div>`;
           }
 
           let labelerBadge = "";
@@ -142,10 +154,11 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
           container.innerHTML = `
             <div class="post-item profile-header" tabindex="0" data-text="${esc(i18n.t('profile.profileAriaDetails', { name: res.displayName, followsYou: res.viewerFollowedBy ? i18n.t('profile.followsYouAria') : '', isLabeler: res.isLabeler ? i18n.t('profile.isLabelerAria') : '', followers: res.followersCount.toString(), following: res.followsCount.toString(), shortcuts: res.isMe ? '' : i18n.t('profile.shortcutsAria') }))}">
               ${blockedNotice}
+              ${liveStatusHtml}
               ${labelerBadge}
-              <h3>${esc(res.displayName)} (@${esc(res.handle)})</h3>
+              <h3>${esc(res.displayName)} (@${esc(res.handle)})${verificationBadgeHtml}</h3>
               ${res.viewerFollowedBy ? `<p><em>${i18n.t('profile.followsYouText')}</em></p>` : ''}
-              ${knownFollowersHtml}
+              <div id="known-followers-container" aria-live="polite" style="display:none; margin: 8px 0; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 6px;"></div>
               <p>${linkify(res.description || '')}</p>
               <p>
                 <strong>${res.followersCount}</strong> ${i18n.t('profile.tabFollowers')} | 
@@ -167,7 +180,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               await window.go.services.SocialService.SubscribeLabeler(res.did);
               announceAssertive(i18n.t('profile.subscribedLabelerSuccess'));
               loadProfile(false, true);
-            } catch (err: any) {
+            } catch (err: unknown) {
               announceAssertive(i18n.t('profile.subscribeLabelerError', { err: String(err) }));
             }
           });
@@ -180,7 +193,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               await window.go.services.SocialService.UnsubscribeLabeler(res.did);
               announceAssertive(i18n.t('profile.unsubscribedLabelerSuccess'));
               loadProfile(false, true);
-            } catch (err: any) {
+            } catch (err: unknown) {
               announceAssertive(i18n.t('profile.unsubscribeLabelerError', { err: String(err) }));
             }
           });
@@ -190,6 +203,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             try {
               const pinnedRes = await window.go.services.FeedService.GetPosts([res.pinnedPostUri]);
               if (pinnedRes && pinnedRes.posts && pinnedRes.posts.length > 0) {
+                pinnedRes.posts[0].isPinned = true;
                 const pinnedHeader = document.createElement('div');
                 pinnedHeader.style.padding = '8px 12px';
                 pinnedHeader.style.background = '#252836';
@@ -214,13 +228,14 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               replies: i18n.t('profile.tabReplies'),
               media: i18n.t('profile.tabMedia'),
               likes: i18n.t('profile.tabLikes'),
+              feeds: i18n.t('sec2.tabActorFeeds'),
               lists: i18n.t('profile.tabLists'),
               packs: i18n.t('profile.tabPacks'),
               starterPacks: i18n.t('profile.tabPacks'),
               followers: i18n.t('profile.tabFollowers'),
               following: i18n.t('profile.tabFollowing')
           };
-          ['posts', 'replies', 'media', 'likes', 'lists', 'packs', 'followers', 'following'].forEach(mode => {
+          ['posts', 'replies', 'media', 'likes', 'feeds', 'lists', 'packs', 'followers', 'following'].forEach(mode => {
               const btn = document.getElementById(`ptab-${mode}`);
               if (btn) {
                   const isActive = state.profileTabMode === mode || (state.profileTabMode === 'starterPacks' && mode === 'packs');
@@ -229,7 +244,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                   btn.style.fontWeight = isActive ? 'bold' : 'normal';
                   
                   btn.onclick = () => {
-                      state.profileTabMode = mode === 'packs' ? 'starterPacks' : mode as any;
+                      state.profileTabMode = mode === 'packs' ? 'starterPacks' : mode as typeof state.profileTabMode;
                       announcePolite(modeLabels[mode] || mode);
                       loadProfile();
                   };
@@ -237,6 +252,62 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
           });
 
           if (!res.isMe) {
+              const btnKnown = document.getElementById('btn-known-followers');
+              btnKnown?.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const kfContainer = document.getElementById('known-followers-container');
+                if (!kfContainer) return;
+
+                if (kfContainer.style.display !== 'none') {
+                  kfContainer.style.display = 'none';
+                  btnKnown.setAttribute('aria-expanded', 'false');
+                  announcePolite(i18n.t('profile.knownFollowersClosed'));
+                  return;
+                }
+
+                kfContainer.style.display = 'block';
+                btnKnown.setAttribute('aria-expanded', 'true');
+                kfContainer.innerHTML = `<p style="font-size:0.9em; color:#aaa; margin:0;">${esc(i18n.t('profile.loadingKnownFollowers'))}</p>`;
+                announcePolite(i18n.t('profile.loadingKnownFollowers'));
+
+                try {
+                  const knownRes = await window.go.services.SocialService.GetKnownFollowers(res.did || res.handle, "");
+                  if (knownRes && knownRes.profiles && knownRes.profiles.length > 0) {
+                    const names = knownRes.profiles.map((p: ProfileDTO) => p.displayName || `@${p.handle}`).join(', ');
+                    const profileLinks = knownRes.profiles.map((p: ProfileDTO) => {
+                      const name = esc(p.displayName || p.handle);
+                      const handle = esc(p.handle);
+                      return `<button type="button" class="btn-profile-link" data-handle="${handle}" style="background:none; border:none; color:var(--primary-color, #38bdf8); text-decoration:underline; cursor:pointer; padding:2px 4px; font-size:1em;">${name} (@${handle})</button>`;
+                    }).join(', ');
+                    kfContainer.innerHTML = `
+                      <div style="font-size:0.9em;">
+                        <strong>${esc(i18n.t('profile.knownFollowersTitle'))}:</strong>
+                        <div style="margin-top:4px;">${profileLinks}</div>
+                      </div>
+                    `;
+                    kfContainer.querySelectorAll('.btn-profile-link').forEach(linkBtn => {
+                      linkBtn.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        const targetHandle = (linkBtn as HTMLElement).dataset.handle;
+                        if (targetHandle) {
+                          state.currentHandle = targetHandle;
+                          announcePolite(i18n.t('profile.openingProfile', { handle: state.currentHandle }));
+                          loadProfile();
+                        }
+                      });
+                    });
+                    announceAssertive(i18n.t('profile.followedByKnown', { names }));
+                  } else {
+                    kfContainer.innerHTML = `<p style="font-size:0.9em; color:#aaa; margin:0;">${esc(i18n.t('profile.noKnownFollowers'))}</p>`;
+                    announceAssertive(i18n.t('profile.noKnownFollowers'));
+                  }
+                } catch (err: unknown) {
+                  kfContainer.innerHTML = `<p style="font-size:0.9em; color:#f87171; margin:0;">${esc(String(err))}</p>`;
+                  announceAssertive(String(err));
+                }
+              });
+
               document.getElementById('btn-follow')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
                   announcePolite(i18n.t('profile.followingAction'));
@@ -297,6 +368,11 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                   try {
                     const memberTitle = formatAuthor(res.displayName || '', res.handle);
                     announcePolite(i18n.t('chat.openingChat', { handle: memberTitle }));
+                    const avail = await window.go.services.ChatService.GetConvoAvailability(res.did);
+                    if (avail && !avail.canChat) {
+                      announceAssertive(i18n.t('extended.cannotChatUser'));
+                      return;
+                    }
                     const convo = await window.go.services.ChatService.GetConvoForMembers([res.did]);
                     if (convo && convo.id) {
                       state.tabStates['chat'].loaded = true;
@@ -310,11 +386,11 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               document.getElementById('btn-report-user')?.addEventListener('click', async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  const reason = await promptDialog(i18n.t('profile.reportPrompt', { handle: res.handle }), '', i18n.t('profile.reportAccountTitle'));
-                  if (reason) {
+                  const details = await promptReportDetails(i18n.t('profile.reportAccountTitle'));
+                  if (details) {
                     announcePolite(i18n.t('profile.sendingReport'));
                     try {
-                      await window.go.services.ModerationService.ReportAccount(res.did, 'com.atproto.moderation.defs#reasonOther', reason);
+                      await window.go.services.ModerationService.ReportAccount(res.did, details.reasonType, details.reason);
                       announceAssertive(i18n.t('profile.reportSuccess'));
                     } catch (err: unknown) {
                       console.error("ReportAccount error:", err);
@@ -404,20 +480,26 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                   e.stopPropagation();
                   try {
                       announcePolite(i18n.t('profile.loadingLists'));
-                      const listsRes = await window.go.services.SocialService.GetActorLists(state.loggedInHandle, "");
-                      if (!listsRes || !listsRes.lists || listsRes.lists.length === 0) {
+                      const listsRes = await window.go.services.SocialService.GetListsWithMembership(res.did, "");
+                      const listItems = listsRes?.items || [];
+                      if (listItems.length === 0) {
                           announceAssertive(i18n.t('profile.noListsCreated'));
                           return;
                       }
-                      const options = listsRes.lists.map((l: { name: string }, i: number) => `${i + 1}. ${l.name}`).join("\n");
+                      const options = listItems.map((item, i) => `${i + 1}. ${item.listItemUri ? '[✓] ' : ''}${item.list.name}`).join("\n");
                       const chosen = await promptDialog(i18n.t('profile.chooseListPrompt', { handle: res.handle, options }), "1", i18n.t('profile.addToListTitle'));
                       if (chosen) {
                           const idx = parseInt(chosen, 10) - 1;
-                          if (idx >= 0 && idx < listsRes.lists.length) {
-                              const selectedList = listsRes.lists[idx];
-                              announcePolite(i18n.t('profile.addingToList', { handle: res.handle, name: selectedList.name }));
-                              await window.go.services.SocialService.AddUserToList(selectedList.uri, res.did);
-                              announceAssertive(i18n.t('profile.addedToList', { handle: res.handle, name: selectedList.name }));
+                          if (idx >= 0 && idx < listItems.length) {
+                              const selected = listItems[idx];
+                              if (selected.listItemUri) {
+                                  await window.go.services.SocialService.RemoveUserFromList(selected.listItemUri);
+                                  announceAssertive(i18n.t('sec2.removedFromListSuccess', { handle: res.handle, name: selected.list.name }));
+                              } else {
+                                  announcePolite(i18n.t('profile.addingToList', { handle: res.handle, name: selected.list.name }));
+                                  await window.go.services.SocialService.AddUserToList(selected.list.uri, res.did);
+                                  announceAssertive(i18n.t('profile.addedToList', { handle: res.handle, name: selected.list.name }));
+                              }
                           } else {
                               announceAssertive(i18n.t('profile.invalidOption'));
                           }
@@ -427,6 +509,33 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                   }
               });
           } else {
+              document.getElementById('btn-set-live-status')?.addEventListener('click', async (e) => {
+                  e.stopPropagation();
+                  const uri = await promptDialog(i18n.t('sec2.liveStatusUriPrompt'), "https://", i18n.t('sec2.setLiveStatus'));
+                  if (!uri || !uri.trim()) return;
+                  const title = (await promptDialog(i18n.t('sec2.liveStatusTitlePrompt'), "", i18n.t('sec2.setLiveStatus'))) || uri.trim();
+                  const durStr = (await promptDialog(i18n.t('sec2.liveStatusDurationPrompt'), "60", i18n.t('sec2.setLiveStatus'))) || "60";
+                  const durMin = parseInt(durStr, 10) || 60;
+                  try {
+                      await window.go.services.SocialService.SetActorStatus("", uri.trim(), title.trim(), "", durMin);
+                      announceAssertive(i18n.t('sec2.liveStatusSetSuccess'));
+                      loadProfile(false, true);
+                  } catch (err: unknown) {
+                      announceAssertive(i18n.t('post.error', { error: String(err) }));
+                  }
+              });
+
+              document.getElementById('btn-clear-live-status')?.addEventListener('click', async (e) => {
+                  e.stopPropagation();
+                  try {
+                      await window.go.services.SocialService.ClearActorStatus();
+                      announceAssertive(i18n.t('sec2.liveStatusClearedSuccess'));
+                      loadProfile(false, true);
+                  } catch (err: unknown) {
+                      announceAssertive(i18n.t('post.error', { error: String(err) }));
+                  }
+              });
+
               document.getElementById('btn-edit-profile')?.addEventListener('click', async (e) => {
                   e.stopPropagation();
                   const dialog = document.getElementById('edit-profile-modal') as HTMLDialogElement;
@@ -502,16 +611,66 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             });
             state.profileCursor = feedRes.cursor;
         }
-    } else if (state.profileTabMode === 'followers' || state.profileTabMode === 'following') {
-        let resData: any;
-        if (state.profileTabMode === 'followers') {
-            resData = await window.go.services.SocialService.GetFollowers(state.currentHandle, state.profileCursor);
-        } else {
-            resData = await window.go.services.SocialService.GetFollows(state.currentHandle, state.profileCursor);
+    } else if (state.profileTabMode === 'feeds') {
+        const resData = await window.go.services.FeedService.GetActorFeeds(state.currentHandle, state.profileCursor);
+        if (resData && resData.feeds && resData.feeds.length > 0) {
+            resData.feeds.forEach((feed) => {
+                const article = document.createElement('article');
+                article.classList.add('post-item');
+                article.setAttribute('tabindex', '0');
+                article.dataset.index = state.currentPosts.length.toString();
+                article.innerHTML = `
+                    <h3>${esc(feed.displayName)} <small>(@${esc(feed.creator)})</small></h3>
+                    <p>${esc(feed.description || '')}</p>
+                    <small>${i18n.t('feeds.likesCount', { count: (feed.likeCount || 0).toString() })}</small>
+                    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn-open-actor-feed">${esc(i18n.t('feeds.openFeedBtn'))}</button>
+                        <button class="btn-like-actor-feed">${esc(feed.viewerLike ? i18n.t('sec2.unlikeFeedBtn') : i18n.t('sec2.likeFeedBtn'))}</button>
+                    </div>
+                `;
+                article.querySelector('.btn-open-actor-feed')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    state.currentFeedUri = feed.uri;
+                    switchTab('timeline');
+                    loadTimeline(false);
+                });
+                article.querySelector('.btn-like-actor-feed')?.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const btn = e.currentTarget as HTMLButtonElement;
+                    try {
+                        if (feed.viewerLike) {
+                            await window.go.services.FeedService.UnlikeFeedGenerator(feed.viewerLike);
+                            feed.viewerLike = "";
+                            feed.likeCount = Math.max(0, (feed.likeCount || 1) - 1);
+                            btn.textContent = i18n.t('sec2.likeFeedBtn');
+                            announceAssertive(i18n.t('sec2.feedUnlikedSuccess'));
+                        } else {
+                            const likeUri = await window.go.services.FeedService.LikeFeedGenerator(feed.uri, feed.cid || "");
+                            feed.viewerLike = likeUri;
+                            feed.likeCount = (feed.likeCount || 0) + 1;
+                            btn.textContent = i18n.t('sec2.unlikeFeedBtn');
+                            announceAssertive(i18n.t('sec2.feedLikedSuccess'));
+                        }
+                    } catch (err: unknown) {
+                        announceAssertive(i18n.t('post.error', { error: String(err) }));
+                    }
+                });
+                article.addEventListener('focus', () => {
+                    const iStr = article.dataset.index;
+                    if (iStr !== undefined) state.focusedPostIndex = parseInt(iStr, 10);
+                });
+                contentContainer.appendChild(article);
+                state.currentPosts.push(article);
+            });
+            state.profileCursor = resData.cursor;
         }
+    } else if (state.profileTabMode === 'followers' || state.profileTabMode === 'following') {
+        const resData = state.profileTabMode === 'followers'
+            ? await window.go.services.SocialService.GetFollowers(state.currentHandle, state.profileCursor)
+            : await window.go.services.SocialService.GetFollows(state.currentHandle, state.profileCursor);
         
         if (resData && resData.profiles) {
-            resData.profiles.forEach((prof: any) => {
+            resData.profiles.forEach((prof) => {
                 const div = document.createElement('article');
                 div.classList.add('post-item');
                 div.setAttribute('tabindex', '0');
@@ -544,9 +703,9 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             state.profileCursor = resData.cursor;
         }
     } else if (state.profileTabMode === 'lists') {
-        let resData = await window.go.services.SocialService.GetActorLists(state.currentHandle, state.profileCursor);
+        const resData = await window.go.services.SocialService.GetActorLists(state.currentHandle, state.profileCursor);
         if (resData && resData.lists && resData.lists.length > 0) {
-            resData.lists.forEach((list: any) => {
+            resData.lists.forEach((list) => {
                 const article = createListArticle(list, {
                     onRefresh: () => loadProfile(false, true),
                     targetContainerId: 'profile-content',
@@ -561,9 +720,9 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             announcePolite(i18n.t('profile.noListsFound'));
         }
     } else if (state.profileTabMode === 'starterPacks') {
-        let resData = await window.go.services.SocialService.GetActorStarterPacks(state.currentHandle, state.profileCursor);
+        const resData = await window.go.services.SocialService.GetActorStarterPacks(state.currentHandle, state.profileCursor);
         if (resData && resData.starterPacks && resData.starterPacks.length > 0) {
-            resData.starterPacks.forEach((item: any) => {
+            resData.starterPacks.forEach((item: StarterPackDTO) => {
                 const article = document.createElement('article');
                 article.classList.add('post-item');
                 article.setAttribute('tabindex', '0');
@@ -571,24 +730,98 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 article.dataset.text = i18n.t('profile.starterPackCardAria', { name: item.name, desc: item.description || '' });
                 article.setAttribute('aria-label', article.dataset.text);
                 
+                const isOwner = Boolean(
+                    (item.creatorDid && item.creatorDid === state.loggedInDid) ||
+                    (item.creator && state.loggedInHandle && item.creator.toLowerCase() === state.loggedInHandle.toLowerCase()) ||
+                    (state.currentHandle && state.loggedInHandle && state.currentHandle.toLowerCase() === state.loggedInHandle.toLowerCase())
+                );
+                const followAllBtnHtml = item.listUri
+                    ? `<button class="btn-follow-all-pack" data-list-uri="${esc(item.listUri)}" style="padding:4px 10px; font-weight:bold;">${i18n.t('profile.followAllBtn')}</button>`
+                    : '';
+                const editBtnHtml = isOwner
+                    ? `<button class="btn-edit-starter-pack" data-uri="${esc(item.uri)}" style="padding:4px 10px;">${esc(i18n.t('sec2.editStarterPackBtn'))}</button>`
+                    : '';
+                const deleteBtnHtml = isOwner
+                    ? `<button class="btn-delete-starter-pack" data-uri="${esc(item.uri)}" style="padding:4px 10px; background:#d32f2f; color:#fff;">${i18n.t('profile.deleteStarterPackBtn')}</button>`
+                    : '';
+
+                article.innerHTML = `
+                    <h3>${esc(item.name)}</h3>
+                    <p>${esc(item.description || '')}</p>
+                    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn-view-starter-pack" data-uri="${esc(item.uri)}" style="padding:4px 10px;">${esc(i18n.t('sec2.viewStarterPackBtn'))}</button>
+                        ${followAllBtnHtml}
+                        ${editBtnHtml}
+                        ${deleteBtnHtml}
+                    </div>
+                    <div class="starter-pack-details-box hidden" style="margin-top:8px; padding:8px; border-top:1px solid #444;"></div>
+                `;
+
+                article.querySelector('.btn-view-starter-pack')?.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const detailsBox = article.querySelector('.starter-pack-details-box') as HTMLDivElement | null;
+                    if (!detailsBox) return;
+                    if (!detailsBox.classList.contains('hidden')) {
+                        detailsBox.classList.add('hidden');
+                        return;
+                    }
+                    detailsBox.classList.remove('hidden');
+                    detailsBox.innerHTML = `<p>${esc(i18n.t('modals.loading'))}</p>`;
+                    try {
+                        const detail = await window.go.services.SocialService.GetStarterPack(item.uri);
+                        const membersHtml = (detail?.members || []).map(m => `<li>${esc(m.displayName || m.handle)} (@${esc(m.handle)})</li>`).join('');
+                        const feedsHtml = (detail?.feeds || []).map(f => `<li>${esc(f.displayName)} (@${esc(f.creator)})</li>`).join('');
+                        detailsBox.innerHTML = `
+                            <p><strong>${esc(i18n.t('profile.tabFollowers'))}:</strong></p>
+                            <ul>${membersHtml || `<li>-</li>`}</ul>
+                            ${feedsHtml ? `<p><strong>${esc(i18n.t('sec2.tabActorFeeds'))}:</strong></p><ul>${feedsHtml}</ul>` : ''}
+                        `;
+                    } catch (err: unknown) {
+                        detailsBox.innerHTML = `<p>${esc(String(err))}</p>`;
+                    }
+                });
+
                 if (item.listUri) {
-                    article.innerHTML = `
-                        <h3>${esc(item.name)}</h3>
-                        <p>${esc(item.description || '')}</p>
-                        <button class="btn-follow-all-pack" data-list-uri="${item.listUri}" style="margin-top:6px; padding:4px 10px; font-weight:bold;">${i18n.t('profile.followAllBtn')}</button>
-                    `;
                     article.querySelector('.btn-follow-all-pack')?.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         try {
                             announcePolite(i18n.t('profile.followingPackMembers', { name: item.name }));
                             const count = await window.go.services.SocialService.FollowAllInList(item.listUri);
                             announceAssertive(i18n.t('profile.followedPackMembersSuccess', { count: count.toString(), name: item.name }));
-                        } catch (err: any) {
+                        } catch (err: unknown) {
                             announceAssertive(i18n.t('profile.followPackMembersError', { err: String(err) }));
                         }
                     });
-                } else {
-                    article.innerHTML = `<h3>${esc(item.name)}</h3><p>${esc(item.description || '')}</p>`;
+                }
+
+                if (isOwner) {
+                    article.querySelector('.btn-edit-starter-pack')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const newName = await promptDialog(i18n.t('sec2.editStarterPackNamePrompt'), item.name, i18n.t('sec2.editStarterPackBtn'));
+                        if (!newName || !newName.trim()) return;
+                        const newDesc = (await promptDialog(i18n.t('sec2.editStarterPackDescPrompt'), item.description || "", i18n.t('sec2.editStarterPackBtn'))) ?? "";
+                        try {
+                            await window.go.services.SocialService.EditStarterPack(item.uri, newName.trim(), newDesc.trim(), item.listUri || "", []);
+                            announceAssertive(i18n.t('sec2.starterPackEditedSuccess'));
+                            loadProfile(false, true);
+                        } catch (err: unknown) {
+                            announceAssertive(i18n.t('post.error', { error: String(err) }));
+                        }
+                    });
+
+                    article.querySelector('.btn-delete-starter-pack')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        if (await confirmDialog(i18n.t('profile.deleteStarterPackConfirm', { name: item.name }), i18n.t('profile.deleteStarterPackTitle'))) {
+                            try {
+                                announcePolite(i18n.t('profile.deletingStarterPack'));
+                                await window.go.services.SocialService.DeleteStarterPack(item.uri);
+                                announceAssertive(i18n.t('profile.deletedStarterPackSuccess'));
+                                loadProfile(false, true);
+                            } catch (err: unknown) {
+                                announceAssertive(i18n.t('profile.deleteStarterPackError', { err: String(err) }));
+                            }
+                        }
+                    });
                 }
                 
                 article.addEventListener('focus', () => {

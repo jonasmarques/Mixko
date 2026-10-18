@@ -103,7 +103,7 @@ export async function showEditListModal(list: any, onRefresh?: () => void) {
     }
 }
 
-export async function viewListMembers(listUri: string, listName: string) {
+export async function viewListMembers(listUri: string, listName: string, isOwner = false) {
     try {
         announcePolite(i18n.t('lists.loadingMembers', { name: listName }));
         const res = await window.go.services.SocialService.GetListMembers(listUri, "");
@@ -118,15 +118,23 @@ export async function viewListMembers(listUri: string, listName: string) {
 
         let membersHtml = '';
         if (res && res.profiles && res.profiles.length > 0) {
-            membersHtml = res.profiles.map((p) => `
-                <div class="post-item" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px; background:#121212; border-radius:6px;">
+            membersHtml = res.profiles.map((p) => {
+                const removeBtnHtml = isOwner && p.listItemUri
+                    ? `<button type="button" class="btn-remove-member" data-item-uri="${esc(p.listItemUri)}" data-handle="${esc(p.handle)}" style="padding:4px 10px; background:#d32f2f; color:#fff;">${i18n.t('lists.removeMember')}</button>`
+                    : '';
+                return `
+                <div class="post-item member-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px; background:#121212; border-radius:6px; gap:8px;">
                     <div>
                         <strong>${esc(p.displayName || p.handle)}</strong>
                         <small style="display:block; color:#aaa;">@${esc(p.handle)}</small>
                     </div>
-                    <button type="button" class="btn-open-member-profile" data-handle="${esc(p.handle)}" style="padding:4px 10px;">${i18n.t('lists.viewProfile')}</button>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <button type="button" class="btn-open-member-profile" data-handle="${esc(p.handle)}" style="padding:4px 10px;">${i18n.t('lists.viewProfile')}</button>
+                        ${removeBtnHtml}
+                    </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         } else {
             membersHtml = `<p>${i18n.t('lists.noMembers')}</p>`;
         }
@@ -165,6 +173,24 @@ export async function viewListMembers(listUri: string, listName: string) {
                     state.profileTabMode = 'posts';
                     announcePolite(i18n.t('lists.openingProfile', { handle }));
                     loadProfile();
+                }
+            });
+        });
+
+        dialog.querySelectorAll('.btn-remove-member').forEach((btn) => {
+            btn.addEventListener('click', async (e) => {
+                const targetBtn = e.currentTarget as HTMLButtonElement;
+                const itemUri = targetBtn.dataset.itemUri;
+                const handle = targetBtn.dataset.handle || '';
+                if (!itemUri) return;
+                try {
+                    announcePolite(i18n.t('lists.removingMember', { handle }));
+                    await window.go.services.SocialService.RemoveUserFromList(itemUri);
+                    targetBtn.closest('.member-row')?.remove();
+                    announceAssertive(i18n.t('lists.removedMember', { handle }));
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    announceAssertive(i18n.t('lists.removeMemberError', { msg }));
                 }
             });
         });

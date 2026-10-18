@@ -21,11 +21,25 @@ export interface ExternalEmbedDTO {
     thumb: string;
 }
 
+export interface VideoCaptionDTO {
+    lang: string;
+    url: string;
+}
+
 export interface VideoEmbedDTO {
     playlist: string;
     thumbnail: string;
     alt: string;
     presentation: string;
+    captions?: VideoCaptionDTO[];
+}
+
+export interface VideoUploadLimitsDTO {
+    canUpload: boolean;
+    remainingDailyVideos: number;
+    remainingDailyBytes: number;
+    message?: string;
+    error?: string;
 }
 
 export interface PostDTO {
@@ -34,6 +48,7 @@ export interface PostDTO {
     authorName: string;
     authorHandle: string;
     authorDid: string;
+    authorVerified?: boolean;
     text: string;
     createdAt: string;
     replyCount: number;
@@ -51,14 +66,22 @@ export interface PostDTO {
     repostedBy: string;
     repostedByHandle: string;
     quotePost: PostDTO | null;
+    quoteDetached?: boolean;
+    quoteDetachedUri?: string;
     imageAlts: string[] | null;
     images: ImageDTO[] | null;
     external: ExternalEmbedDTO | null;
     video: VideoEmbedDTO | null;
     hasMedia: boolean;
+    labels?: string[];
     viewerLike: string;
     viewerRepost: string;
     viewerBookmark: string;
+    viewerThreadMuted?: boolean;
+    embeddingDisabled?: boolean;
+    replyDisabled?: boolean;
+    feedContext?: string;
+    isPinned?: boolean;
 
     /** Present only on notification-derived posts. */
     indexedAt?: string;
@@ -117,6 +140,15 @@ export interface ActivitySubscriptionDTO {
     reply: boolean;
 }
 
+export interface ActorStatusDTO {
+    status: string;
+    uri?: string;
+    title?: string;
+    description?: string;
+    expiresAt?: string;
+    isActive: boolean;
+}
+
 export interface ProfileDTO {
     did: string;
     handle: string;
@@ -137,11 +169,55 @@ export interface ProfileDTO {
     viewerSubscribedLabeler: boolean;
     viewerActivitySubscription?: ActivitySubscriptionDTO | null;
     labelerInfo?: LabelerDTO;
+    listItemUri?: string;
+    verified?: boolean;
+    trustedVerifier?: boolean;
+    status?: ActorStatusDTO | null;
 }
 
 export interface ProfileListDTO {
     cursor: string;
     profiles: ProfileDTO[] | null;
+}
+
+export interface FeedGeneratorDTO {
+    uri: string;
+    cid: string;
+    did: string;
+    creator: string;
+    displayName: string;
+    description: string;
+    likeCount: number;
+    avatar: string;
+    viewerLike?: string;
+    acceptsInteractions?: boolean;
+    isOnline?: boolean;
+    isValid?: boolean;
+}
+
+export interface FeedGeneratorResponseDTO {
+    cursor: string;
+    feeds: FeedGeneratorDTO[] | null;
+}
+
+export interface StarterPackDTO {
+    uri: string;
+    cid: string;
+    name: string;
+    description: string;
+    creator: string;
+    creatorDid?: string;
+    listUri: string;
+    joinedWeekCount?: number;
+    joinedAllTimeCount?: number;
+    feeds?: FeedGeneratorDTO[];
+    members?: ProfileDTO[];
+    listItemUri?: string;
+}
+
+export interface StarterPackResponseDTO {
+    cursor: string;
+    starterPacks: StarterPackDTO[] | null;
 }
 
 export interface NotificationDTO {
@@ -280,9 +356,179 @@ export interface ChatConvoDTO {
     members: ChatMemberDTO[];
     lastMessage: string;
     unreadCount: number;
+    muted?: boolean;
+    cursor?: string;
+    isGroup?: boolean;
+    groupName?: string;
+    lockStatus?: string;
+    joinLinkCode?: string;
+    joinLinkEnabled?: boolean;
+    joinLinkRequireApproval?: boolean;
+    joinRequestCount?: number;
+    unreadJoinRequestCount?: number;
+    memberCount?: number;
+    memberLimit?: number;
 }
 
 export interface ChatMessagesDTO {
     cursor: string;
     messages: ChatMessageDTO[] | null;
 }
+
+export interface ChatGroupJoinLinkDTO {
+    code: string;
+    createdAt: string;
+    enabledStatus: string;
+    joinRule: string;
+    requireApproval: boolean;
+}
+
+export interface ChatJoinRequestDTO {
+    convoId: string;
+    requestedAt: string;
+    requestedBy: ChatMemberDTO;
+}
+
+export interface ChatJoinRequestListDTO {
+    cursor: string;
+    requests: ChatJoinRequestDTO[] | null;
+}
+
+export interface ChatAvailabilityDTO {
+    canChat: boolean;
+    convoId?: string;
+    convo?: ChatConvoDTO;
+}
+
+export interface SavedAccountDTO {
+    did: string;
+    handle: string;
+    isActive: boolean;
+}
+
+export interface AppPasswordDTO {
+    name: string;
+    password?: string;
+    createdAt: string;
+    privileged: boolean;
+}
+
+export interface AccountStatusDTO {
+    activated: boolean;
+    validDid: boolean;
+    repoCommit: string;
+    repoRev: string;
+    repoBlocks: number;
+    indexedRecords: number;
+    privateStateValues: number;
+    expectedBlobs: number;
+    importedBlobs: number;
+}
+
+export interface DraftDTO {
+    id: string;
+    text: string;
+    langs?: string[];
+    selfLabels?: string[];
+    threadgateAllow?: string[];
+    disableQuotes?: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface DraftListDTO {
+    cursor: string;
+    drafts: DraftDTO[] | null;
+}
+
+export interface ListDTO {
+    uri: string;
+    cid: string;
+    name: string;
+    purpose: string;
+    description: string;
+    creator: string;
+    creatorDid?: string;
+    creatorHandle?: string;
+    avatar?: string;
+    listItemCount?: number;
+    viewerMuted?: boolean;
+    viewerBlock?: string;
+    viewerSubscribed?: boolean;
+}
+
+export interface ListResponseDTO {
+    cursor: string;
+    lists: ListDTO[] | null;
+}
+
+export interface ListWithMembershipDTO {
+    list: ListDTO;
+    listItemUri?: string;
+    isMember: boolean;
+}
+
+export interface ListMembershipResponseDTO {
+    cursor: string;
+    items: ListWithMembershipDTO[] | null;
+}
+
+export interface StarterPackWithMembershipDTO {
+    starterPack: StarterPackDTO;
+    listItemUri?: string;
+    isMember: boolean;
+}
+
+export interface StarterPackMembershipResponseDTO {
+    cursor: string;
+    items: StarterPackWithMembershipDTO[] | null;
+}
+
+export interface RelationshipDTO {
+    did: string;
+    following?: string;
+    followedBy?: string;
+    blocking?: string;
+    blockedBy?: string;
+}
+
+export interface AgeAssuranceStateDTO {
+    status: string;
+    access: string;
+    lastInitiatedAt?: string;
+}
+
+export interface MutedWordDTO {
+    id?: string;
+    value: string;
+    targets: string[];
+    actorTarget?: string;
+    expiresAt?: string;
+}
+
+export interface ContentFilterDTO {
+    labelerDid?: string;
+    label: string;
+    visibility: string;
+}
+
+export interface PreferencesDTO {
+    adultContentEnabled: boolean;
+    contentFilters?: ContentFilterDTO[];
+    mutedWords?: MutedWordDTO[];
+    savedFeeds?: string[];
+    pinnedFeeds?: string[];
+    threadSort?: string;
+    threadPrioritizeFollowed?: boolean;
+    hideReplies?: boolean;
+    hideReposts?: boolean;
+    hideQuotePosts?: boolean;
+    hideRepliesByUnfollowed?: boolean;
+    hiddenPosts?: string[];
+    defaultDisableQuotes?: boolean;
+    defaultThreadgateRules?: string[];
+    interests?: string[];
+    hideVerificationBadges?: boolean;
+}
+
+

@@ -30,6 +30,7 @@ type SyncService struct {
 
 	lastUnreadCount     int64
 	lastUnreadChatCount int64
+	lastChatLogRev      string
 	// lastTopPostCID identifies the newest post already delivered to the UI, so
 	// an unchanged timeline does not get re-emitted every minute.
 	lastTopPostCID string
@@ -100,14 +101,38 @@ func (s *SyncService) checkForUpdates(ctx context.Context) {
 	}
 
 	if s.chatSvc != nil {
+		s.mu.Lock()
+		prevRev := s.lastChatLogRev
+		s.mu.Unlock()
+
+		logTriggered := false
+		if nextRev, hasNew, err := s.chatSvc.GetConvoLog(prevRev); err == nil {
+			s.mu.Lock()
+			hadPrev := s.lastChatLogRev != ""
+			if nextRev != "" {
+				s.lastChatLogRev = nextRev
+			}
+			s.mu.Unlock()
+			if hadPrev && hasNew {
+				logTriggered = true
+			}
+		}
+
 		if convos, err := s.chatSvc.ListConvos(""); err == nil {
 			var unreadChat int64
+			var maxRev string
 			for _, c := range convos {
 				unreadChat += c.UnreadCount
+				if c.Rev > maxRev {
+					maxRev = c.Rev
+				}
 			}
 
 			s.mu.Lock()
-			changed := unreadChat > s.lastUnreadChatCount
+			if s.lastChatLogRev == "" && maxRev != "" {
+				s.lastChatLogRev = maxRev
+			}
+			changed := unreadChat > s.lastUnreadChatCount || (logTriggered && unreadChat > 0)
 			s.lastUnreadChatCount = unreadChat
 			s.mu.Unlock()
 

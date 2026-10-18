@@ -41,6 +41,7 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
 
   let muteBtnText = list.viewerMuted ? i18n.t('list.unmute') : i18n.t('list.mute');
   let blockBtnText = list.viewerBlock ? i18n.t('list.unblock') : i18n.t('list.block');
+  let subscribeBtnText = list.viewerSubscribed ? i18n.t('list.unsubscribe') : i18n.t('list.subscribe');
 
   div.innerHTML = `
     <div>
@@ -59,6 +60,7 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
         <button type="button" class="btn-view-list-feed" style="padding:6px 12px; font-weight:bold;">${i18n.t('list.viewFeed')}</button>
         <button type="button" class="btn-view-list-members" style="padding:6px 12px;">${i18n.t('list.viewMembers')}</button>
         <button type="button" class="btn-follow-all-list" style="padding:6px 12px;">${i18n.t('list.followMembers')}</button>
+        ${isMod ? `<button type="button" class="btn-subscribe-list" style="padding:6px 12px;">${subscribeBtnText}</button>` : ''}
         <button type="button" class="btn-mute-list" style="padding:6px 12px;">${muteBtnText}</button>
         <button type="button" class="btn-block-list" style="padding:6px 12px;">${blockBtnText}</button>
         ${isOwner ? `
@@ -104,7 +106,7 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
 
   div.querySelector('.btn-view-list-members')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    viewListMembers(list.uri, list.name);
+    viewListMembers(list.uri, list.name, isOwner);
   });
 
   div.querySelector('.btn-follow-all-list')?.addEventListener('click', async (e) => {
@@ -119,10 +121,35 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
     }
   });
 
+  div.querySelector('.btn-subscribe-list')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget as HTMLButtonElement;
+    try {
+      if (list.viewerSubscribed) {
+        announcePolite(i18n.t('list.unsubscribing', { name: list.name }));
+        await window.go.services.SocialService.UnsubscribeList(list.uri);
+        list.viewerSubscribed = false;
+        list.viewerMuted = false;
+        list.viewerBlock = '';
+        btn.textContent = i18n.t('list.subscribe');
+        announceAssertive(i18n.t('list.unsubscribed', { name: list.name }));
+      } else {
+        announcePolite(i18n.t('list.subscribing', { name: list.name }));
+        await window.go.services.SocialService.SubscribeList(list.uri);
+        list.viewerSubscribed = true;
+        btn.textContent = i18n.t('list.unsubscribe');
+        announceAssertive(i18n.t('list.subscribed', { name: list.name }));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      announceAssertive(i18n.t('list.errorSubscribing', { msg }));
+    }
+  });
+
   div.querySelector('.btn-mute-list')?.addEventListener('click', async (e) => {
     e.stopPropagation();
     const btn = e.currentTarget as HTMLButtonElement;
-    const isMuted = btn.textContent?.includes('Desmutar');
+    const isMuted = Boolean(list.viewerMuted);
     try {
       if (isMuted) {
         announcePolite(i18n.t('list.unmuting', { name: list.name }));
@@ -146,7 +173,7 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
   div.querySelector('.btn-block-list')?.addEventListener('click', async (e) => {
     e.stopPropagation();
     const btn = e.currentTarget as HTMLButtonElement;
-    const isBlocked = btn.textContent?.includes('Desbloquear');
+    const isBlocked = Boolean(list.viewerBlock);
     try {
       if (isBlocked && list.viewerBlock) {
         announcePolite(i18n.t('list.unblocking', { name: list.name }));

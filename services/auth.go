@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/xrpc"
@@ -77,6 +78,10 @@ func (s *AuthService) RestoreSession() (string, error) {
 }
 
 func (s *AuthService) Login(identifier, appPassword string, remember bool) error {
+	return s.LoginWithFactor(identifier, appPassword, "", remember)
+}
+
+func (s *AuthService) LoginWithFactor(identifier, password, authFactorToken string, remember bool) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 
@@ -88,7 +93,11 @@ func (s *AuthService) Login(identifier, appPassword string, remember bool) error
 
 	input := &atproto.ServerCreateSession_Input{
 		Identifier: identifier,
-		Password:   appPassword,
+		Password:   password,
+	}
+	trimmedToken := strings.TrimSpace(authFactorToken)
+	if trimmedToken != "" {
+		input.AuthFactorToken = &trimmedToken
 	}
 
 	output, err := atproto.ServerCreateSession(ctx, client, input)
@@ -121,12 +130,220 @@ func (s *AuthService) Logout() error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 
+	var currentDID string
+	if sess, err := s.clientMgr.db.GetSession(); err == nil {
+		currentDID = sess.DID
+	}
+
 	// A failure here just means the server already dropped the session; the
 	// local state is cleared either way.
 	_ = s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		return atproto.ServerDeleteSession(ctx, c)
 	})
 
+	if currentDID != "" {
+		_ = s.clientMgr.db.RemoveSavedAccount(currentDID)
+	}
 	s.clientMgr.SetClient(nil)
 	return s.clientMgr.db.ClearSession()
 }
+
+func (s *AuthService) ListAccounts() ([]SavedAccountDTO, error) {
+	accounts, err := s.clientMgr.db.GetSavedAccounts()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SavedAccountDTO, 0, len(accounts))
+	for _, a := range accounts {
+		out = append(out, SavedAccountDTO{
+			DID:      a.DID,
+			Handle:   a.Handle,
+			IsActive: a.IsActive,
+		})
+	}
+	return out, nil
+}
+
+func (s *AuthService) SwitchAccount(did string) (string, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	sess, err := s.clientMgr.db.SwitchAccount(did)
+	if err != nil {
+		return "", err
+	}
+
+	ok, err := s.CheckSession(ctx)
+	if err != nil || !ok {
+		return "", fmt.Errorf("failed to activate account session: %w", err)
+	}
+	return sess.Handle, nil
+}
+
+func (s *AuthService) RemoveAccount(did string) error {
+	return s.clientMgr.db.RemoveSavedAccount(did)
+}
+
+func (s *AuthService) RequestPasswordReset(email string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	host := DefaultPDSHost
+	if sess, err := s.clientMgr.db.GetSession(); err == nil && sess.PDSHost != "" {
+		host = sess.PDSHost
+	}
+	client := &xrpc.Client{Host: host}
+	return atproto.ServerRequestPasswordReset(ctx, client, &atproto.ServerRequestPasswordReset_Input{
+		Email: strings.TrimSpace(email),
+	})
+}
+
+func (s *AuthService) ResetPassword(token, newPassword string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	host := DefaultPDSHost
+	if sess, err := s.clientMgr.db.GetSession(); err == nil && sess.PDSHost != "" {
+		host = sess.PDSHost
+	}
+	client := &xrpc.Client{Host: host}
+	return atproto.ServerResetPassword(ctx, client, &atproto.ServerResetPassword_Input{
+		Token:    strings.TrimSpace(token),
+		Password: newPassword,
+	})
+}
+
+func (s *AuthService) ListAppPasswords() ([]AppPasswordDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	var out []AppPasswordDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := atproto.ServerListAppPasswords(ctx, c)
+		if err != nil {
+			return err
+		}
+		out = make([]AppPasswordDTO, 0, len(res.Passwords))
+		for _, p := range res.Passwords {
+			if p == nil {
+				continue
+			}
+			priv := p.Privileged != nil && *p.Privileged
+			out = append(out, AppPasswordDTO{
+				Name:       p.Name,
+				CreatedAt:  p.CreatedAt,
+				Privileged: priv,
+			})
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *AuthService) CreateAppPassword(name string, privileged bool) (*AppPasswordDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	var out *AppPasswordDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := atproto.ServerCreateAppPassword(ctx, c, &atproto.ServerCreateAppPassword_Input{
+			Name:       strings.TrimSpace(name),
+			Privileged: &privileged,
+		})
+		if err != nil {
+			return err
+		}
+		priv := res.Privileged != nil && *res.Privileged
+		out = &AppPasswordDTO{
+			Name:       res.Name,
+			Password:   res.Password,
+			CreatedAt:  res.CreatedAt,
+			Privileged: priv,
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *AuthService) RevokeAppPassword(name string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		return atproto.ServerRevokeAppPassword(ctx, c, &atproto.ServerRevokeAppPassword_Input{
+			Name: strings.TrimSpace(name),
+		})
+	})
+}
+
+func (s *AuthService) RequestEmailUpdate() (bool, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	var tokenRequired bool
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := atproto.ServerRequestEmailUpdate(ctx, c)
+		if err != nil {
+			return err
+		}
+		tokenRequired = res.TokenRequired
+		return nil
+	})
+	return tokenRequired, err
+}
+
+func (s *AuthService) UpdateEmail(email, token string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		in := &atproto.ServerUpdateEmail_Input{
+			Email: strings.TrimSpace(email),
+		}
+		trimmedToken := strings.TrimSpace(token)
+		if trimmedToken != "" {
+			in.Token = &trimmedToken
+		}
+		return atproto.ServerUpdateEmail(ctx, c, in)
+	})
+}
+
+func (s *AuthService) DeactivateAccount() error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		return atproto.ServerDeactivateAccount(ctx, c, &atproto.ServerDeactivateAccount_Input{})
+	})
+	if err != nil {
+		return err
+	}
+	return s.Logout()
+}
+
+func (s *AuthService) CheckAccountStatus() (*AccountStatusDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	var out *AccountStatusDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := atproto.ServerCheckAccountStatus(ctx, c)
+		if err != nil {
+			return err
+		}
+		out = &AccountStatusDTO{
+			Activated:          res.Activated,
+			ValidDid:           res.ValidDid,
+			RepoCommit:         res.RepoCommit,
+			RepoRev:            res.RepoRev,
+			RepoBlocks:         res.RepoBlocks,
+			IndexedRecords:     res.IndexedRecords,
+			PrivateStateValues: res.PrivateStateValues,
+			ExpectedBlobs:      res.ExpectedBlobs,
+			ImportedBlobs:      res.ImportedBlobs,
+		}
+		return nil
+	})
+	return out, err
+}
+

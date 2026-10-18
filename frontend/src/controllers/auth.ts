@@ -8,6 +8,7 @@ import { loadChat, openChatConvo } from './chat';
 import { checkAppUpdates } from './updater';
 import { loadSettings } from './settings';
 import { i18n } from '../utils/i18n';
+import { promptDialog } from '../utils/dialog';
 
 /**
  * Resolves the signed-in account's canonical identity.
@@ -16,7 +17,7 @@ import { i18n } from '../utils/i18n';
  * typed is not a reliable identifier. Ownership checks (delete, pin) compare
  * against the DID recorded here.
  */
-async function captureIdentity(): Promise<void> {
+export async function captureIdentity(): Promise<void> {
     try {
         const profile = await window.go.services.SocialService.GetProfile(state.loggedInHandle);
         if (profile?.did) state.loggedInDid = profile.did;
@@ -31,6 +32,28 @@ async function captureIdentity(): Promise<void> {
 }
 
 export function setupAuth() {
+    const forgotBtn = document.getElementById('btn-forgot-password');
+    if (forgotBtn) {
+        forgotBtn.addEventListener('click', async () => {
+            const idInput = document.getElementById('identifier') as HTMLInputElement | null;
+            const defaultEmail = idInput?.value?.includes('@') ? idInput.value : '';
+            const email = await promptDialog(i18n.t('extended.resetEmailPrompt'), defaultEmail, i18n.t('extended.forgotPasswordBtn'));
+            if (!email || !email.trim()) return;
+            try {
+                await window.go.services.AuthService.RequestPasswordReset(email.trim());
+                announceAssertive(i18n.t('extended.resetEmailSent'));
+                const token = await promptDialog(i18n.t('extended.resetTokenPrompt'), '', i18n.t('extended.forgotPasswordBtn'));
+                if (!token || !token.trim()) return;
+                const newPw = await promptDialog(i18n.t('extended.resetNewPasswordPrompt'), '', i18n.t('extended.forgotPasswordBtn'));
+                if (!newPw) return;
+                await window.go.services.AuthService.ResetPassword(token.trim(), newPw);
+                announceAssertive(i18n.t('extended.resetSuccess'));
+            } catch (err: unknown) {
+                announceAssertive(i18n.t('extended.resetError', { msg: String(err) }));
+            }
+        });
+    }
+
     if (DOM.loginForm) {
         DOM.loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -42,7 +65,24 @@ export function setupAuth() {
                 const errDiv = document.getElementById('login-error');
                 if (errDiv) errDiv.classList.add('hidden');
                 
-                await window.go.services.AuthService.Login(idInput.value, pwInput.value, rememberInput.checked);
+                try {
+                    await window.go.services.AuthService.LoginWithFactor(idInput.value, pwInput.value, '', rememberInput.checked);
+                } catch (firstErr: unknown) {
+                    const errText = String(firstErr);
+                    if (errText.includes('AuthFactorTokenRequired')) {
+                        const factorToken = await promptDialog(
+                            i18n.t('extended.twoFactorPrompt'),
+                            '',
+                            i18n.t('extended.twoFactorTitle')
+                        );
+                        if (!factorToken || !factorToken.trim()) {
+                            throw firstErr;
+                        }
+                        await window.go.services.AuthService.LoginWithFactor(idInput.value, pwInput.value, factorToken.trim(), rememberInput.checked);
+                    } else {
+                        throw firstErr;
+                    }
+                }
                 state.loggedInHandle = idInput.value;
                 state.currentHandle = state.loggedInHandle;
                 localStorage.setItem('lastHandle', state.loggedInHandle);
@@ -57,7 +97,7 @@ export function setupAuth() {
                 try { await loadSettings(); } catch(e) {}
                 try { state.savedFeeds = await window.go.services.FeedService.GetSavedFeeds() || []; } catch(e) {}
                 switchTab('timeline');
-            } catch (err: any) { 
+            } catch (err: unknown) { 
                 const msg = i18n.t('auth.loginError', { err: String(err) });
                 announceAssertive(msg); 
                 const errDiv = document.getElementById('login-error');

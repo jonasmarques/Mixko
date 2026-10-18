@@ -3,6 +3,8 @@
 import {services} from '../models';
 import {bsky} from '../models';
 
+export function GetActorFeeds(arg1:string,arg2:string):Promise<services.FeedGeneratorResponseDTO>;
+
 export function GetActorLikes(arg1:string,arg2:string,arg3:number):Promise<services.FeedDTO>;
 
 export function GetAuthorFeed(arg1:string,arg2:string,arg3:number,arg4:string):Promise<services.FeedDTO>;
@@ -10,6 +12,8 @@ export function GetAuthorFeed(arg1:string,arg2:string,arg3:number,arg4:string):P
 export function GetBookmarks(arg1:string,arg2:number):Promise<services.FeedDTO>;
 
 export function GetCustomFeed(arg1:string,arg2:string,arg3:number):Promise<services.FeedDTO>;
+
+export function GetFeedGenerator(arg1:string):Promise<services.FeedGeneratorDTO>;
 
 export function GetLikes(arg1:string,arg2:string,arg3:string):Promise<services.ProfileListDTO>;
 
@@ -19,6 +23,10 @@ export function GetPopularFeedGenerators(arg1:string,arg2:string):Promise<servic
 
 export function GetPostThread(arg1:string,arg2:number):Promise<services.FeedDTO>;
 
+export function GetPostThreadOtherV2(arg1:string):Promise<services.FeedDTO>;
+
+export function GetPostThreadV2(arg1:string):Promise<services.FeedDTO>;
+
 export function GetPosts(arg1:Array<string>):Promise<services.FeedDTO>;
 
 export function GetQuotes(arg1:string,arg2:string,arg3:string):Promise<services.FeedDTO>;
@@ -27,8 +35,16 @@ export function GetRepostedBy(arg1:string,arg2:string,arg3:string):Promise<servi
 
 export function GetSavedFeeds():Promise<Array<services.SavedFeedDTO>>;
 
+export function GetSuggestedFeeds(arg1:string):Promise<services.FeedGeneratorResponseDTO>;
+
 export function GetThread(arg1:string,arg2:number):Promise<bsky.FeedGetPostThread_Output>;
 
 export function GetTimeline(arg1:string,arg2:number):Promise<services.FeedDTO>;
 
 export function GetTrends(arg1:number):Promise<services.TrendListDTO>;
+
+export function LikeFeedGenerator(arg1:string,arg2:string):Promise<string>;
+
+export function SendFeedInteraction(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
+export function UnlikeFeedGenerator(arg1:string):Promise<void>;

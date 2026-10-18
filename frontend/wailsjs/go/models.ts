@@ -2058,6 +2058,34 @@ export namespace bsky {
 
 export namespace services {
 	
+	export class AccountStatusDTO {
+	    activated: boolean;
+	    validDid: boolean;
+	    repoCommit: string;
+	    repoRev: string;
+	    repoBlocks: number;
+	    indexedRecords: number;
+	    privateStateValues: number;
+	    expectedBlobs: number;
+	    importedBlobs: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountStatusDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.activated = source["activated"];
+	        this.validDid = source["validDid"];
+	        this.repoCommit = source["repoCommit"];
+	        this.repoRev = source["repoRev"];
+	        this.repoBlocks = source["repoBlocks"];
+	        this.indexedRecords = source["indexedRecords"];
+	        this.privateStateValues = source["privateStateValues"];
+	        this.expectedBlobs = source["expectedBlobs"];
+	        this.importedBlobs = source["importedBlobs"];
+	    }
+	}
 	export class ActivitySubscriptionDTO {
 	    post: boolean;
 	    reply: boolean;
@@ -2070,6 +2098,62 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.post = source["post"];
 	        this.reply = source["reply"];
+	    }
+	}
+	export class ActorStatusDTO {
+	    status: string;
+	    uri?: string;
+	    title?: string;
+	    description?: string;
+	    expiresAt?: string;
+	    isActive: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ActorStatusDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.uri = source["uri"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.expiresAt = source["expiresAt"];
+	        this.isActive = source["isActive"];
+	    }
+	}
+	export class AgeAssuranceStateDTO {
+	    status: string;
+	    access: string;
+	    lastInitiatedAt?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AgeAssuranceStateDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.access = source["access"];
+	        this.lastInitiatedAt = source["lastInitiatedAt"];
+	    }
+	}
+	export class AppPasswordDTO {
+	    name: string;
+	    password?: string;
+	    createdAt: string;
+	    privileged: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppPasswordDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.password = source["password"];
+	        this.createdAt = source["createdAt"];
+	        this.privileged = source["privileged"];
 	    }
 	}
 	export class ChatMemberDTO {
@@ -2096,6 +2180,18 @@ export namespace services {
 	    members: ChatMemberDTO[];
 	    lastMessage: string;
 	    unreadCount: number;
+	    muted: boolean;
+	    cursor?: string;
+	    isGroup?: boolean;
+	    groupName?: string;
+	    lockStatus?: string;
+	    joinLinkCode?: string;
+	    joinLinkEnabled?: boolean;
+	    joinLinkRequireApproval?: boolean;
+	    joinRequestCount?: number;
+	    unreadJoinRequestCount?: number;
+	    memberCount?: number;
+	    memberLimit?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ChatConvoDTO(source);
@@ -2108,6 +2204,139 @@ export namespace services {
 	        this.members = this.convertValues(source["members"], ChatMemberDTO);
 	        this.lastMessage = source["lastMessage"];
 	        this.unreadCount = source["unreadCount"];
+	        this.muted = source["muted"];
+	        this.cursor = source["cursor"];
+	        this.isGroup = source["isGroup"];
+	        this.groupName = source["groupName"];
+	        this.lockStatus = source["lockStatus"];
+	        this.joinLinkCode = source["joinLinkCode"];
+	        this.joinLinkEnabled = source["joinLinkEnabled"];
+	        this.joinLinkRequireApproval = source["joinLinkRequireApproval"];
+	        this.joinRequestCount = source["joinRequestCount"];
+	        this.unreadJoinRequestCount = source["unreadJoinRequestCount"];
+	        this.memberCount = source["memberCount"];
+	        this.memberLimit = source["memberLimit"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ChatAvailabilityDTO {
+	    canChat: boolean;
+	    convoId?: string;
+	    convo?: ChatConvoDTO;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatAvailabilityDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.canChat = source["canChat"];
+	        this.convoId = source["convoId"];
+	        this.convo = this.convertValues(source["convo"], ChatConvoDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class ChatGroupJoinLinkDTO {
+	    code: string;
+	    createdAt: string;
+	    enabledStatus: string;
+	    joinRule: string;
+	    requireApproval: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatGroupJoinLinkDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.createdAt = source["createdAt"];
+	        this.enabledStatus = source["enabledStatus"];
+	        this.joinRule = source["joinRule"];
+	        this.requireApproval = source["requireApproval"];
+	    }
+	}
+	export class ChatJoinRequestDTO {
+	    convoId: string;
+	    requestedAt: string;
+	    requestedBy: ChatMemberDTO;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatJoinRequestDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.convoId = source["convoId"];
+	        this.requestedAt = source["requestedAt"];
+	        this.requestedBy = this.convertValues(source["requestedBy"], ChatMemberDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ChatJoinRequestListDTO {
+	    cursor: string;
+	    requests: ChatJoinRequestDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatJoinRequestListDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cursor = source["cursor"];
+	        this.requests = this.convertValues(source["requests"], ChatJoinRequestDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2254,6 +2483,64 @@ export namespace services {
 	        this.visibility = source["visibility"];
 	    }
 	}
+	export class DraftDTO {
+	    id: string;
+	    text: string;
+	    langs?: string[];
+	    selfLabels?: string[];
+	    threadgateAllow?: string[];
+	    disableQuotes?: boolean;
+	    createdAt: string;
+	    updatedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DraftDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.text = source["text"];
+	        this.langs = source["langs"];
+	        this.selfLabels = source["selfLabels"];
+	        this.threadgateAllow = source["threadgateAllow"];
+	        this.disableQuotes = source["disableQuotes"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	    }
+	}
+	export class DraftListDTO {
+	    cursor: string;
+	    drafts: DraftDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DraftListDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cursor = source["cursor"];
+	        this.drafts = this.convertValues(source["drafts"], DraftDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ExternalEmbedDTO {
 	    uri: string;
 	    title: string;
@@ -2272,11 +2559,26 @@ export namespace services {
 	        this.thumb = source["thumb"];
 	    }
 	}
+	export class VideoCaptionDTO {
+	    lang: string;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoCaptionDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.lang = source["lang"];
+	        this.url = source["url"];
+	    }
+	}
 	export class VideoEmbedDTO {
 	    playlist: string;
 	    thumbnail: string;
 	    alt: string;
 	    presentation: string;
+	    captions?: VideoCaptionDTO[];
 	
 	    static createFrom(source: any = {}) {
 	        return new VideoEmbedDTO(source);
@@ -2288,7 +2590,26 @@ export namespace services {
 	        this.thumbnail = source["thumbnail"];
 	        this.alt = source["alt"];
 	        this.presentation = source["presentation"];
+	        this.captions = this.convertValues(source["captions"], VideoCaptionDTO);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ImageDTO {
 	    thumb: string;
@@ -2316,6 +2637,7 @@ export namespace services {
 	    authorName: string;
 	    authorHandle: string;
 	    authorDid: string;
+	    authorVerified?: boolean;
 	    text: string;
 	    createdAt: string;
 	    replyCount: number;
@@ -2333,14 +2655,21 @@ export namespace services {
 	    repostedBy: string;
 	    repostedByHandle: string;
 	    quotePost?: PostDTO;
+	    quoteDetached?: boolean;
+	    quoteDetachedUri?: string;
 	    imageAlts: string[];
 	    images: ImageDTO[];
 	    external?: ExternalEmbedDTO;
 	    video?: VideoEmbedDTO;
 	    hasMedia: boolean;
+	    labels?: string[];
 	    viewerLike: string;
 	    viewerRepost: string;
 	    viewerBookmark: string;
+	    viewerThreadMuted: boolean;
+	    embeddingDisabled?: boolean;
+	    replyDisabled?: boolean;
+	    feedContext?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PostDTO(source);
@@ -2353,6 +2682,7 @@ export namespace services {
 	        this.authorName = source["authorName"];
 	        this.authorHandle = source["authorHandle"];
 	        this.authorDid = source["authorDid"];
+	        this.authorVerified = source["authorVerified"];
 	        this.text = source["text"];
 	        this.createdAt = source["createdAt"];
 	        this.replyCount = source["replyCount"];
@@ -2370,14 +2700,21 @@ export namespace services {
 	        this.repostedBy = source["repostedBy"];
 	        this.repostedByHandle = source["repostedByHandle"];
 	        this.quotePost = this.convertValues(source["quotePost"], PostDTO);
+	        this.quoteDetached = source["quoteDetached"];
+	        this.quoteDetachedUri = source["quoteDetachedUri"];
 	        this.imageAlts = source["imageAlts"];
 	        this.images = this.convertValues(source["images"], ImageDTO);
 	        this.external = this.convertValues(source["external"], ExternalEmbedDTO);
 	        this.video = this.convertValues(source["video"], VideoEmbedDTO);
 	        this.hasMedia = source["hasMedia"];
+	        this.labels = source["labels"];
 	        this.viewerLike = source["viewerLike"];
 	        this.viewerRepost = source["viewerRepost"];
 	        this.viewerBookmark = source["viewerBookmark"];
+	        this.viewerThreadMuted = source["viewerThreadMuted"];
+	        this.embeddingDisabled = source["embeddingDisabled"];
+	        this.replyDisabled = source["replyDisabled"];
+	        this.feedContext = source["feedContext"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2402,6 +2739,7 @@ export namespace services {
 	    cursor: string;
 	    posts: PostDTO[];
 	    debugMessage?: string;
+	    hasOtherReplies?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new FeedDTO(source);
@@ -2412,6 +2750,7 @@ export namespace services {
 	        this.cursor = source["cursor"];
 	        this.posts = this.convertValues(source["posts"], PostDTO);
 	        this.debugMessage = source["debugMessage"];
+	        this.hasOtherReplies = source["hasOtherReplies"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2441,6 +2780,10 @@ export namespace services {
 	    description: string;
 	    likeCount: number;
 	    avatar: string;
+	    viewerLike?: string;
+	    acceptsInteractions?: boolean;
+	    isOnline?: boolean;
+	    isValid?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new FeedGeneratorDTO(source);
@@ -2456,6 +2799,10 @@ export namespace services {
 	        this.description = source["description"];
 	        this.likeCount = source["likeCount"];
 	        this.avatar = source["avatar"];
+	        this.viewerLike = source["viewerLike"];
+	        this.acceptsInteractions = source["acceptsInteractions"];
+	        this.isOnline = source["isOnline"];
+	        this.isValid = source["isValid"];
 	    }
 	}
 	export class FeedGeneratorResponseDTO {
@@ -2579,6 +2926,7 @@ export namespace services {
 	    listItemCount: number;
 	    viewerMuted: boolean;
 	    viewerBlock: string;
+	    viewerSubscribed: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ListDTO(source);
@@ -2598,7 +2946,74 @@ export namespace services {
 	        this.listItemCount = source["listItemCount"];
 	        this.viewerMuted = source["viewerMuted"];
 	        this.viewerBlock = source["viewerBlock"];
+	        this.viewerSubscribed = source["viewerSubscribed"];
 	    }
+	}
+	export class ListWithMembershipDTO {
+	    list?: ListDTO;
+	    listItemUri?: string;
+	    isMember: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ListWithMembershipDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.list = this.convertValues(source["list"], ListDTO);
+	        this.listItemUri = source["listItemUri"];
+	        this.isMember = source["isMember"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ListMembershipResponseDTO {
+	    cursor: string;
+	    items: ListWithMembershipDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ListMembershipResponseDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cursor = source["cursor"];
+	        this.items = this.convertValues(source["items"], ListWithMembershipDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ListResponseDTO {
 	    cursor: string;
@@ -2632,6 +3047,7 @@ export namespace services {
 		    return a;
 		}
 	}
+	
 	export class MuteScopeDTO {
 	    muted: boolean;
 	    mutedOnlyReposts: boolean;
@@ -2649,8 +3065,11 @@ export namespace services {
 	    }
 	}
 	export class MutedWordDTO {
+	    id?: string;
 	    value: string;
 	    targets: string[];
+	    actorTarget?: string;
+	    expiresAt?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new MutedWordDTO(source);
@@ -2658,8 +3077,11 @@ export namespace services {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
 	        this.value = source["value"];
 	        this.targets = source["targets"];
+	        this.actorTarget = source["actorTarget"];
+	        this.expiresAt = source["expiresAt"];
 	    }
 	}
 	export class NotificationChatPrefDTO {
@@ -2889,6 +3311,10 @@ export namespace services {
 	    Sort: string;
 	    Since: string;
 	    Until: string;
+	    Domain: string;
+	    Mentions: string;
+	    Tag: string[];
+	    URL: string;
 	    Cursor: string;
 	
 	    static createFrom(source: any = {}) {
@@ -2903,6 +3329,10 @@ export namespace services {
 	        this.Sort = source["Sort"];
 	        this.Since = source["Since"];
 	        this.Until = source["Until"];
+	        this.Domain = source["Domain"];
+	        this.Mentions = source["Mentions"];
+	        this.Tag = source["Tag"];
+	        this.URL = source["URL"];
 	        this.Cursor = source["Cursor"];
 	    }
 	}
@@ -2914,6 +3344,15 @@ export namespace services {
 	    savedFeeds: string[];
 	    threadSort: string;
 	    threadPrioritizeFollowed: boolean;
+	    hideReplies: boolean;
+	    hideReposts: boolean;
+	    hideQuotePosts: boolean;
+	    hideRepliesByUnfollowed: boolean;
+	    hiddenPosts: string[];
+	    defaultThreadgateRules: string[];
+	    defaultDisableQuotes: boolean;
+	    interests: string[];
+	    hideVerificationBadges: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new PreferencesDTO(source);
@@ -2928,6 +3367,15 @@ export namespace services {
 	        this.savedFeeds = source["savedFeeds"];
 	        this.threadSort = source["threadSort"];
 	        this.threadPrioritizeFollowed = source["threadPrioritizeFollowed"];
+	        this.hideReplies = source["hideReplies"];
+	        this.hideReposts = source["hideReposts"];
+	        this.hideQuotePosts = source["hideQuotePosts"];
+	        this.hideRepliesByUnfollowed = source["hideRepliesByUnfollowed"];
+	        this.hiddenPosts = source["hiddenPosts"];
+	        this.defaultThreadgateRules = source["defaultThreadgateRules"];
+	        this.defaultDisableQuotes = source["defaultDisableQuotes"];
+	        this.interests = source["interests"];
+	        this.hideVerificationBadges = source["hideVerificationBadges"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2968,6 +3416,10 @@ export namespace services {
 	    viewerSubscribedLabeler: boolean;
 	    viewerActivitySubscription?: ActivitySubscriptionDTO;
 	    labelerInfo?: LabelerDTO;
+	    listItemUri?: string;
+	    verified?: boolean;
+	    trustedVerifier?: boolean;
+	    status?: ActorStatusDTO;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProfileDTO(source);
@@ -2994,6 +3446,10 @@ export namespace services {
 	        this.viewerSubscribedLabeler = source["viewerSubscribedLabeler"];
 	        this.viewerActivitySubscription = this.convertValues(source["viewerActivitySubscription"], ActivitySubscriptionDTO);
 	        this.labelerInfo = this.convertValues(source["labelerInfo"], LabelerDTO);
+	        this.listItemUri = source["listItemUri"];
+	        this.verified = source["verified"];
+	        this.trustedVerifier = source["trustedVerifier"];
+	        this.status = this.convertValues(source["status"], ActorStatusDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -3045,6 +3501,42 @@ export namespace services {
 		    }
 		    return a;
 		}
+	}
+	export class RelationshipDTO {
+	    did: string;
+	    following?: string;
+	    followedBy?: string;
+	    blocking?: string;
+	    blockedBy?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RelationshipDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.did = source["did"];
+	        this.following = source["following"];
+	        this.followedBy = source["followedBy"];
+	        this.blocking = source["blocking"];
+	        this.blockedBy = source["blockedBy"];
+	    }
+	}
+	export class SavedAccountDTO {
+	    did: string;
+	    handle: string;
+	    isActive: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SavedAccountDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.did = source["did"];
+	        this.handle = source["handle"];
+	        this.isActive = source["isActive"];
+	    }
 	}
 	export class SavedFeedDTO {
 	    uri: string;
@@ -3104,7 +3596,13 @@ export namespace services {
 	    name: string;
 	    description: string;
 	    creator: string;
+	    creatorDid?: string;
 	    listUri: string;
+	    joinedWeekCount?: number;
+	    joinedAllTimeCount?: number;
+	    feeds?: FeedGeneratorDTO[];
+	    members?: ProfileDTO[];
+	    listItemUri?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StarterPackDTO(source);
@@ -3117,8 +3615,98 @@ export namespace services {
 	        this.name = source["name"];
 	        this.description = source["description"];
 	        this.creator = source["creator"];
+	        this.creatorDid = source["creatorDid"];
 	        this.listUri = source["listUri"];
+	        this.joinedWeekCount = source["joinedWeekCount"];
+	        this.joinedAllTimeCount = source["joinedAllTimeCount"];
+	        this.feeds = this.convertValues(source["feeds"], FeedGeneratorDTO);
+	        this.members = this.convertValues(source["members"], ProfileDTO);
+	        this.listItemUri = source["listItemUri"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class StarterPackWithMembershipDTO {
+	    starterPack?: StarterPackDTO;
+	    listItemUri?: string;
+	    isMember: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new StarterPackWithMembershipDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.starterPack = this.convertValues(source["starterPack"], StarterPackDTO);
+	        this.listItemUri = source["listItemUri"];
+	        this.isMember = source["isMember"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class StarterPackMembershipResponseDTO {
+	    cursor: string;
+	    items: StarterPackWithMembershipDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new StarterPackMembershipResponseDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cursor = source["cursor"];
+	        this.items = this.convertValues(source["items"], StarterPackWithMembershipDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class StarterPackResponseDTO {
 	    cursor: string;
@@ -3152,6 +3740,7 @@ export namespace services {
 		    return a;
 		}
 	}
+	
 	export class TrendDTO {
 	    topic: string;
 	    displayName: string;
@@ -3229,6 +3818,7 @@ export namespace services {
 	    }
 	}
 	
+	
 	export class VideoJobStatusDTO {
 	    jobId: string;
 	    did: string;
@@ -3247,6 +3837,26 @@ export namespace services {
 	        this.did = source["did"];
 	        this.state = source["state"];
 	        this.progress = source["progress"];
+	        this.message = source["message"];
+	        this.error = source["error"];
+	    }
+	}
+	export class VideoUploadLimitsDTO {
+	    canUpload: boolean;
+	    remainingDailyVideos: number;
+	    remainingDailyBytes: number;
+	    message?: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoUploadLimitsDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.canUpload = source["canUpload"];
+	        this.remainingDailyVideos = source["remainingDailyVideos"];
+	        this.remainingDailyBytes = source["remainingDailyBytes"];
 	        this.message = source["message"];
 	        this.error = source["error"];
 	    }

@@ -18,6 +18,8 @@ export function MuteThread(arg1:string):Promise<void>;
 
 export function ReportAccount(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function ReportChatMessage(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<void>;
+
 export function ReportPost(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function UnblockActor(arg1:string):Promise<void>;

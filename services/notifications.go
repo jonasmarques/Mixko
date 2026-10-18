@@ -34,11 +34,15 @@ func reasonUsesOwnURI(reason string) bool {
 }
 
 func (s *NotificationsService) GetNotifications(cursor string) (*NotificationListDTO, error) {
+	return s.GetNotificationsFiltered(cursor, nil, false)
+}
+
+func (s *NotificationsService) GetNotificationsFiltered(cursor string, reasons []string, priority bool) (*NotificationListDTO, error) {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	var out *NotificationListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.NotificationListNotifications(ctx, c, cursor, 50, false, nil, "")
+		res, err := bsky.NotificationListNotifications(ctx, c, cursor, 50, priority, reasons, "")
 		if err != nil {
 			return err
 		}
@@ -242,6 +246,26 @@ func (s *NotificationsService) PutActivitySubscription(subject string, post bool
 			out = &ActivitySubscriptionDTO{
 				Post:  post,
 				Reply: reply,
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *NotificationsService) ListActivitySubscriptions(cursor string) (*ProfileListDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	out := &ProfileListDTO{Profiles: []*ProfileDTO{}}
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.NotificationListActivitySubscriptions(ctx, c, cursor, 50)
+		if err != nil {
+			return err
+		}
+		out.Cursor = safeString(res.Cursor)
+		for _, sub := range res.Subscriptions {
+			if p := ParseProfileView(sub); p != nil {
+				out.Profiles = append(out.Profiles, p)
 			}
 		}
 		return nil

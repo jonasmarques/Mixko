@@ -270,3 +270,27 @@ func (s *ModerationService) ReportAccount(did, reasonType, reason string) error 
 		return err
 	})
 }
+
+func (s *ModerationService) ReportChatMessage(convoId, messageId, offenderDid, reasonType, reason string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		payload := map[string]interface{}{
+			"reasonType": reasonType,
+			"subject": map[string]interface{}{
+				"$type":     "chat.bsky.convo.defs#messageRef",
+				"convoId":   convoId,
+				"messageId": messageId,
+				"did":       offenderDid,
+			},
+		}
+		if strings.TrimSpace(reason) != "" {
+			payload["reason"] = strings.TrimSpace(reason)
+		}
+		var out map[string]interface{}
+		return cc.Do(ctx, xrpc.Procedure, "application/json", "com.atproto.moderation.createReport", nil, payload, &out)
+	})
+}
+

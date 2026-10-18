@@ -7,7 +7,7 @@ import { openTrendLink } from './link_router';
 import { createListArticle } from '../components/list';
 import { formatPostDate } from '../utils/format';
 import { i18n } from '../utils/i18n';
-import { TrendDTO } from '../types/dto';
+import { TrendDTO, ProfileDTO } from '../types/dto';
 
 interface SavedFeedItem {
     uri: string;
@@ -31,7 +31,7 @@ export async function loadFeedsTab() {
     container.innerHTML = `<div style="padding: 20px;">${i18n.t('feeds.loading')}</div>`;
     
     // Setup tabs
-    ['saved', 'lists', 'discover', 'trending'].forEach(mode => {
+    ['saved', 'lists', 'discover', 'suggestedFeeds', 'trending', 'suggested'].forEach(mode => {
         const btn = document.getElementById(`ftab-${mode}`);
         if (btn) {
             const isActive = state.feedsTabMode === mode;
@@ -40,7 +40,7 @@ export async function loadFeedsTab() {
             btn.style.fontWeight = isActive ? 'bold' : 'normal';
             btn.onclick = () => {
                 if (state.feedsTabMode !== mode) {
-                    state.feedsTabMode = mode as 'saved' | 'lists' | 'discover' | 'trending';
+                    state.feedsTabMode = mode as 'saved' | 'lists' | 'discover' | 'suggestedFeeds' | 'trending' | 'suggested';
                     loadFeedsTab();
                 }
             };
@@ -250,12 +250,13 @@ export async function loadFeedsTab() {
                             <button class="btn-remove-feed" data-uri="${feed.uri}" style="background:#d32f2f; color:#fff; border:none; border-radius:4px; padding:4px 8px;">${i18n.t('feeds.remove')}</button>
                         `;
                     }
+                    actionButtonsHtml += `<button class="btn-like-feed">${esc(feed.viewerLike ? i18n.t('sec2.unlikeFeedBtn') : i18n.t('sec2.likeFeedBtn'))}</button>`;
 
                     div.innerHTML = `
                         <h3>${esc(feed.displayName)}${statusBadge}</h3>
                         <p>${feed.description || i18n.t('feeds.noDescription')}</p>
                         <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}</small>
-                        <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: (feed.likeCount || 0).toString() })}</div>
+                        <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: (feed.likesCount || feed.likeCount || 0).toString() })}</div>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
                             ${actionButtonsHtml}
                         </div>
@@ -266,6 +267,26 @@ export async function loadFeedsTab() {
                         state.currentFeedUri = feed.uri;
                         switchTab('timeline');
                         announcePolite(i18n.t('feeds.feedLoaded', { displayName: feed.displayName }));
+                    });
+
+                    div.querySelector('.btn-like-feed')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const btn = e.currentTarget as HTMLButtonElement;
+                        try {
+                            if (feed.viewerLike) {
+                                await window.go.services.FeedService.UnlikeFeedGenerator(feed.viewerLike);
+                                feed.viewerLike = "";
+                                btn.textContent = i18n.t('sec2.likeFeedBtn');
+                                announceAssertive(i18n.t('sec2.feedUnlikedSuccess'));
+                            } else {
+                                const likeUri = await window.go.services.FeedService.LikeFeedGenerator(feed.uri, feed.cid || "");
+                                feed.viewerLike = likeUri;
+                                btn.textContent = i18n.t('sec2.unlikeFeedBtn');
+                                announceAssertive(i18n.t('sec2.feedLikedSuccess'));
+                            }
+                        } catch (err: unknown) {
+                            announceAssertive(i18n.t('post.error', { error: String(err) }));
+                        }
                     });
 
                     div.querySelector('.btn-save-feed')?.addEventListener('click', async (e) => {
@@ -342,6 +363,78 @@ export async function loadFeedsTab() {
                 if (feedsListContainer) feedsListContainer.innerHTML = `<p>${i18n.t('feeds.noPopularFeedFound')}</p>`;
                 else container.innerHTML = `<p>${i18n.t('feeds.noPopularFeedFound')}</p>`;
             }
+        } else if (state.feedsTabMode === 'suggestedFeeds') {
+            const res = await window.go.services.FeedService.GetSuggestedFeeds("");
+            container.innerHTML = '';
+            if (res && res.feeds && res.feeds.length > 0) {
+                res.feeds.forEach((feed) => {
+                    const savedItem = (state.savedFeeds || []).find((f: SavedFeedItem) => f.uri === feed.uri);
+                    const isSaved = !!savedItem;
+                    const div = document.createElement('article');
+                    div.classList.add('post-item');
+                    div.setAttribute('role', 'article');
+                    div.setAttribute('tabindex', '0');
+                    div.dataset.index = state.currentPosts.length.toString();
+                    div.dataset.uri = feed.uri;
+                    div.innerHTML = `
+                        <h3>${esc(feed.displayName)}</h3>
+                        <p>${esc(feed.description || i18n.t('feeds.noDescription'))}</p>
+                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}</small>
+                        <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: (feed.likeCount || 0).toString() })}</div>
+                        <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
+                            <button class="btn-open-feed">${esc(i18n.t('feeds.openFeed'))}</button>
+                            ${!isSaved ? `<button class="btn-save-feed">${esc(i18n.t('feeds.saveFeed'))}</button>` : ''}
+                            <button class="btn-like-feed">${esc(feed.viewerLike ? i18n.t('sec2.unlikeFeedBtn') : i18n.t('sec2.likeFeedBtn'))}</button>
+                        </div>
+                    `;
+                    div.querySelector('.btn-open-feed')?.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        state.currentFeedUri = feed.uri;
+                        switchTab('timeline');
+                        announcePolite(i18n.t('feeds.feedLoaded', { displayName: feed.displayName }));
+                    });
+                    div.querySelector('.btn-save-feed')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        try {
+                            const existingUris = (state.savedFeeds || []).map((f: SavedFeedItem) => f.uri);
+                            const pinnedUris = (state.savedFeeds || []).filter((f: SavedFeedItem) => f.pinned).map((f: SavedFeedItem) => f.uri);
+                            if (!existingUris.includes(feed.uri)) existingUris.push(feed.uri);
+                            await window.go.services.SocialService.UpdateSavedFeeds(pinnedUris, existingUris);
+                            announceAssertive(i18n.t('feeds.feedSaved', { displayName: feed.displayName }));
+                            loadFeedsTab();
+                        } catch (_) {
+                            announceAssertive(i18n.t('feeds.feedSaveError'));
+                        }
+                    });
+                    div.querySelector('.btn-like-feed')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const btn = e.currentTarget as HTMLButtonElement;
+                        try {
+                            if (feed.viewerLike) {
+                                await window.go.services.FeedService.UnlikeFeedGenerator(feed.viewerLike);
+                                feed.viewerLike = "";
+                                btn.textContent = i18n.t('sec2.likeFeedBtn');
+                                announceAssertive(i18n.t('sec2.feedUnlikedSuccess'));
+                            } else {
+                                const likeUri = await window.go.services.FeedService.LikeFeedGenerator(feed.uri, feed.cid || "");
+                                feed.viewerLike = likeUri;
+                                btn.textContent = i18n.t('sec2.unlikeFeedBtn');
+                                announceAssertive(i18n.t('sec2.feedLikedSuccess'));
+                            }
+                        } catch (err: unknown) {
+                            announceAssertive(i18n.t('post.error', { error: String(err) }));
+                        }
+                    });
+                    div.addEventListener('focus', () => {
+                        const idx = parseInt(div.dataset.index || "-1", 10);
+                        if (!isNaN(idx) && idx >= 0) state.focusedPostIndex = idx;
+                    });
+                    container.appendChild(div);
+                    state.currentPosts.push(div);
+                });
+            } else {
+                container.innerHTML = `<p>${i18n.t('feeds.noPopularFeedFound')}</p>`;
+            }
         } else if (state.feedsTabMode === 'trending') {
             const res = await window.go.services.FeedService.GetTrends(25);
             container.innerHTML = '';
@@ -395,6 +488,94 @@ export async function loadFeedsTab() {
             } else {
                 container.innerHTML = `<p>${i18n.t('feeds.noTrendsFound')}</p>`;
                 announcePolite(i18n.t('feeds.noTrendsFound'));
+            }
+        } else if (state.feedsTabMode === 'suggested') {
+            const res = await window.go.services.SocialService.GetSuggestedFollows();
+            container.innerHTML = '';
+
+            if (res && res.profiles && res.profiles.length > 0) {
+                res.profiles.forEach((prof: ProfileDTO) => {
+                    const div = document.createElement('article');
+                    div.classList.add('post-item');
+                    div.setAttribute('role', 'article');
+                    div.setAttribute('tabindex', '0');
+                    div.dataset.index = state.currentPosts.length.toString();
+                    div.dataset.text = i18n.t('profile.profileCardAria', {
+                        name: prof.displayName || prof.handle,
+                        desc: prof.description || ''
+                    });
+                    div.setAttribute('aria-label', div.dataset.text);
+
+                    const followBtnLabel = prof.viewerFollowing ? i18n.t('profile.unfollowBtn') : i18n.t('profile.followBtn');
+                    div.innerHTML = `
+                        <h3>${esc(prof.displayName || prof.handle)} <small>(@${esc(prof.handle)})</small></h3>
+                        ${prof.description ? `<p>${esc(prof.description)}</p>` : ''}
+                        <div class="actions" style="margin-top:8px; display:flex; gap:8px;">
+                            <button type="button" class="btn-open-suggested-profile">${i18n.t('lists.viewProfile')}</button>
+                            <button type="button" class="btn-follow-suggested" data-did="${esc(prof.did)}" data-following="${esc(prof.viewerFollowing || '')}">${followBtnLabel}</button>
+                        </div>
+                    `;
+
+                    const openSuggestedProfile = () => {
+                        state.currentHandle = prof.handle;
+                        state.profileTabMode = 'posts';
+                        announcePolite(i18n.t('profile.openingProfile', { handle: state.currentHandle }));
+                        switchTab('profile');
+                    };
+
+                    div.querySelector('.btn-open-suggested-profile')?.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openSuggestedProfile();
+                    });
+
+                    div.querySelector('.btn-follow-suggested')?.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const btn = e.currentTarget as HTMLButtonElement;
+                        const followingUri = btn.dataset.following || "";
+                        try {
+                            if (followingUri) {
+                                announcePolite(i18n.t('profile.unfollowingAction'));
+                                await window.go.services.SocialService.Unfollow(followingUri);
+                                btn.dataset.following = "";
+                                btn.textContent = i18n.t('profile.followBtn');
+                                announceAssertive(i18n.t('profile.unfollowedSuccess'));
+                            } else {
+                                announcePolite(i18n.t('profile.followingAction'));
+                                await window.go.services.SocialService.Follow(prof.did);
+                                btn.textContent = i18n.t('profile.unfollowBtn');
+                                announceAssertive(i18n.t('profile.followedSuccess'));
+                                loadFeedsTab();
+                            }
+                        } catch (err: unknown) {
+                            announceAssertive(String(err));
+                        }
+                    });
+
+                    div.addEventListener('click', (e) => {
+                        if (!(e.target as HTMLElement).closest('button')) {
+                            openSuggestedProfile();
+                        }
+                    });
+                    div.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' && !(e.target as HTMLElement).closest('button')) {
+                            e.preventDefault();
+                            openSuggestedProfile();
+                        }
+                    });
+                    div.addEventListener('focus', () => {
+                        const idx = parseInt(div.dataset.index || "-1", 10);
+                        if (!isNaN(idx) && idx >= 0) {
+                            state.focusedPostIndex = idx;
+                        }
+                    });
+
+                    container.appendChild(div);
+                    state.currentPosts.push(div);
+                });
+                announcePolite(i18n.t('feeds.suggestedLoaded', { count: res.profiles.length.toString() }));
+            } else {
+                container.innerHTML = `<p>${i18n.t('feeds.noSuggestedFound')}</p>`;
+                announcePolite(i18n.t('feeds.noSuggestedFound'));
             }
         }
     } catch (err) {

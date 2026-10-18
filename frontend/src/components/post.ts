@@ -2,7 +2,7 @@ import Hls from 'hls.js';
 import { linkify, esc, escUrl } from '../utils/helpers';
 import { formatPostDate } from '../utils/format';
 import { announcePolite, announceAssertive, getPostAccessibleLabel, formatAuthor } from '../utils/a11y';
-import { confirmDialog } from '../utils/dialog';
+import { confirmDialog, promptDialog, promptReportDetails } from '../utils/dialog';
 import { state } from '../config/state';
 import type { PostView, ImageDTO } from '../types/dto';
 // TODO: extract openComposeModal to controllers/compose
@@ -255,6 +255,10 @@ export function createPostArticle(
   notifReason = "",
   forceWarning = false
 ): HTMLElement | null {
+  if (!forceWarning && !isNotification && state.hiddenPostUris && state.hiddenPostUris.includes(post.uri)) {
+    return null;
+  }
+
   const article = document.createElement('article');
   article.setAttribute('role', 'article');
   article.setAttribute('tabindex', '0');
@@ -263,6 +267,10 @@ export function createPostArticle(
   article.dataset.cid = post.cid;
   article.dataset.index = index.toString();
   article.dataset.createdAt = post.createdAt || post.indexedAt || "";
+  if (post.rootUri) article.dataset.rootUri = post.rootUri;
+  if (post.replyToUri) article.dataset.replyToUri = post.replyToUri;
+  if (post.feedContext) article.dataset.feedContext = post.feedContext;
+  article.dataset.embeddingDisabled = post.embeddingDisabled ? "true" : "";
   
   let srMetrics = i18n.t('post.metricsReplies', { replies: (post.replyCount || 0).toString(), reposts: (post.repostCount || 0).toString(), likes: (post.likeCount || 0).toString() });
   article.dataset.metrics = srMetrics;
@@ -279,6 +287,9 @@ export function createPostArticle(
   article.dataset.authorDid = post.authorDid;
   article.dataset.viewerLike = post.viewerLike || "";
   article.dataset.viewerBookmark = post.viewerBookmark || "";
+  article.dataset.viewerThreadMuted = post.viewerThreadMuted ? "true" : "";
+  const isPinnedPost = Boolean(post.isPinned || (state.loggedInPinnedPostUri && state.loggedInPinnedPostUri === post.uri));
+  article.dataset.pinned = isPinnedPost ? "true" : "";
   article.dataset.notifReason = notifReason;
 
   let replyContext = "";
@@ -339,88 +350,109 @@ export function createPostArticle(
   }
 
   let quoteContext = "";
-  if (post.quotePost) {
-    article.dataset.quoteAuthorHandle = post.quotePost.authorHandle;
-    article.dataset.quoteAuthorName = post.quotePost.authorName || post.quotePost.authorHandle;
-    article.dataset.quoteText = post.quotePost.text || "";
-    article.dataset.quoteUri = post.quotePost.uri;
-    article.dataset.quoteCid = post.quotePost.cid;
+  if (post.quoteDetached && post.quoteDetachedUri) {
+    const isMyQuotedPost = Boolean(state.loggedInDid && post.quoteDetachedUri.includes(state.loggedInDid));
+    const reattachBtn = isMyQuotedPost
+      ? `<button type="button" class="btn-reattach-quote" data-own-uri="${esc(post.quoteDetachedUri)}" data-quote-uri="${esc(post.uri)}" style="margin-left: 8px; padding: 2px 8px; font-size: 0.85em;">${esc(i18n.t('sec2.reattachQuoteBtn'))}</button>`
+      : '';
+    quoteContext = `
+      <div class="quote-context" style="border: 1px dashed #888; padding: 10px; margin-top: 10px; border-radius: 5px; color: #aaa;">
+        <em>${esc(i18n.t('sec2.detachedQuoteText'))}</em>${reattachBtn}
+      </div>
+    `;
+  } else if (post.quotePost) {
+    const isMyQuotedPost = Boolean(
+      state.loggedInDid &&
+      (post.quotePost.authorDid === state.loggedInDid || (post.quotePost.uri && post.quotePost.uri.includes(state.loggedInDid)))
+    );
+    {
+      article.dataset.quoteAuthorHandle = post.quotePost.authorHandle;
+      article.dataset.quoteAuthorName = post.quotePost.authorName || post.quotePost.authorHandle;
+      article.dataset.quoteText = post.quotePost.text || "";
+      article.dataset.quoteUri = post.quotePost.uri;
+      article.dataset.quoteCid = post.quotePost.cid;
 
-    const quoteAlts = (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0)
-      ? post.quotePost.imageAlts
-      : (post.quotePost.images ? post.quotePost.images.map((img: ImageDTO) => img.alt || "") : []);
-    if (quoteAlts.length > 0) {
-      article.dataset.quoteHasImage = "true";
-      article.dataset.quoteImageAlts = formatAltList(quoteAlts);
-    } else if (post.quotePost.images && post.quotePost.images.length > 0) {
-      article.dataset.quoteHasImage = "true";
-    }
-
-    if (post.quotePost.video) {
-      article.dataset.hasVideo = "true";
-      article.dataset.hasQuoteVideo = "true";
-      if (post.quotePost.video.presentation === 'gif') {
-          article.dataset.quoteVideoIsGif = "true";
+      const quoteAlts = (post.quotePost.imageAlts && post.quotePost.imageAlts.length > 0)
+        ? post.quotePost.imageAlts
+        : (post.quotePost.images ? post.quotePost.images.map((img: ImageDTO) => img.alt || "") : []);
+      if (quoteAlts.length > 0) {
+        article.dataset.quoteHasImage = "true";
+        article.dataset.quoteImageAlts = formatAltList(quoteAlts);
+      } else if (post.quotePost.images && post.quotePost.images.length > 0) {
+        article.dataset.quoteHasImage = "true";
       }
-      article.dataset.quoteVideoAlt = post.quotePost.video.alt || "";
-    }
-    if (post.quotePost.external) {
-      article.dataset.quoteExternalUrl = post.quotePost.external.uri || "";
-      article.dataset.quoteExternalTitle = post.quotePost.external.title || post.quotePost.external.uri;
-      article.dataset.quoteExternalDesc = post.quotePost.external.description || "";
-    }
 
-    let quoteMediaHtml = "";
-    if (post.quotePost.images && post.quotePost.images.length > 0) {
-      const count = post.quotePost.images.length;
-      const layoutClass = count === 1 ? 'single-image' : 'two-images';
-      const qImgElements = post.quotePost.images.map((img: ImageDTO) => {
-        const src = img.thumb || img.fullsize;
-        const alt = img.alt || i18n.t('post.quoteImageAlt');
-        return `<div class="post-image-item">
-          <a href="${escUrl(img.fullsize || src)}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${esc(i18n.t('post.openFullImage', { alt }))}">
-            <img src="${escUrl(src)}" alt="${esc(alt)}" loading="lazy" class="post-image-img" />
-          </a>
+      if (post.quotePost.video) {
+        article.dataset.hasVideo = "true";
+        article.dataset.hasQuoteVideo = "true";
+        if (post.quotePost.video.presentation === 'gif') {
+            article.dataset.quoteVideoIsGif = "true";
+        }
+        article.dataset.quoteVideoAlt = post.quotePost.video.alt || "";
+      }
+      if (post.quotePost.external) {
+        article.dataset.quoteExternalUrl = post.quotePost.external.uri || "";
+        article.dataset.quoteExternalTitle = post.quotePost.external.title || post.quotePost.external.uri;
+        article.dataset.quoteExternalDesc = post.quotePost.external.description || "";
+      }
+
+      let quoteMediaHtml = "";
+      if (post.quotePost.images && post.quotePost.images.length > 0) {
+        const count = post.quotePost.images.length;
+        const layoutClass = count === 1 ? 'single-image' : 'two-images';
+        const qImgElements = post.quotePost.images.map((img: ImageDTO) => {
+          const src = img.thumb || img.fullsize;
+          const alt = img.alt || i18n.t('post.quoteImageAlt');
+          return `<div class="post-image-item">
+            <a href="${escUrl(img.fullsize || src)}" target="_blank" rel="noopener noreferrer" class="post-image-link" aria-label="${esc(i18n.t('post.openFullImage', { alt }))}">
+              <img src="${escUrl(src)}" alt="${esc(alt)}" loading="lazy" class="post-image-img" />
+            </a>
+          </div>`;
+        }).join('');
+        quoteMediaHtml += `<div class="post-images-grid ${layoutClass}" style="margin-top: 8px;">${qImgElements}</div>`;
+      }
+      if (quoteAlts.length > 0) {
+        quoteMediaHtml += `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${esc(formatAltList(quoteAlts))}</small></div>`;
+      }
+      if (post.quotePost.video) {
+        const isGif = post.quotePost.video.presentation === 'gif';
+        const altText = post.quotePost.video.alt || i18n.t('post.noAlt');
+        const posterAttr = post.quotePost.video.thumbnail ? `poster="${escUrl(post.quotePost.video.thumbnail)}"` : '';
+        quoteMediaHtml += `
+          <div class="video-context quoted-video-context" style="margin-top: 10px;">
+            <video class="post-video quoted-post-video" ${isGif ? 'loop muted playsinline' : 'controls'} preload="none" ${posterAttr}>
+                ${i18n.t('post.videoNoSupport')}
+            </video>
+            <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${esc(altText)}</small></div>
+          </div>
+        `;
+      }
+      if (post.quotePost.external) {
+        quoteMediaHtml += `<div class="external-card" style="border:1px solid #ddd;padding:6px;margin-top:6px;border-radius:4px;font-size:0.85em;">
+          ${post.quotePost.external.thumb ? `<img src="${escUrl(post.quotePost.external.thumb)}" alt="${esc(i18n.t('post.linkThumbAlt'))}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
+          <strong><a href="#" class="app-link link-external" data-external-url="${escUrl(post.quotePost.external.uri)}">${esc(post.quotePost.external.title || post.quotePost.external.uri)}</a></strong>
+          ${post.quotePost.external.description ? `<p style="margin:2px 0 0 0; color: var(--text-muted, #666);">${esc(post.quotePost.external.description)}</p>` : ""}
         </div>`;
-      }).join('');
-      quoteMediaHtml += `<div class="post-images-grid ${layoutClass}" style="margin-top: 8px;">${qImgElements}</div>`;
-    }
-    if (quoteAlts.length > 0) {
-      quoteMediaHtml += `<div class="post-alts"><small><strong>${i18n.t('post.imagesTitle')}</strong> ${esc(formatAltList(quoteAlts))}</small></div>`;
-    }
-    if (post.quotePost.video) {
-      const isGif = post.quotePost.video.presentation === 'gif';
-      const altText = post.quotePost.video.alt || i18n.t('post.noAlt');
-      const posterAttr = post.quotePost.video.thumbnail ? `poster="${escUrl(post.quotePost.video.thumbnail)}"` : '';
-      quoteMediaHtml += `
-        <div class="video-context quoted-video-context" style="margin-top: 10px;">
-          <video class="post-video quoted-post-video" ${isGif ? 'loop muted playsinline' : 'controls'} preload="none" ${posterAttr}>
-              ${i18n.t('post.videoNoSupport')}
-          </video>
-          <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${esc(altText)}</small></div>
+      }
+
+      const detachBtn = isMyQuotedPost
+        ? `<button type="button" class="btn-detach-quote" data-own-uri="${esc(post.quotePost.uri)}" data-quote-uri="${esc(post.uri)}" style="float: right; padding: 2px 8px; font-size: 0.8em;">${esc(i18n.t('sec2.detachQuoteBtn'))}</button>`
+        : '';
+
+      quoteContext = `
+        <div class="quote-context" style="border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 5px;">
+          <header>
+            ${detachBtn}
+            <strong>${esc(post.quotePost.authorName || post.quotePost.authorHandle)}</strong>
+            <span>@${esc(post.quotePost.authorHandle)}</span>
+          </header>
+          <div class="post-content">
+            <p>${post.quotePost.text ? linkify(post.quotePost.text) : i18n.t(post.quotePost.hasMedia ? 'post.mediaAttached' : 'post.contentNotAvailable')}</p>
+            ${quoteMediaHtml}
+          </div>
         </div>
       `;
     }
-    if (post.quotePost.external) {
-      quoteMediaHtml += `<div class="external-card" style="border:1px solid #ddd;padding:6px;margin-top:6px;border-radius:4px;font-size:0.85em;">
-        ${post.quotePost.external.thumb ? `<img src="${escUrl(post.quotePost.external.thumb)}" alt="${esc(i18n.t('post.linkThumbAlt'))}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
-        <strong><a href="#" class="app-link link-external" data-external-url="${escUrl(post.quotePost.external.uri)}">${esc(post.quotePost.external.title || post.quotePost.external.uri)}</a></strong>
-        ${post.quotePost.external.description ? `<p style="margin:2px 0 0 0; color: var(--text-muted, #666);">${esc(post.quotePost.external.description)}</p>` : ""}
-      </div>`;
-    }
-
-    quoteContext = `
-      <div class="quote-context" style="border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 5px;">
-        <header>
-          <strong>${esc(post.quotePost.authorName || post.quotePost.authorHandle)}</strong>
-          <span>@${esc(post.quotePost.authorHandle)}</span>
-        </header>
-        <div class="post-content">
-          <p>${post.quotePost.text ? linkify(post.quotePost.text) : i18n.t(post.quotePost.hasMedia ? 'post.mediaAttached' : 'post.contentNotAvailable')}</p>
-          ${quoteMediaHtml}
-        </div>
-      </div>
-    `;
   }
 
 
@@ -472,10 +504,14 @@ export function createPostArticle(
     article.dataset.videoPlaylist = post.video.playlist;
     if (post.video.alt) article.dataset.videoAlt = post.video.alt;
     const posterAttr = post.video.thumbnail ? `poster="${escUrl(post.video.thumbnail)}"` : '';
+    const captionsTracksHtml = (post.video.captions || []).map((c, idx) =>
+      `<track kind="captions" src="${escUrl(c.url)}" srclang="${esc(c.lang || 'pt')}" label="${esc(c.lang || 'Captions')}" ${idx === 0 ? 'default' : ''} />`
+    ).join('');
     
     videoContext = `
       <div class="video-context" style="margin-top: 10px;">
-        <video class="post-video" ${isGif ? 'loop muted playsinline' : 'controls playsinline'} preload="none" ${posterAttr}>
+        <video class="post-video" crossorigin="anonymous" ${isGif ? 'loop muted playsinline' : 'controls playsinline'} preload="none" ${posterAttr}>
+            ${captionsTracksHtml}
             ${i18n.t('post.videoNoSupport')}
         </video>
         <div class="post-video-alts" style="margin-top: 4px;"><small><strong>${isGif ? 'GIF:' : 'Video:'}</strong> ${esc(post.video.alt || i18n.t('post.noAlt'))}</small></div>
@@ -502,17 +538,28 @@ export function createPostArticle(
     `;
   }
   if (!isNotification || !ACTIONLESS_NOTIF_REASONS.includes(notifReason)) {
+    const muteThreadLabel = post.viewerThreadMuted ? i18n.t('post.actionUnmute') : i18n.t('post.actionMute');
+    const muteThreadAria = post.viewerThreadMuted ? i18n.t('post.unmuteThreadAria') : i18n.t('post.muteThreadAria');
+    const pinBtnLabel = isPinnedPost ? i18n.t('post.actionUnpin') : i18n.t('post.actionPin');
+    const pinBtnAria = isPinnedPost ? i18n.t('post.unpinPostAria') : i18n.t('post.pinPostAria');
+    const toggleQuotesLabel = post.embeddingDisabled ? i18n.t('sec2.toggleQuotesEnableBtn') : i18n.t('sec2.toggleQuotesDisableBtn');
+    const isCustomFeed = !isNotification && state.currentTab === 'timeline' && state.currentFeedUri !== "";
     footerHtml += `
     <footer aria-label="${i18n.t('post.actionsAria')}">
-      <button class="btn-reply" aria-label="${esc(i18n.t('post.replyAria', { handle: post.authorHandle }))}">${i18n.t('post.actionReply')}</button>
+      <button class="btn-reply" ${post.replyDisabled ? 'disabled' : ''} aria-label="${esc(i18n.t('post.replyAria', { handle: post.authorHandle }))}">${i18n.t('post.actionReply')}</button>
       <button class="btn-repost" aria-label="${post.viewerRepost ? i18n.t('post.unrepostAria') : i18n.t('post.repostAria')}">${repostBtnLabel}</button>
-      <button class="btn-quote" aria-label="${i18n.t('post.quoteAria')}">${i18n.t('post.actionQuote')}</button>
+      <button class="btn-quote" ${post.embeddingDisabled ? 'disabled' : ''} aria-label="${i18n.t('post.quoteAria')}">${i18n.t('post.actionQuote')}</button>
       <button class="btn-like" aria-label="${post.viewerLike ? i18n.t('post.unlikeAria') : i18n.t('post.likeAria')}">${likeBtnLabel}</button>
       <button class="btn-bookmark" aria-label="${post.viewerBookmark ? i18n.t('post.removeBookmarkAria') : i18n.t('post.savePostAria')}">${bookmarkBtnLabel}</button>
-      <button class="btn-mute-thread" aria-label="${i18n.t('post.muteThreadAria')}">${i18n.t('post.actionMute')}</button>
+      <button class="btn-share-dm" aria-label="${esc(i18n.t('extended.sharePostDm'))}">${esc(i18n.t('extended.sharePostDm'))}</button>
+      <button class="btn-mute-thread" aria-label="${muteThreadAria}">${muteThreadLabel}</button>
+      <button class="btn-hide-post-for-me" aria-label="${esc(i18n.t('sec2.hidePostForMeBtn'))}">${esc(i18n.t('sec2.hidePostForMeBtn'))}</button>
       <button class="btn-report-post" aria-label="${i18n.t('post.reportPostAria')}">${i18n.t('post.actionReport')}</button>
-      ${post.isReply ? `<button class="btn-hide-reply" aria-label="${i18n.t('post.hideReplyAria')}">${i18n.t('post.actionHide')}</button>` : ''}
-      ${isOwner ? `<button class="btn-pin-post" aria-label="${i18n.t('post.pinPostAria')}">${i18n.t('post.actionPin')}</button>` : ''}
+      ${isCustomFeed ? `<button class="btn-feed-more" aria-label="${esc(i18n.t('sec2.showMoreLikeThisBtn'))}">${esc(i18n.t('sec2.showMoreLikeThisBtn'))}</button><button class="btn-feed-less" aria-label="${esc(i18n.t('sec2.showLessLikeThisBtn'))}">${esc(i18n.t('sec2.showLessLikeThisBtn'))}</button>` : ''}
+      ${post.isReply ? `<button class="btn-hide-reply" aria-label="${i18n.t('post.hideReplyAria')}">${i18n.t('post.actionHide')}</button><button class="btn-unhide-reply" aria-label="${esc(i18n.t('sec2.unhideReplyBtn'))}">${esc(i18n.t('sec2.unhideReplyBtn'))}</button>` : ''}
+      ${isOwner ? `<button class="btn-toggle-quotes" aria-label="${esc(toggleQuotesLabel)}">${esc(toggleQuotesLabel)}</button>` : ''}
+      ${isOwner ? `<button class="btn-edit-reply-gate" aria-label="${esc(i18n.t('sec2.editReplyGateBtn'))}">${esc(i18n.t('sec2.editReplyGateBtn'))}</button>` : ''}
+      ${isOwner ? `<button class="btn-pin-post" aria-label="${pinBtnAria}">${pinBtnLabel}</button>` : ''}
       ${isOwner ? `<button class="btn-delete-post" aria-label="${i18n.t('post.deletePostAria')}">${i18n.t('post.actionDelete')}</button>` : ''}
     </footer>`;
   }
@@ -548,17 +595,30 @@ export function createPostArticle(
   const formattedTime = formatPostDate(post.createdAt || post.indexedAt || "");
   const authorDisplay = formatAuthor(post.authorName ?? '', post.authorHandle);
   const showHandleSpan = (state.nameDisplayFormat !== 'handle') && post.authorHandle && (post.authorHandle !== authorDisplay);
+  const verifiedBadgeHtml = (!state.hideVerificationBadges && post.authorVerified)
+    ? ` <span class="verified-badge" title="${esc(i18n.t('sec2.verifiedBadgeAria'))}" aria-label="${esc(i18n.t('sec2.verifiedBadgeAria'))}" style="color: #3b82f6; font-weight: bold;">✓</span>`
+    : '';
+
+  const postLabels = (post.labels || []).filter(l => l && !l.startsWith('!'));
+  const hasContentLabels = !forceWarning && !isNotification && postLabels.length > 0;
+  const labelBannerHtml = hasContentLabels
+    ? `<div class="post-label-warning" style="padding: 8px 12px; margin-bottom: 8px; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+         <span>⚠️ <strong>${esc(i18n.t('sec2.contentWarningTitle', { labels: postLabels.join(', ') }))}</strong></span>
+         <button type="button" class="btn-reveal-labeled-post" style="padding: 3px 10px;">${esc(i18n.t('sec2.showLabeledPostBtn'))}</button>
+       </div>`
+    : '';
 
   const innerHtmlContent = `
     ${notifContext}
     ${repostContext}
     ${replyContext}
     <header>
-      <strong>${esc(authorDisplay)}</strong>
+      <strong>${esc(authorDisplay)}</strong>${verifiedBadgeHtml}
       ${showHandleSpan ? `<span>@${esc(post.authorHandle)}</span>` : ''}
       <small>${esc(formattedTime)}</small>
     </header>
-    <div class="post-content">
+    ${labelBannerHtml}
+    <div class="post-content" ${hasContentLabels ? 'style="display:none;"' : ''}>
       <p>${post.text ? linkify(post.text) : (post.hasMedia ? i18n.t('post.attachedMediaFallback') : (post.quotePost ? i18n.t('post.quotedPostFallback') : i18n.t('post.contentUnavailableFallback')))}</p>
       ${imagesHtml}
       ${altsContext}
@@ -599,6 +659,15 @@ export function createPostArticle(
   } else {
       article.innerHTML = innerHtmlContent;
   }
+
+  article.querySelector('.btn-reveal-labeled-post')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const contentEl = article.querySelector('.post-content') as HTMLElement | null;
+    const warnEl = article.querySelector('.post-label-warning') as HTMLElement | null;
+    if (contentEl) contentEl.style.display = 'block';
+    if (warnEl) warnEl.style.display = 'none';
+    announcePolite(i18n.t('post.contentShown'));
+  });
 
   // HLS binding: registered now, loaded only once on screen.
   if (post.video?.playlist) {
@@ -733,11 +802,55 @@ export function createPostArticle(
     e.stopPropagation();
     const uri = article.dataset.uri;
     if (!uri) return;
+    const btn = article.querySelector('.btn-mute-thread') as HTMLButtonElement | null;
     try {
-      announcePolite(i18n.t('post.mutingThread'));
-      await window.go.services.ModerationService.MuteThread(uri);
-      announceAssertive(i18n.t('post.muteThreadSuccess'));
-    } catch (err: any) {
+      if (article.dataset.viewerThreadMuted === "true") {
+        announcePolite(i18n.t('post.unmutingThread'));
+        await window.go.services.ModerationService.UnmuteThread(uri);
+        article.dataset.viewerThreadMuted = "";
+        post.viewerThreadMuted = false;
+        if (btn) {
+          btn.textContent = i18n.t('post.actionMute');
+          btn.setAttribute('aria-label', i18n.t('post.muteThreadAria'));
+        }
+        announceAssertive(i18n.t('post.unmuteThreadSuccess'));
+      } else {
+        announcePolite(i18n.t('post.mutingThread'));
+        await window.go.services.ModerationService.MuteThread(uri);
+        article.dataset.viewerThreadMuted = "true";
+        post.viewerThreadMuted = true;
+        if (btn) {
+          btn.textContent = i18n.t('post.actionUnmute');
+          btn.setAttribute('aria-label', i18n.t('post.unmuteThreadAria'));
+        }
+        announceAssertive(i18n.t('post.muteThreadSuccess'));
+      }
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-share-dm')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    const cid = article.dataset.cid;
+    if (!uri || !cid) return;
+    const rawTarget = await promptDialog(i18n.t('extended.sharePostDmPrompt'), "", i18n.t('extended.sharePostDm'));
+    if (!rawTarget || !rawTarget.trim()) return;
+    const cleanTarget = rawTarget.trim().replace(/^@/, '');
+    const msgText = (await promptDialog(i18n.t('extended.sharePostDmTextPrompt'), "", i18n.t('extended.sharePostDm'))) || '';
+    try {
+      const avail = await window.go.services.ChatService.GetConvoAvailability(cleanTarget);
+      if (avail && !avail.canChat) {
+        announceAssertive(i18n.t('extended.cannotChatUser'));
+        return;
+      }
+      const convo = await window.go.services.ChatService.GetConvoForMembers([cleanTarget]);
+      if (convo && convo.id) {
+        await window.go.services.ChatService.SendMessageWithEmbed(convo.id, msgText.trim(), uri, cid);
+        announceAssertive(i18n.t('extended.sharePostDmSuccess'));
+      }
+    } catch (err: unknown) {
       announceAssertive(i18n.t('post.error', { error: String(err) }));
     }
   });
@@ -747,14 +860,13 @@ export function createPostArticle(
     const uri = article.dataset.uri;
     const cid = article.dataset.cid;
     if (!uri || !cid) return;
-    const { promptDialog } = await import('../utils/dialog');
-    const reason = await promptDialog(i18n.t('post.reportPrompt'), "", i18n.t('post.reportTitle'));
-    if (reason) {
+    const details = await promptReportDetails(i18n.t('post.reportTitle'));
+    if (details) {
       try {
         announcePolite(i18n.t('post.reporting'));
-        await window.go.services.ModerationService.ReportPost(uri, cid, 'com.atproto.moderation.defs#reasonOther', reason);
+        await window.go.services.ModerationService.ReportPost(uri, cid, details.reasonType, details.reason);
         announceAssertive(i18n.t('post.reportSuccess'));
-      } catch (err: any) {
+      } catch (err: unknown) {
         announceAssertive(i18n.t('post.error', { error: String(err) }));
       }
     }
@@ -769,7 +881,7 @@ export function createPostArticle(
       announcePolite(i18n.t('post.hidingReply'));
       await window.go.services.PostBuilderService.HideReply(rootUri, uri);
       announceAssertive(i18n.t('post.hideReplySuccess'));
-    } catch (err: any) {
+    } catch (err: unknown) {
       announceAssertive(i18n.t('post.error', { error: String(err) }));
     }
   });
@@ -779,11 +891,163 @@ export function createPostArticle(
     const uri = article.dataset.uri;
     const cid = article.dataset.cid;
     if (!uri || !cid) return;
+    const btn = article.querySelector('.btn-pin-post') as HTMLButtonElement | null;
     try {
-      announcePolite(i18n.t('post.pinning'));
-      await window.go.services.SocialService.PinPost(uri, cid);
-      announceAssertive(i18n.t('post.pinSuccess'));
-    } catch (err: any) {
+      const currentlyPinned = article.dataset.pinned === "true" || state.loggedInPinnedPostUri === uri;
+      if (currentlyPinned) {
+        announcePolite(i18n.t('post.unpinning'));
+        await window.go.services.SocialService.UnpinPost();
+        article.dataset.pinned = "";
+        post.isPinned = false;
+        if (state.loggedInPinnedPostUri === uri) {
+          state.loggedInPinnedPostUri = "";
+        }
+        if (btn) {
+          btn.textContent = i18n.t('post.actionPin');
+          btn.setAttribute('aria-label', i18n.t('post.pinPostAria'));
+        }
+        announceAssertive(i18n.t('post.unpinSuccess'));
+      } else {
+        announcePolite(i18n.t('post.pinning'));
+        await window.go.services.SocialService.PinPost(uri, cid);
+        article.dataset.pinned = "true";
+        post.isPinned = true;
+        state.loggedInPinnedPostUri = uri;
+        if (btn) {
+          btn.textContent = i18n.t('post.actionUnpin');
+          btn.setAttribute('aria-label', i18n.t('post.unpinPostAria'));
+        }
+        announceAssertive(i18n.t('post.pinSuccess'));
+      }
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-unhide-reply')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    if (!uri) return;
+    const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
+    try {
+      await window.go.services.PostBuilderService.UnhideReply(rootUri, uri);
+      announceAssertive(i18n.t('sec2.unhideReplySuccess'));
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-hide-post-for-me')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    if (!uri) return;
+    try {
+      await window.go.services.SocialService.HidePostForMe(uri);
+      if (!state.hiddenPostUris.includes(uri)) {
+        state.hiddenPostUris.push(uri);
+      }
+      article.remove();
+      announceAssertive(i18n.t('sec2.hidePostForMeSuccess'));
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-feed-more')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    const feedUri = state.currentFeedUri;
+    if (!uri || !feedUri) return;
+    try {
+      await window.go.services.FeedService.SendFeedInteraction(feedUri, uri, 'app.bsky.feed.defs#requestMore', post.feedContext || '');
+      announceAssertive(i18n.t('sec2.feedInteractionSent'));
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-feed-less')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    const feedUri = state.currentFeedUri;
+    if (!uri || !feedUri) return;
+    try {
+      await window.go.services.FeedService.SendFeedInteraction(feedUri, uri, 'app.bsky.feed.defs#requestLess', post.feedContext || '');
+      announceAssertive(i18n.t('sec2.feedInteractionSent'));
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-toggle-quotes')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    if (!uri) return;
+    const btn = article.querySelector('.btn-toggle-quotes') as HTMLButtonElement | null;
+    try {
+      const currentlyDisabled = post.embeddingDisabled === true;
+      await window.go.services.PostBuilderService.TogglePostQuotes(uri, !currentlyDisabled);
+      post.embeddingDisabled = !currentlyDisabled;
+      if (btn) {
+        btn.textContent = post.embeddingDisabled ? i18n.t('sec2.enableQuotes') : i18n.t('sec2.disableQuotes');
+      }
+      announceAssertive(post.embeddingDisabled ? i18n.t('sec2.quotesDisabledSuccess') : i18n.t('sec2.quotesEnabledSuccess'));
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-edit-reply-gate')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const uri = article.dataset.uri;
+    if (!uri) return;
+    const gateChoices = [
+      { value: 'everybody', label: i18n.t('compose.replyEverybody') },
+      { value: 'nobody', label: i18n.t('compose.replyNobody') },
+      { value: 'mentioned', label: i18n.t('compose.replyMentioned') },
+      { value: 'following', label: i18n.t('compose.replyFollowing') },
+      { value: 'followers', label: i18n.t('sec2.replyFollowers') },
+      { value: 'followers,mentioned', label: i18n.t('sec2.replyFollowersMentioned') },
+      { value: 'following,followers', label: i18n.t('sec2.replyFollowingFollowers') },
+    ];
+    const promptText = `${i18n.t('sec2.editReplyGatePrompt')}\n` + gateChoices.map((c, idx) => `${idx + 1}. ${c.label}`).join('\n');
+    const chosenIdxStr = await promptDialog(promptText, '1', i18n.t('sec2.editReplyGate'));
+    if (!chosenIdxStr) return;
+    const chosenIdx = parseInt(chosenIdxStr, 10) - 1;
+    const selected = gateChoices[chosenIdx]?.value || chosenIdxStr.trim();
+    if (!selected) return;
+    try {
+      await window.go.services.PostBuilderService.UpdateThreadgate(uri, selected, []);
+      announceAssertive(i18n.t('sec2.editReplyGateSuccess'));
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-detach-quote')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget as HTMLButtonElement;
+    const ownUri = btn.dataset.ownUri;
+    const quoteUri = btn.dataset.quoteUri;
+    if (!ownUri || !quoteUri) return;
+    try {
+      await window.go.services.PostBuilderService.DetachQuote(ownUri, quoteUri);
+      announceAssertive(i18n.t('sec2.detachQuoteSuccess'));
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
+
+  article.querySelector('.btn-reattach-quote')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget as HTMLButtonElement;
+    const ownUri = btn.dataset.ownUri;
+    const quoteUri = btn.dataset.quoteUri;
+    if (!ownUri || !quoteUri) return;
+    try {
+      await window.go.services.PostBuilderService.ReattachQuote(ownUri, quoteUri);
+      announceAssertive(i18n.t('sec2.reattachQuoteSuccess'));
+    } catch (err: unknown) {
       announceAssertive(i18n.t('post.error', { error: String(err) }));
     }
   });

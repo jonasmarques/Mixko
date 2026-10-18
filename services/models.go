@@ -71,6 +71,7 @@ type PostDTO struct {
 	AuthorName        string   `json:"authorName"`
 	AuthorHandle      string   `json:"authorHandle"`
 	AuthorDID         string   `json:"authorDid"`
+	AuthorVerified    bool     `json:"authorVerified,omitempty"`
 	Text              string   `json:"text"`
 	CreatedAt         string   `json:"createdAt"`
 	ReplyCount        int64    `json:"replyCount"`
@@ -87,15 +88,22 @@ type PostDTO struct {
 	RootPost          *PostDTO `json:"rootPost"`
 	RepostedBy       string   `json:"repostedBy"`
 	RepostedByHandle string   `json:"repostedByHandle"`
-	QuotePost     *PostDTO `json:"quotePost"`
-	ImageAlts     []string          `json:"imageAlts"`
-	Images        []*ImageDTO       `json:"images"`
-	External      *ExternalEmbedDTO `json:"external"`
-	Video         *VideoEmbedDTO    `json:"video"`
-	HasMedia      bool              `json:"hasMedia"`
-	ViewerLike    string            `json:"viewerLike"`
-	ViewerRepost  string            `json:"viewerRepost"`
-	ViewerBookmark string           `json:"viewerBookmark"`
+	QuotePost         *PostDTO          `json:"quotePost"`
+	QuoteDetached     bool              `json:"quoteDetached,omitempty"`
+	QuoteDetachedURI  string            `json:"quoteDetachedUri,omitempty"`
+	ImageAlts         []string          `json:"imageAlts"`
+	Images            []*ImageDTO       `json:"images"`
+	External          *ExternalEmbedDTO `json:"external"`
+	Video             *VideoEmbedDTO    `json:"video"`
+	HasMedia          bool              `json:"hasMedia"`
+	Labels            []string          `json:"labels,omitempty"`
+	ViewerLike        string            `json:"viewerLike"`
+	ViewerRepost      string            `json:"viewerRepost"`
+	ViewerBookmark    string            `json:"viewerBookmark"`
+	ViewerThreadMuted bool              `json:"viewerThreadMuted"`
+	EmbeddingDisabled bool              `json:"embeddingDisabled,omitempty"`
+	ReplyDisabled     bool              `json:"replyDisabled,omitempty"`
+	FeedContext       string            `json:"feedContext,omitempty"`
 }
 
 // PostRefDTO identifies a post that was just created, together with the root of
@@ -133,11 +141,25 @@ type VideoJobStatusDTO struct {
 	Error    string `json:"error,omitempty"`
 }
 
+type VideoCaptionDTO struct {
+	Lang string `json:"lang"`
+	URL  string `json:"url"`
+}
+
 type VideoEmbedDTO struct {
-	Playlist     string `json:"playlist"`
-	Thumbnail    string `json:"thumbnail"`
-	Alt          string `json:"alt"`
-	Presentation string `json:"presentation"`
+	Playlist     string            `json:"playlist"`
+	Thumbnail    string            `json:"thumbnail"`
+	Alt          string            `json:"alt"`
+	Presentation string            `json:"presentation"`
+	Captions     []VideoCaptionDTO `json:"captions,omitempty"`
+}
+
+type VideoUploadLimitsDTO struct {
+	CanUpload            bool   `json:"canUpload"`
+	RemainingDailyVideos int64  `json:"remainingDailyVideos"`
+	RemainingDailyBytes  int64  `json:"remainingDailyBytes"`
+	Message              string `json:"message,omitempty"`
+	Error                string `json:"error,omitempty"`
 }
 
 type SavedFeedDTO struct {
@@ -149,9 +171,10 @@ type SavedFeedDTO struct {
 }
 
 type FeedDTO struct {
-	Cursor       string     `json:"cursor"`
-	Posts        []*PostDTO `json:"posts"`
-	DebugMessage string     `json:"debugMessage,omitempty"`
+	Cursor          string     `json:"cursor"`
+	Posts           []*PostDTO `json:"posts"`
+	DebugMessage    string     `json:"debugMessage,omitempty"`
+	HasOtherReplies bool       `json:"hasOtherReplies,omitempty"`
 }
 
 type NotificationDTO struct {
@@ -247,6 +270,15 @@ type ActivitySubscriptionDTO struct {
 	Reply bool `json:"reply"`
 }
 
+type ActorStatusDTO struct {
+	Status      string `json:"status"`
+	URI         string `json:"uri,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	ExpiresAt   string `json:"expiresAt,omitempty"`
+	IsActive    bool   `json:"isActive"`
+}
+
 type ProfileDTO struct {
 	DID                        string                   `json:"did"`
 	Handle                     string                   `json:"handle"`
@@ -267,6 +299,10 @@ type ProfileDTO struct {
 	ViewerSubscribedLabeler    bool                     `json:"viewerSubscribedLabeler"`
 	ViewerActivitySubscription *ActivitySubscriptionDTO `json:"viewerActivitySubscription,omitempty"`
 	LabelerInfo                *LabelerDTO              `json:"labelerInfo,omitempty"`
+	ListItemURI                string                   `json:"listItemUri,omitempty"`
+	Verified                   bool                     `json:"verified,omitempty"`
+	TrustedVerifier            bool                     `json:"trustedVerifier,omitempty"`
+	Status                     *ActorStatusDTO          `json:"status,omitempty"`
 }
 
 type ProfileListDTO struct {
@@ -275,27 +311,45 @@ type ProfileListDTO struct {
 }
 
 type ListDTO struct {
-	URI           string `json:"uri"`
-	CID           string `json:"cid"`
-	Name          string `json:"name"`
-	Purpose       string `json:"purpose"`
-	Description   string `json:"description"`
-	Creator       string `json:"creator"`
-	CreatorDID    string `json:"creatorDid"`
-	CreatorHandle string `json:"creatorHandle"`
-	Avatar        string `json:"avatar"`
-	ListItemCount int64  `json:"listItemCount"`
-	ViewerMuted   bool   `json:"viewerMuted"`
-	ViewerBlock   string `json:"viewerBlock"`
+	URI              string `json:"uri"`
+	CID              string `json:"cid"`
+	Name             string `json:"name"`
+	Purpose          string `json:"purpose"`
+	Description      string `json:"description"`
+	Creator          string `json:"creator"`
+	CreatorDID       string `json:"creatorDid"`
+	CreatorHandle    string `json:"creatorHandle"`
+	Avatar           string `json:"avatar"`
+	ListItemCount    int64  `json:"listItemCount"`
+	ViewerMuted      bool   `json:"viewerMuted"`
+	ViewerBlock      string `json:"viewerBlock"`
+	ViewerSubscribed bool   `json:"viewerSubscribed"`
+}
+
+type ListWithMembershipDTO struct {
+	List        *ListDTO `json:"list"`
+	ListItemURI string   `json:"listItemUri,omitempty"`
+	IsMember    bool     `json:"isMember"`
+}
+
+type ListMembershipResponseDTO struct {
+	Cursor string                   `json:"cursor"`
+	Items  []*ListWithMembershipDTO `json:"items"`
 }
 
 type StarterPackDTO struct {
-	URI         string `json:"uri"`
-	CID         string `json:"cid"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Creator     string `json:"creator"`
-	ListURI     string `json:"listUri"`
+	URI                string              `json:"uri"`
+	CID                string              `json:"cid"`
+	Name               string              `json:"name"`
+	Description        string              `json:"description"`
+	Creator            string              `json:"creator"`
+	CreatorDID         string              `json:"creatorDid,omitempty"`
+	ListURI            string              `json:"listUri"`
+	JoinedWeekCount    int64               `json:"joinedWeekCount,omitempty"`
+	JoinedAllTimeCount int64               `json:"joinedAllTimeCount,omitempty"`
+	Feeds              []*FeedGeneratorDTO `json:"feeds,omitempty"`
+	Members            []*ProfileDTO       `json:"members,omitempty"`
+	ListItemURI        string              `json:"listItemUri,omitempty"`
 }
 
 type ListResponseDTO struct {
@@ -321,11 +375,23 @@ type ChatMemberDTO struct {
 }
 
 type ChatConvoDTO struct {
-	ID          string          `json:"id"`
-	Rev         string          `json:"rev"`
-	Members     []ChatMemberDTO `json:"members"`
-	LastMessage string          `json:"lastMessage"`
-	UnreadCount int64           `json:"unreadCount"`
+	ID                      string          `json:"id"`
+	Rev                     string          `json:"rev"`
+	Members                 []ChatMemberDTO `json:"members"`
+	LastMessage             string          `json:"lastMessage"`
+	UnreadCount             int64           `json:"unreadCount"`
+	Muted                   bool            `json:"muted"`
+	Cursor                  string          `json:"cursor,omitempty"`
+	IsGroup                 bool            `json:"isGroup,omitempty"`
+	GroupName               string          `json:"groupName,omitempty"`
+	LockStatus              string          `json:"lockStatus,omitempty"`
+	JoinLinkCode            string          `json:"joinLinkCode,omitempty"`
+	JoinLinkEnabled         bool            `json:"joinLinkEnabled,omitempty"`
+	JoinLinkRequireApproval bool            `json:"joinLinkRequireApproval,omitempty"`
+	JoinRequestCount        int64           `json:"joinRequestCount,omitempty"`
+	UnreadJoinRequestCount  int64           `json:"unreadJoinRequestCount,omitempty"`
+	MemberCount             int64           `json:"memberCount,omitempty"`
+	MemberLimit             int64           `json:"memberLimit,omitempty"`
 }
 
 type ChatReactionDTO struct {
@@ -365,18 +431,30 @@ type ContentFilterDTO struct {
 }
 
 type MutedWordDTO struct {
-	Value   string   `json:"value"`
-	Targets []string `json:"targets"`
+	ID          string   `json:"id,omitempty"`
+	Value       string   `json:"value"`
+	Targets     []string `json:"targets"`
+	ActorTarget string   `json:"actorTarget,omitempty"`
+	ExpiresAt   string   `json:"expiresAt,omitempty"`
 }
 
 type PreferencesDTO struct {
-	AdultContentEnabled        bool               `json:"adultContentEnabled"`
-	ContentFilters             []ContentFilterDTO `json:"contentFilters"`
-	MutedWords                 []MutedWordDTO     `json:"mutedWords"`
-	PinnedFeeds                []string           `json:"pinnedFeeds"`
-	SavedFeeds                 []string           `json:"savedFeeds"`
-	ThreadSort                 string             `json:"threadSort"`
-	ThreadPrioritizeFollowed   bool               `json:"threadPrioritizeFollowed"`
+	AdultContentEnabled      bool               `json:"adultContentEnabled"`
+	ContentFilters           []ContentFilterDTO `json:"contentFilters"`
+	MutedWords               []MutedWordDTO     `json:"mutedWords"`
+	PinnedFeeds              []string           `json:"pinnedFeeds"`
+	SavedFeeds               []string           `json:"savedFeeds"`
+	ThreadSort               string             `json:"threadSort"`
+	ThreadPrioritizeFollowed bool               `json:"threadPrioritizeFollowed"`
+	HideReplies              bool               `json:"hideReplies"`
+	HideReposts              bool               `json:"hideReposts"`
+	HideQuotePosts           bool               `json:"hideQuotePosts"`
+	HideRepliesByUnfollowed  bool               `json:"hideRepliesByUnfollowed"`
+	HiddenPosts              []string           `json:"hiddenPosts"`
+	DefaultThreadgateRules   []string           `json:"defaultThreadgateRules"`
+	DefaultDisableQuotes     bool               `json:"defaultDisableQuotes"`
+	Interests                []string           `json:"interests"`
+	HideVerificationBadges   bool               `json:"hideVerificationBadges"`
 }
 
 // Helper para parsear de forma segura o texto do Record
@@ -608,14 +686,18 @@ func ExtractVideoAltFromRecord(record interface{}) string {
 }
 
 type FeedGeneratorDTO struct {
-	URI         string `json:"uri"`
-	CID         string `json:"cid"`
-	DID         string `json:"did"`
-	Creator     string `json:"creator"`
-	DisplayName string `json:"displayName"`
-	Description string `json:"description"`
-	LikeCount   int64  `json:"likeCount"`
-	Avatar      string `json:"avatar"`
+	URI                 string `json:"uri"`
+	CID                 string `json:"cid"`
+	DID                 string `json:"did"`
+	Creator             string `json:"creator"`
+	DisplayName         string `json:"displayName"`
+	Description         string `json:"description"`
+	LikeCount           int64  `json:"likeCount"`
+	Avatar              string `json:"avatar"`
+	ViewerLike          string `json:"viewerLike,omitempty"`
+	AcceptsInteractions bool   `json:"acceptsInteractions,omitempty"`
+	IsOnline            bool   `json:"isOnline,omitempty"`
+	IsValid             bool   `json:"isValid,omitempty"`
 }
 
 type FeedGeneratorResponseDTO struct {
@@ -651,4 +733,97 @@ type UpdateInfoDTO struct {
 	LatestVersion  string `json:"latestVersion"`
 	ReleaseURL     string `json:"releaseUrl"`
 }
+
+type ChatGroupJoinLinkDTO struct {
+	Code            string `json:"code"`
+	CreatedAt       string `json:"createdAt"`
+	EnabledStatus   string `json:"enabledStatus"`
+	JoinRule        string `json:"joinRule"`
+	RequireApproval bool   `json:"requireApproval"`
+}
+
+type ChatJoinRequestDTO struct {
+	ConvoID     string        `json:"convoId"`
+	RequestedAt string        `json:"requestedAt"`
+	RequestedBy ChatMemberDTO `json:"requestedBy"`
+}
+
+type ChatJoinRequestListDTO struct {
+	Cursor   string                `json:"cursor"`
+	Requests []*ChatJoinRequestDTO `json:"requests"`
+}
+
+type ChatAvailabilityDTO struct {
+	CanChat bool          `json:"canChat"`
+	ConvoID string        `json:"convoId,omitempty"`
+	Convo   *ChatConvoDTO `json:"convo,omitempty"`
+}
+
+type SavedAccountDTO struct {
+	DID      string `json:"did"`
+	Handle   string `json:"handle"`
+	IsActive bool   `json:"isActive"`
+}
+
+type AppPasswordDTO struct {
+	Name       string `json:"name"`
+	Password   string `json:"password,omitempty"`
+	CreatedAt  string `json:"createdAt"`
+	Privileged bool   `json:"privileged"`
+}
+
+type AccountStatusDTO struct {
+	Activated          bool   `json:"activated"`
+	ValidDid           bool   `json:"validDid"`
+	RepoCommit         string `json:"repoCommit"`
+	RepoRev            string `json:"repoRev"`
+	RepoBlocks         int64  `json:"repoBlocks"`
+	IndexedRecords     int64  `json:"indexedRecords"`
+	PrivateStateValues int64  `json:"privateStateValues"`
+	ExpectedBlobs      int64  `json:"expectedBlobs"`
+	ImportedBlobs      int64  `json:"importedBlobs"`
+}
+
+type DraftDTO struct {
+	ID              string   `json:"id"`
+	Text            string   `json:"text"`
+	Langs           []string `json:"langs,omitempty"`
+	SelfLabels      []string `json:"selfLabels,omitempty"`
+	ThreadgateAllow []string `json:"threadgateAllow,omitempty"`
+	DisableQuotes   bool     `json:"disableQuotes,omitempty"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
+}
+
+type DraftListDTO struct {
+	Cursor string      `json:"cursor"`
+	Drafts []*DraftDTO `json:"drafts"`
+}
+
+type StarterPackWithMembershipDTO struct {
+	StarterPack *StarterPackDTO `json:"starterPack"`
+	ListItemURI string          `json:"listItemUri,omitempty"`
+	IsMember    bool            `json:"isMember"`
+}
+
+type StarterPackMembershipResponseDTO struct {
+	Cursor string                          `json:"cursor"`
+	Items  []*StarterPackWithMembershipDTO `json:"items"`
+}
+
+type RelationshipDTO struct {
+	DID        string `json:"did"`
+	Following  string `json:"following,omitempty"`
+	FollowedBy string `json:"followedBy,omitempty"`
+	Blocking   string `json:"blocking,omitempty"`
+	BlockedBy  string `json:"blockedBy,omitempty"`
+}
+
+type AgeAssuranceStateDTO struct {
+	Status          string `json:"status"`
+	Access          string `json:"access"`
+	LastInitiatedAt string `json:"lastInitiatedAt,omitempty"`
+}
+
+
 

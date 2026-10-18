@@ -107,6 +107,28 @@ function groupNotificationsList(notifications: any[], hydratedMap: Record<string
 
 /** @param silent suppresses the "loaded" announcement, for pages fetched to restore focus. */
 export async function loadNotifications(loadMore = false, keepFocus = false, silent = false) {
+  const filterBar = document.getElementById('notif-filter-bar');
+  if (filterBar && !filterBar.dataset.bound) {
+    filterBar.dataset.bound = 'true';
+    filterBar.querySelectorAll<HTMLButtonElement>('.btn-notif-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.notifFilterReason = btn.dataset.reason || '';
+        filterBar.querySelectorAll<HTMLButtonElement>('.btn-notif-filter').forEach(b => {
+          b.style.fontWeight = (b.dataset.reason || '') === state.notifFilterReason ? 'bold' : 'normal';
+        });
+        loadNotifications(false);
+      });
+    });
+    const priorityCb = document.getElementById('notif-filter-priority') as HTMLInputElement | null;
+    if (priorityCb) {
+      priorityCb.checked = state.notifFilterPriority;
+      priorityCb.addEventListener('change', () => {
+        state.notifFilterPriority = priorityCb.checked;
+        loadNotifications(false);
+      });
+    }
+  }
+
   if (loadMore && state.notificationsCursor === "") {
     announcePolite(i18n.t('notif.endOfNotifs'));
     return;
@@ -122,11 +144,12 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
   if (!loadMore) {
     state.notificationsCursor = "";
     resetPagesLoaded('notifications');
-    // The list is cleared only once the response is in hand; wiping it here
-    // left it empty for the whole request, and for good if the request failed.
   }
     try {
-      const res = await window.go.services.NotificationsService.GetNotifications(state.notificationsCursor);
+      const reasons = state.notifFilterReason ? state.notifFilterReason.split(',').filter(Boolean) : [];
+      const res = (reasons.length > 0 || state.notifFilterPriority)
+        ? await window.go.services.NotificationsService.GetNotificationsFiltered(state.notificationsCursor, reasons, state.notifFilterPriority)
+        : await window.go.services.NotificationsService.GetNotifications(state.notificationsCursor);
       if (res) markPageLoaded('notifications');
       if (res && res.notifications) {
         if (!loadMore) {

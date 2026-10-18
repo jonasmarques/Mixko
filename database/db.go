@@ -55,6 +55,14 @@ func (db *DB) migrate() error {
 			value TEXT NOT NULL,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
+		`CREATE TABLE IF NOT EXISTS saved_accounts (
+			did TEXT PRIMARY KEY,
+			handle TEXT NOT NULL,
+			access_jwt TEXT NOT NULL,
+			refresh_jwt TEXT NOT NULL,
+			pds_host TEXT NOT NULL DEFAULT '',
+			is_active INTEGER NOT NULL DEFAULT 0
+		);`,
 	}
 
 	for _, query := range queries {
@@ -91,7 +99,24 @@ func (db *DB) SaveSession(did, handle, accessJwt, refreshJwt, pdsHost string) er
 			refresh_jwt=excluded.refresh_jwt,
 			pds_host=excluded.pds_host;
 	`
-	_, err = db.conn.Exec(query, did, handle, encAccess, encRefresh, pdsHost)
+	if _, err = db.conn.Exec(query, did, handle, encAccess, encRefresh, pdsHost); err != nil {
+		return err
+	}
+
+	if _, err = db.conn.Exec(`UPDATE saved_accounts SET is_active = 0 WHERE did != ?`, did); err != nil {
+		return err
+	}
+	accQuery := `
+		INSERT INTO saved_accounts (did, handle, access_jwt, refresh_jwt, pds_host, is_active)
+		VALUES (?, ?, ?, ?, ?, 1)
+		ON CONFLICT(did) DO UPDATE SET
+			handle=excluded.handle,
+			access_jwt=excluded.access_jwt,
+			refresh_jwt=excluded.refresh_jwt,
+			pds_host=excluded.pds_host,
+			is_active=1;
+	`
+	_, err = db.conn.Exec(accQuery, did, handle, encAccess, encRefresh, pdsHost)
 	return err
 }
 
@@ -102,6 +127,7 @@ type Session struct {
 	AccessJwt  string
 	RefreshJwt string
 	PDSHost    string
+	IsActive   bool
 }
 
 // GetSession returns the saved session, or a zero Session when none exists.
@@ -133,6 +159,87 @@ func (db *DB) GetSession() (Session, error) {
 	}
 
 	return s, nil
+}
+
+func (db *DB) GetSavedAccounts() ([]Session, error) {
+	activeSess, _ := db.GetSession()
+
+	rows, err := db.conn.Query(`SELECT did, handle, access_jwt, refresh_jwt, pds_host, is_active FROM saved_accounts ORDER BY is_active DESC, handle ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var accounts []Session
+	foundActive := false
+	for rows.Next() {
+		var s Session
+		var rawAccess, rawRefresh string
+		var activeInt int
+		if err := rows.Scan(&s.DID, &s.Handle, &rawAccess, &rawRefresh, &s.PDSHost, &activeInt); err != nil {
+			continue
+		}
+		accJwt, err1 := db.cm.Decrypt(rawAccess)
+		refJwt, err2 := db.cm.Decrypt(rawRefresh)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		s.AccessJwt = accJwt
+		s.RefreshJwt = refJwt
+		s.IsActive = activeInt == 1 || (activeSess.DID != "" && s.DID == activeSess.DID)
+		if s.DID == activeSess.DID {
+			foundActive = true
+		}
+		accounts = append(accounts, s)
+	}
+
+	if activeSess.DID != "" && !foundActive {
+		activeSess.IsActive = true
+		_ = db.SaveSession(activeSess.DID, activeSess.Handle, activeSess.AccessJwt, activeSess.RefreshJwt, activeSess.PDSHost)
+		accounts = append([]Session{activeSess}, accounts...)
+	}
+
+	return accounts, nil
+}
+
+func (db *DB) SwitchAccount(did string) (Session, error) {
+	var s Session
+	var rawAccess, rawRefresh string
+	var activeInt int
+	err := db.conn.QueryRow(`SELECT did, handle, access_jwt, refresh_jwt, pds_host, is_active FROM saved_accounts WHERE did = ?`, did).
+		Scan(&s.DID, &s.Handle, &rawAccess, &rawRefresh, &s.PDSHost, &activeInt)
+	if err != nil {
+		return Session{}, err
+	}
+	s.AccessJwt, err = db.cm.Decrypt(rawAccess)
+	if err != nil {
+		return Session{}, err
+	}
+	s.RefreshJwt, err = db.cm.Decrypt(rawRefresh)
+	if err != nil {
+		return Session{}, err
+	}
+	if err := db.SaveSession(s.DID, s.Handle, s.AccessJwt, s.RefreshJwt, s.PDSHost); err != nil {
+		return Session{}, err
+	}
+	s.IsActive = true
+	return s, nil
+}
+
+func (db *DB) RemoveSavedAccount(did string) error {
+	if _, err := db.conn.Exec(`DELETE FROM saved_accounts WHERE did = ?`, did); err != nil {
+		return err
+	}
+	activeSess, _ := db.GetSession()
+	if activeSess.DID == did {
+		accounts, _ := db.GetSavedAccounts()
+		if len(accounts) > 0 {
+			next := accounts[0]
+			return db.SaveSession(next.DID, next.Handle, next.AccessJwt, next.RefreshJwt, next.PDSHost)
+		}
+		return db.ClearSession()
+	}
+	return nil
 }
 
 func (db *DB) ClearSession() error {

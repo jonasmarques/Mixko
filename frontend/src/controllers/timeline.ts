@@ -22,6 +22,8 @@ async function fetchTimelinePage(container: HTMLDivElement): Promise<number> {
   const groupOrder: string[] = [];
 
   res.posts.forEach((post: any) => {
+      if (state.feedViewHideReposts && post.repostedBy) return;
+      if (state.feedViewHideQuotePosts && post.quotePost) return;
       if (state.hideReplies && post.isReply) {
           const isSelfReply = post.authorHandle === post.replyToAuthor || post.authorDid === post.replyToAuthor;
           const rootIsOther = post.rootAuthor && post.rootAuthor !== post.authorHandle && post.rootAuthor !== post.authorDid;

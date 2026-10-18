@@ -64,14 +64,17 @@
             <input type="text" id="identifier" required aria-required="true" />
           </div>
           <div>
-            <label for="appPassword" data-i18n="login.password">Senha de Aplicativo:</label>
+            <label for="appPassword" data-i18n="extended.loginPasswordOrApp">Senha ou Senha de Aplicativo:</label>
             <input type="password" id="appPassword" required aria-required="true" />
           </div>
           <div>
             <input type="checkbox" id="remember-me" />
             <label for="remember-me" data-i18n="login.remember">Lembrar meus dados</label>
           </div>
-          <button type="submit" data-i18n="login.submit">Entrar</button>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button type="submit" data-i18n="login.submit">Entrar</button>
+            <button type="button" id="btn-forgot-password" class="btn-secondary" data-i18n="extended.forgotPasswordBtn">Esqueci minha senha</button>
+          </div>
         </form>
       </section>
 
@@ -97,8 +100,9 @@
             <br/><br/>
             <label for="post-video" data-i18n="compose.videoLabel">Ou Anexar Vídeo:</label>
             <input type="file" id="post-video" accept="video/mp4, video/webm, video/quicktime" />
+            <div id="video-limits-info" style="font-size: 0.85em; color: var(--text-muted, #888); margin-top: 4px;"></div>
 
-            <br/><br/>
+            <br/>
             <button type="button" id="btn-open-gif-picker" style="background: var(--primary-bg, #0085ff); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">
               <span aria-hidden="true">GIF</span> <span data-i18n="compose.addGif">Adicionar GIF</span>
             </button>
@@ -111,8 +115,22 @@
             <div id="video-alt-container" aria-live="polite" class="hidden" style="margin-top: 10px;">
               <label for="video-alt" data-i18n="compose.videoAltLabel">Texto Alternativo do Vídeo / GIF (Obrigatório):</label>
               <input type="text" id="video-alt" class="video-alt-input" />
+              <div style="margin-top: 8px;">
+                <label for="post-video-caption" data-i18n="sec2.videoCaptionLabel">Legenda do Vídeo (.vtt opcional):</label>
+                <input type="file" id="post-video-caption" accept=".vtt,text/vtt" />
+              </div>
             </div>
             <span id="alt-desc" class="sr-only" data-i18n="compose.altDesc">Descreva as mídias detalhadamente para pessoas com deficiência visual.</span>
+          </fieldset>
+
+          <fieldset id="post-self-labels-fieldset" style="margin-top: 12px;">
+            <legend data-i18n="sec2.postSelfLabelsLegend">Aviso de Conteúdo da Publicação (Self Labels)</legend>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <label><input type="checkbox" class="post-self-label" value="sexual" /> <span data-i18n="modals.labelSexual">Conteúdo sexualmente sugestivo</span></label>
+              <label><input type="checkbox" class="post-self-label" value="nudity" /> <span data-i18n="modals.labelNudity">Nudez artística ou não sexual</span></label>
+              <label><input type="checkbox" class="post-self-label" value="porn" /> <span data-i18n="modals.labelPorn">Pornografia / Conteúdo adulto explícito</span></label>
+              <label><input type="checkbox" class="post-self-label" value="graphic-media" /> <span data-i18n="modals.labelGraphic">Violência ou mídia gráfica forte</span></label>
+            </div>
           </fieldset>
 
           <div style="margin-top: 15px; margin-bottom: 15px;">
@@ -130,8 +148,18 @@
               <option value="nobody" data-i18n="compose.tgNobody">Ninguém</option>
               <option value="mentioned" data-i18n="compose.tgMentioned">Apenas Mencionados</option>
               <option value="following" data-i18n="compose.tgFollowing">Quem eu sigo</option>
+              <option value="followers" data-i18n="sec2.tgFollowers">Meus Seguidores</option>
+              <option value="followers,mentioned" data-i18n="sec2.tgFollowersMentioned">Seguidores + Mencionados</option>
+              <option value="following,followers" data-i18n="sec2.tgFollowingFollowers">Quem sigo + Seguidores</option>
               <option value="list" data-i18n="compose.tgList">Integrantes de uma lista...</option>
             </select>
+
+            <div style="margin-top: 10px;">
+              <label for="post-disable-quotes" style="cursor: pointer;">
+                <input type="checkbox" id="post-disable-quotes" />
+                <span data-i18n="sec2.disableQuotesLabel">Desativar citações (Quote Posts) nesta publicação</span>
+              </label>
+            </div>
           </div>
 
           <div id="threadgate-list-container" class="hidden" style="margin: 10px 0;">
@@ -139,7 +167,11 @@
             <select id="post-threadgate-list" aria-label="Selecionar lista de permissão" data-i18n-aria="compose.tgListSelect" style="width: 100%; margin-top: 5px;" tabindex="0"></select>
           </div>
 
-          <div class="actions">
+          <div id="drafts-list-container" class="hidden" style="margin: 10px 0; padding: 10px; border: 1px solid #555; border-radius: 6px; max-height: 220px; overflow-y: auto;"></div>
+
+          <div class="actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" id="btn-save-draft" data-i18n="sec2.saveDraftBtn">Salvar Rascunho</button>
+            <button type="button" id="btn-open-drafts" data-i18n="sec2.openDraftsBtn">Rascunhos</button>
             <button type="button" id="btn-close-modal" data-i18n="app.cancel">Cancelar (Esc)</button>
             <button type="submit" id="btn-submit-post" data-i18n="compose.submit">Publicar (Ctrl+Enter)</button>
           </div>
@@ -240,6 +272,17 @@
         <!-- Notifications -->
         <section id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications" tabindex="0" class="hidden">
           <h2 data-i18n="sections.notifications">Notificações</h2>
+          <div id="notif-filter-bar" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
+            <button type="button" class="btn-notif-filter active" data-filter="all" data-i18n="sec2.filterAll">Todas</button>
+            <button type="button" class="btn-notif-filter" data-filter="mentions" data-i18n="sec2.filterMentions">Menções / Respostas</button>
+            <button type="button" class="btn-notif-filter" data-filter="likes" data-i18n="sec2.filterLikes">Curtidas</button>
+            <button type="button" class="btn-notif-filter" data-filter="reposts" data-i18n="sec2.filterReposts">Reposts</button>
+            <button type="button" class="btn-notif-filter" data-filter="follows" data-i18n="sec2.filterFollows">Seguidores</button>
+            <label style="margin-left: 8px; cursor: pointer;">
+              <input type="checkbox" id="notif-filter-priority" />
+              <span data-i18n="sec2.filterPriorityOnly">Apenas Prioritárias</span>
+            </label>
+          </div>
           <div id="notif-items" aria-busy="false"></div>
         </section>
 
@@ -254,6 +297,7 @@
                   <li role="presentation"><button role="tab" id="ptab-likes" aria-selected="false" tabindex="-1" data-i18n="profile.tabLikes">Curtidas</button></li>
                   <li role="presentation"><button role="tab" id="ptab-lists" aria-selected="false" tabindex="-1" data-i18n="profile.tabLists">Listas</button></li>
                   <li role="presentation"><button role="tab" id="ptab-packs" aria-selected="false" tabindex="-1" data-i18n="profile.tabPacks">Pacotes Iniciais</button></li>
+                  <li role="presentation"><button role="tab" id="ptab-feeds" aria-selected="false" tabindex="-1" data-i18n="sec2.tabFeeds">Feeds</button></li>
                   <li role="presentation"><button role="tab" id="ptab-followers" aria-selected="false" tabindex="-1" data-i18n="profile.tabFollowers">Seguidores</button></li>
                   <li role="presentation"><button role="tab" id="ptab-following" aria-selected="false" tabindex="-1" data-i18n="profile.tabFollowing">Seguindo</button></li>
               </ul>
@@ -275,7 +319,9 @@
                   <li role="presentation"><button role="tab" id="ftab-saved" aria-selected="true" tabindex="0" data-i18n="feeds.tabSaved">Salvos</button></li>
                   <li role="presentation"><button role="tab" id="ftab-lists" aria-selected="false" tabindex="-1" data-i18n="feeds.tabLists">Minhas Listas</button></li>
                   <li role="presentation"><button role="tab" id="ftab-discover" aria-selected="false" tabindex="-1" data-i18n="feeds.tabDiscover">Descobrir</button></li>
+                  <li role="presentation"><button role="tab" id="ftab-suggestedFeeds" aria-selected="false" tabindex="-1" data-i18n="sec2.tabSuggestedFeeds">Feeds Sugeridos</button></li>
                   <li role="presentation"><button role="tab" id="ftab-trending" aria-selected="false" tabindex="-1" data-i18n="feeds.tabTrending">Em Alta (Alt+T)</button></li>
+                  <li role="presentation"><button role="tab" id="ftab-suggested" aria-selected="false" tabindex="-1" data-i18n="feeds.tabSuggested">Sugestões</button></li>
               </ul>
           </nav>
           <div id="feed-list" aria-busy="false" style="margin-top: 15px;" data-i18n="app.loading">Carregando...</div>
@@ -303,6 +349,7 @@
                   <span id="search-type-label" class="sr-only" data-i18n="search.typeLabel">Tipo de busca</span>
                   <label><input type="radio" name="search-type" value="posts" checked> <span data-i18n="search.typePosts">Posts</span></label>
                   <label><input type="radio" name="search-type" value="profiles"> <span data-i18n="search.typeProfiles">Perfis</span></label>
+                  <label><input type="radio" name="search-type" value="starterPacks"> <span data-i18n="sec2.typeStarterPacks">Pacotes Iniciais</span></label>
               </div>
               <div id="search-lang-filter" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
                   <div>
@@ -361,6 +408,30 @@
                   <div>
                     <label for="search-author" data-i18n="search.author">Autor (opcional):</label>
                     <input type="text" id="search-author" placeholder="@handle" style="padding:4px;" />
+                  </div>
+                  <div>
+                    <label for="search-mentions" data-i18n="sec2.mentionsFilterLabel">Menciona (@):</label>
+                    <input type="text" id="search-mentions" placeholder="@handle" style="padding:4px;" />
+                  </div>
+                  <div>
+                    <label for="search-domain" data-i18n="sec2.domainFilterLabel">Domínio (link):</label>
+                    <input type="text" id="search-domain" placeholder="ex: github.com" style="padding:4px;" />
+                  </div>
+                  <div>
+                    <label for="search-tag" data-i18n="sec2.tagFilterLabel">Hashtag (#):</label>
+                    <input type="text" id="search-tag" placeholder="ex: bsky" style="padding:4px;" />
+                  </div>
+                  <div>
+                    <label for="search-url" data-i18n="sec2.urlFilterLabel">URL exata:</label>
+                    <input type="text" id="search-url" placeholder="https://..." style="padding:4px;" />
+                  </div>
+                  <div>
+                    <label for="search-since" data-i18n="sec2.sinceFilterLabel">Desde (AAAA-MM-DD):</label>
+                    <input type="date" id="search-since" style="padding:4px;" />
+                  </div>
+                  <div>
+                    <label for="search-until" data-i18n="sec2.untilFilterLabel">Até (AAAA-MM-DD):</label>
+                    <input type="date" id="search-until" style="padding:4px;" />
                   </div>
               </div>
               <button id="btn-search" style="margin-top: 10px;" data-i18n="search.button">Buscar</button>
@@ -439,8 +510,48 @@
                     <label for="setting-hide-replies" data-i18n="settings.hideReplies">Ocultar respostas na Timeline (Alt+R)</label>
                   </div>
                   <div style="margin-bottom: 10px;">
+                    <input type="checkbox" id="setting-hide-reposts" />
+                    <label for="setting-hide-reposts" data-i18n="sec2.hideRepostsLabel">Ocultar reposts no feed</label>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <input type="checkbox" id="setting-hide-quote-posts" />
+                    <label for="setting-hide-quote-posts" data-i18n="sec2.hideQuotePostsLabel">Ocultar publicações com citação (Quote Posts)</label>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <input type="checkbox" id="setting-hide-replies-unfollowed" />
+                    <label for="setting-hide-replies-unfollowed" data-i18n="sec2.hideRepliesUnfollowedLabel">Ocultar respostas de pessoas que não sigo</label>
+                  </div>
+                  <div style="margin-bottom: 10px;">
                     <input type="checkbox" id="setting-prioritize-followed" />
                     <label for="setting-prioritize-followed" data-i18n="settings.prioritizeFollowed">Priorizar contas que sigo nas respostas</label>
+                  </div>
+                  <div style="margin-bottom: 10px;">
+                    <input type="checkbox" id="setting-hide-verification-badges" />
+                    <label for="setting-hide-verification-badges" data-i18n="sec2.hideVerificationBadgesLabel">Ocultar selos de verificação (✓)</label>
+                  </div>
+
+                  <fieldset style="margin-top: 12px; margin-bottom: 12px; padding: 10px; border: 1px solid #555; border-radius: 6px;">
+                    <legend data-i18n="sec2.postInteractionDefaultsTitle">Padrões de Interação para Novos Posts</legend>
+                    <div style="margin-bottom: 8px;">
+                      <label for="setting-default-threadgate" data-i18n="compose.threadgateLabel">Quem pode responder:</label>
+                      <select id="setting-default-threadgate">
+                        <option value="everyone" data-i18n="compose.tgEveryone">Todos (Padrão)</option>
+                        <option value="nobody" data-i18n="compose.tgNobody">Ninguém</option>
+                        <option value="mentioned" data-i18n="compose.tgMentioned">Apenas Mencionados</option>
+                        <option value="following" data-i18n="compose.tgFollowing">Quem eu sigo</option>
+                        <option value="followers" data-i18n="sec2.tgFollowers">Meus Seguidores</option>
+                        <option value="following,followers" data-i18n="sec2.tgFollowingFollowers">Quem sigo + Seguidores</option>
+                      </select>
+                    </div>
+                    <div>
+                      <input type="checkbox" id="setting-default-disable-quotes" />
+                      <label for="setting-default-disable-quotes" data-i18n="sec2.defaultDisableQuotesLabel">Desativar citações (Quote Posts) por padrão</label>
+                    </div>
+                  </fieldset>
+
+                  <div style="margin-bottom: 10px;">
+                    <label for="setting-interests-input" data-i18n="sec2.interestsLabel">Interesses da Conta (tags separadas por vírgula):</label>
+                    <input type="text" id="setting-interests-input" placeholder="art, dev, music, science" style="width: 100%; margin-top: 4px;" />
                   </div>
                 </div>
               </details>
@@ -454,8 +565,22 @@
                   </div>
                   
                   <label for="muted-word-input"><strong data-i18n="settings.mutedWords">Palavras e Hashtags Silenciadas:</strong></label>
-                  <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center;">
                     <input type="text" id="muted-word-input" placeholder="Ex: #bbb, política" data-i18n="settings.mutedPlaceholder" />
+                    <select id="muted-word-target">
+                      <option value="content,tag" data-i18n="sec2.mutedWordTargetContent">Texto e Hashtags</option>
+                      <option value="tag" data-i18n="sec2.mutedWordTargetTag">Apenas Hashtags</option>
+                    </select>
+                    <select id="muted-word-actor">
+                      <option value="all" data-i18n="sec2.mutedWordActorAll">De todos</option>
+                      <option value="exclude-following" data-i18n="sec2.mutedWordActorUnfollowed">Exceto quem sigo</option>
+                    </select>
+                    <select id="muted-word-duration">
+                      <option value="forever" data-i18n="sec2.mutedWordDurationForever">Para sempre</option>
+                      <option value="24h" data-i18n="sec2.mutedWordDuration24h">24 horas</option>
+                      <option value="7d" data-i18n="sec2.mutedWordDuration7d">7 dias</option>
+                      <option value="30d" data-i18n="sec2.mutedWordDuration30d">30 dias</option>
+                    </select>
                     <button type="button" id="btn-add-muted-word" data-i18n="app.add">Adicionar</button>
                   </div>
                   <ul id="muted-words-list" aria-live="polite" style="list-style: none; padding-left: 0; margin-bottom: 15px;">
@@ -494,13 +619,37 @@
               <details class="settings-group">
                 <summary><h3 data-i18n="settings.privacyTitle">Privacidade</h3></summary>
                 <div class="settings-group-body">
+                  <div style="margin-bottom: 15px;">
+                    <label for="setting-chat-allow-incoming" data-i18n="extended.dmPrivacyLabel">Quem pode me enviar mensagens diretas (DMs):</label>
+                    <select id="setting-chat-allow-incoming">
+                      <option value="all" data-i18n="extended.dmAllowAll">Todos</option>
+                      <option value="following" data-i18n="extended.dmAllowFollowing">Apenas pessoas que eu sigo</option>
+                      <option value="none" data-i18n="extended.dmAllowNone">Ninguém</option>
+                    </select>
+                  </div>
+
                   <h4 style="margin-top: 0; font-size: 1rem;" data-i18n="settings.mutedUsers">Usuários Silenciados</h4>
                   <div id="muted-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
                       Carregando...
                   </div>
 
                   <h4 style="font-size: 1rem;" data-i18n="settings.blockedUsers">Usuários Bloqueados</h4>
-                  <div id="blocked-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
+                  <div id="blocked-users-list" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
+                      Carregando...
+                  </div>
+
+                  <h4 style="font-size: 1rem;" data-i18n="sec2.mutedListsTitle">Listas Silenciadas</h4>
+                  <div id="muted-lists-container" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
+                      Carregando...
+                  </div>
+
+                  <h4 style="font-size: 1rem;" data-i18n="sec2.blockedListsTitle">Listas Bloqueadas</h4>
+                  <div id="blocked-lists-container" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
+                      Carregando...
+                  </div>
+
+                  <h4 style="font-size: 1rem;" data-i18n="sec2.activitySubsTitle">Assinaturas de Atividade de Perfis</h4>
+                  <div id="activity-subs-container" aria-live="polite" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px; border: 1px solid #ccc; padding: 5px;" data-i18n="app.loading">
                       Carregando...
                   </div>
                 </div>
@@ -727,6 +876,53 @@
                 </div>
               </details>
 
+              <details class="settings-group" id="settings-group-account">
+                <summary><h3 data-i18n="extended.accountSectionTitle">Conta, Segurança e Backup (ATProto)</h3></summary>
+                <div class="settings-group-body">
+                  <h4 style="margin-top: 0; font-size: 1rem;" data-i18n="extended.savedAccountsTitle">Contas Conectadas (Multi-Conta)</h4>
+                  <div id="settings-accounts-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;"></div>
+
+                  <div style="margin-bottom: 15px;">
+                    <label for="input-update-handle"><strong data-i18n="extended.handleUpdateLabel">Alterar Handle (@):</strong></label>
+                    <div style="display: flex; gap: 10px; margin-top: 4px;">
+                      <input type="text" id="input-update-handle" placeholder="novo-handle.bsky.social" data-i18n="extended.handleUpdatePlaceholder" />
+                      <button type="button" id="btn-update-handle" data-i18n="extended.handleUpdateBtn">Atualizar Handle</button>
+                    </div>
+                  </div>
+
+                  <div style="margin-bottom: 15px;">
+                    <strong data-i18n="extended.emailUpdateLabel">Atualizar E-mail da Conta:</strong>
+                    <div style="margin-top: 4px;">
+                      <button type="button" id="btn-update-email" data-i18n="extended.emailUpdateBtn">Alterar E-mail</button>
+                    </div>
+                  </div>
+
+                  <h4 style="font-size: 1rem;" data-i18n="extended.appPasswordsTitle">Senhas de Aplicativo (App Passwords)</h4>
+                  <div style="margin-bottom: 8px;">
+                    <button type="button" id="btn-create-app-password" data-i18n="extended.appPasswordCreateBtn">+ Criar Senha de Aplicativo</button>
+                  </div>
+                  <div id="settings-app-passwords-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;"></div>
+
+                  <h4 style="font-size: 1rem;" data-i18n="sec2.ageAndContactsTitle">Verificação de Idade e Contatos</h4>
+                  <div id="age-assurance-status" style="margin-bottom: 8px; font-size: 0.9em; color: var(--text-muted, #aaa);"></div>
+                  <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">
+                    <button type="button" id="btn-begin-age-assurance" data-i18n="sec2.beginAgeAssuranceBtn">Iniciar Verificação de Idade</button>
+                    <button type="button" id="btn-start-phone-verify" data-i18n="sec2.startPhoneVerifyBtn">Enviar Código SMS</button>
+                    <button type="button" id="btn-confirm-phone-verify" data-i18n="sec2.confirmPhoneVerifyBtn">Confirmar Telefone</button>
+                    <button type="button" id="btn-import-contacts" data-i18n="sec2.importContactsBtn">Encontrar Contatos por Telefone</button>
+                    <button type="button" id="btn-view-contact-matches" data-i18n="sec2.viewContactMatchesBtn">Ver Contatos Encontrados</button>
+                    <button type="button" id="btn-remove-contacts" data-i18n="sec2.removeContactsBtn">Remover Meus Contatos Importados</button>
+                  </div>
+                  <div id="contact-matches-container" style="margin-bottom: 15px;"></div>
+
+                  <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                    <button type="button" id="btn-export-repo-car" data-i18n="extended.exportCarBtn">Exportar Backup do Repositório (.car)</button>
+                    <button type="button" id="btn-check-account-status" data-i18n="extended.checkStatusBtn">Verificar Status da Conta no PDS</button>
+                    <button type="button" id="btn-deactivate-account" style="background-color: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border);" data-i18n="extended.deactivateAccountBtn">Desativar Conta Temporariamente</button>
+                  </div>
+                </div>
+              </details>
+
               <div class="actions" style="margin-top: 20px; display: flex; gap: 10px; align-items: center;">
                 <button type="submit" id="btn-save-settings" data-i18n="settings.save">Salvar Configurações</button>
                 <button type="button" id="btn-cancel-settings" class="btn-cancel" data-i18n="settings.cancel">Cancelar</button>
@@ -786,7 +982,8 @@
         <h2 id="posts-list-title" data-i18n="modals.postsList">Lista de Posts</h2>
         <span id="posts-list-desc" class="sr-only"></span>
         <div id="posts-list-container" role="feed" aria-label="Lista de posts" data-i18n-aria="modals.postsList" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;"></div>
-        <div class="actions" style="margin-top: 15px;">
+        <div class="actions" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+          <button type="button" id="btn-load-other-replies" class="hidden" data-i18n="sec2.loadHiddenRepliesBtn">Carregar respostas adicionais / ocultas (Thread V2)</button>
           <button type="button" id="btn-close-posts-list" data-i18n="app.close">Fechar</button>
         </div>
       </dialog>

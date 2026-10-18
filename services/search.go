@@ -14,13 +14,17 @@ func NewSearchService(clientMgr *ATClient) *SearchService {
 }
 
 type PostSearchFilter struct {
-	Query  string
-	Author string
-	Lang   string
-	Sort   string
-	Since  string
-	Until  string
-	Cursor string
+	Query    string
+	Author   string
+	Lang     string
+	Sort     string
+	Since    string
+	Until    string
+	Domain   string
+	Mentions string
+	Tag      []string
+	URL      string
+	Cursor   string
 }
 
 func (s *SearchService) SearchPosts(filter *PostSearchFilter) (*SearchDTO, error) {
@@ -28,7 +32,7 @@ func (s *SearchService) SearchPosts(filter *PostSearchFilter) (*SearchDTO, error
 	defer cancel()
 	var out *SearchDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.FeedSearchPosts(ctx, c, filter.Author, filter.Cursor, "", filter.Lang, 50, "", filter.Query, filter.Since, filter.Sort, nil, filter.Until, "")
+		res, err := bsky.FeedSearchPosts(ctx, c, filter.Author, filter.Cursor, filter.Domain, filter.Lang, 50, filter.Mentions, filter.Query, filter.Since, filter.Sort, filter.Tag, filter.Until, filter.URL)
 		if err != nil {
 			return err
 		}

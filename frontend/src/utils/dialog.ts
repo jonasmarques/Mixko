@@ -119,3 +119,30 @@ export function promptDialog(message: string, defaultValue: string = '', title?:
     });
   });
 }
+
+export async function promptReportDetails(title?: string): Promise<{ reasonType: string; reason: string } | null> {
+  const categoryChoice = await promptDialog(
+    i18n.t('extended.reportCategoryPrompt'),
+    '1',
+    title || i18n.t('extended.reportCategoryTitle')
+  );
+  if (categoryChoice === null) return null;
+
+  const choiceMap: Record<string, string> = {
+    '1': 'com.atproto.moderation.defs#reasonSpam',
+    '2': 'com.atproto.moderation.defs#reasonViolation',
+    '3': 'com.atproto.moderation.defs#reasonMisleading',
+    '4': 'com.atproto.moderation.defs#reasonSexual',
+    '5': 'com.atproto.moderation.defs#reasonRude',
+    '6': 'com.atproto.moderation.defs#reasonOther',
+  };
+  const reasonType = choiceMap[categoryChoice.trim()] || 'com.atproto.moderation.defs#reasonOther';
+  const reason = await promptDialog(
+    i18n.t('extended.reportReasonPrompt'),
+    '',
+    title || i18n.t('extended.reportCategoryTitle')
+  );
+  if (reason === null) return null;
+  return { reasonType, reason: reason.trim() };
+}
+

@@ -10,8 +10,16 @@ export function GetNotifications(arg1) {
   return window['go']['services']['NotificationsService']['GetNotifications'](arg1);
 }
 
+export function GetNotificationsFiltered(arg1, arg2, arg3) {
+  return window['go']['services']['NotificationsService']['GetNotificationsFiltered'](arg1, arg2, arg3);
+}
+
 export function GetUnreadCount() {
   return window['go']['services']['NotificationsService']['GetUnreadCount']();
+}
+
+export function ListActivitySubscriptions(arg1) {
+  return window['go']['services']['NotificationsService']['ListActivitySubscriptions'](arg1);
 }
 
 export function PutActivitySubscription(arg1, arg2, arg3) {

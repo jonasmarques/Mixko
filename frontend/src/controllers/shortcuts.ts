@@ -2,7 +2,7 @@ import { esc } from '../utils/helpers';
 import { state } from '../config/state';
 import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
-import { confirmDialog, promptDialog } from '../utils/dialog';
+import { confirmDialog, promptReportDetails } from '../utils/dialog';
 import { switchTab, reloadCurrentTab } from './tabs';
 import { i18n, translateError } from '../utils/i18n';
 import { MuteScopeDTO } from '../types/dto';
@@ -14,6 +14,7 @@ import { openComposeModal } from './compose';
 import { createPostArticle } from '../components/post';
 import { loadNotifications } from './notifications';
 import { loadSavedPosts } from './saved';
+import { loadMoreSearch } from './search';
 
 function showProfilesModal(title: string, profiles: any[]) {
     const modal = document.getElementById('profiles-list-modal') as HTMLDialogElement;
@@ -110,6 +111,7 @@ function showPostsModal(title: string, posts: any[]) {
     const titleEl = document.getElementById('posts-list-title');
     const container = document.getElementById('posts-list-container');
     const closeBtn = document.getElementById('btn-close-posts-list') as HTMLButtonElement;
+    const loadOtherBtn = document.getElementById('btn-load-other-replies') as HTMLButtonElement | null;
     
     if (!modal || !titleEl || !container || !closeBtn) return;
     
@@ -132,6 +134,38 @@ function showPostsModal(title: string, posts: any[]) {
     if (modalPosts.length > 0) {
         state.currentPosts = modalPosts;
         state.focusedPostIndex = 0;
+    }
+
+    if (loadOtherBtn) {
+        const rootUri = posts.length > 0 ? (posts[0]?.rootUri || posts[0]?.uri || '') : '';
+        if (rootUri) {
+            loadOtherBtn.classList.remove('hidden');
+            loadOtherBtn.onclick = async () => {
+                try {
+                    const otherRes = await window.go.services.FeedService.GetPostThreadOtherV2(rootUri);
+                    const otherPosts = otherRes?.posts || [];
+                    if (otherPosts.length > 0) {
+                        otherPosts.forEach((op) => {
+                            if (!modalPosts.some(el => el.dataset.uri === op.uri)) {
+                                const art = createPostArticle(op, modalPosts.length, false, "", true);
+                                if (art) {
+                                    container.appendChild(art);
+                                    modalPosts.push(art);
+                                }
+                            }
+                        });
+                        announceAssertive(i18n.t('shortcuts.postsModalOpen', { title, count: modalPosts.length.toString() }));
+                    } else {
+                        announceAssertive(i18n.t('sec2.noOtherReplies'));
+                    }
+                    loadOtherBtn.classList.add('hidden');
+                } catch (err: unknown) {
+                    announceAssertive(String(err));
+                }
+            };
+        } else {
+            loadOtherBtn.classList.add('hidden');
+        }
     }
 
     modal.onclose = () => {
@@ -622,6 +656,11 @@ export function setupShortcuts() {
                 const formattedTitle = formatAuthor(targetDisplayName, targetHandle);
                 announcePolite(i18n.t('chat.openingChat', { handle: formattedTitle }));
                 try {
+                    const avail = await window.go.services.ChatService.GetConvoAvailability(targetDid);
+                    if (avail && !avail.canChat) {
+                        announceAssertive(i18n.t('extended.cannotChatUser'));
+                        return;
+                    }
                     const convo = await window.go.services.ChatService.GetConvoForMembers([targetDid]);
                     if (convo && convo.id) {
                         state.tabStates['chat'].loaded = true;
@@ -654,14 +693,21 @@ export function setupShortcuts() {
         if (e.altKey && !e.shiftKey && !e.ctrlKey && e.key.toLowerCase() === 'd') {
             e.preventDefault();
             const focusedPost = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex] : null;
+            if (state.currentTab === 'chat' && state.activeConvoId && focusedPost) {
+                const reportMsgBtn = focusedPost.querySelector('.btn-report-msg') as HTMLButtonElement | null;
+                if (reportMsgBtn) {
+                    reportMsgBtn.click();
+                    return;
+                }
+            }
             const uri = focusedPost?.dataset.uri;
             const cid = focusedPost?.dataset.cid;
 
             if (uri && cid) {
-                promptDialog(i18n.t('shortcuts.reportReasonPrompt'), "", i18n.t('shortcuts.reportPostAction')).then(reason => {
-                    if (reason) {
+                promptReportDetails(i18n.t('shortcuts.reportPostAction')).then(details => {
+                    if (details) {
                         announcePolite(i18n.t('shortcuts.sendingReport'));
-                        window.go.services.ModerationService.ReportPost(uri, cid, 'com.atproto.moderation.defs#reasonOther', reason).then(() => {
+                        window.go.services.ModerationService.ReportPost(uri, cid, details.reasonType, details.reason).then(() => {
                             announceAssertive(i18n.t('shortcuts.reportSuccess'));
                         }).catch(err => announceAssertive(i18n.t('shortcuts.errorReport', { msg: String(err) })));
                     }
@@ -669,12 +715,11 @@ export function setupShortcuts() {
             } else if (state.currentTab === 'profile') {
                 const reportBtn = document.getElementById('btn-report-user') as HTMLButtonElement | null;
                 const targetDid = reportBtn?.dataset.did;
-                const targetHandle = state.currentHandle;
                 if (targetDid) {
-                    promptDialog(i18n.t('shortcuts.reportAccountReason', { handle: targetHandle }), "", i18n.t('shortcuts.reportAccountAction')).then(reason => {
-                        if (reason) {
+                    promptReportDetails(i18n.t('shortcuts.reportAccountAction')).then(details => {
+                        if (details) {
                             announcePolite(i18n.t('shortcuts.sendingAccountReport'));
-                            window.go.services.ModerationService.ReportAccount(targetDid, 'com.atproto.moderation.defs#reasonOther', reason).then(() => {
+                            window.go.services.ModerationService.ReportAccount(targetDid, details.reasonType, details.reason).then(() => {
                                 announceAssertive(i18n.t('shortcuts.reportAccountSuccess'));
                             }).catch(err => announceAssertive(i18n.t('shortcuts.errorReport', { msg: String(err) })));
                         }
@@ -714,11 +759,30 @@ export function setupShortcuts() {
             e.preventDefault();
             const focusedPost = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex] : null;
             const uri = focusedPost?.dataset.uri;
-            if (uri) {
-                announcePolite(i18n.t('shortcuts.mutingThread'));
-                window.go.services.ModerationService.MuteThread(uri).then(() => {
-                    announceAssertive(i18n.t('shortcuts.muteThreadSuccess'));
-                }).catch((err: any) => announceAssertive(i18n.t('shortcuts.errorMuteThread', { msg: String(err) })));
+            if (uri && focusedPost) {
+                const isMuted = focusedPost.dataset.viewerThreadMuted === "true";
+                const btn = focusedPost.querySelector('.btn-mute-thread') as HTMLButtonElement | null;
+                if (isMuted) {
+                    announcePolite(i18n.t('post.unmutingThread'));
+                    window.go.services.ModerationService.UnmuteThread(uri).then(() => {
+                        focusedPost.dataset.viewerThreadMuted = "";
+                        if (btn) {
+                            btn.textContent = i18n.t('post.actionMute');
+                            btn.setAttribute('aria-label', i18n.t('post.muteThreadAria'));
+                        }
+                        announceAssertive(i18n.t('post.unmuteThreadSuccess'));
+                    }).catch((err: unknown) => announceAssertive(i18n.t('shortcuts.errorUnmuteThread', { msg: String(err) })));
+                } else {
+                    announcePolite(i18n.t('post.mutingThread'));
+                    window.go.services.ModerationService.MuteThread(uri).then(() => {
+                        focusedPost.dataset.viewerThreadMuted = "true";
+                        if (btn) {
+                            btn.textContent = i18n.t('post.actionUnmute');
+                            btn.setAttribute('aria-label', i18n.t('post.unmuteThreadAria'));
+                        }
+                        announceAssertive(i18n.t('post.muteThreadSuccess'));
+                    }).catch((err: unknown) => announceAssertive(i18n.t('shortcuts.errorMuteThread', { msg: String(err) })));
+                }
             } else {
                 announceAssertive(i18n.t('shortcuts.noPostFocused'));
             }
@@ -730,11 +794,34 @@ export function setupShortcuts() {
             const focusedPost = state.focusedPostIndex >= 0 ? state.currentPosts[state.focusedPostIndex] : null;
             const uri = focusedPost?.dataset.uri;
             const cid = focusedPost?.dataset.cid;
-            if (uri && cid) {
-                announcePolite(i18n.t('shortcuts.pinningPost'));
-                window.go.services.SocialService.PinPost(uri, cid).then(() => {
-                    announceAssertive(i18n.t('shortcuts.pinSuccess'));
-                }).catch((err: any) => announceAssertive(i18n.t('shortcuts.errorPin', { msg: String(err) })));
+            if (uri && cid && focusedPost) {
+                const isPinned = focusedPost.dataset.pinned === "true" || state.loggedInPinnedPostUri === uri;
+                const btn = focusedPost.querySelector('.btn-pin-post') as HTMLButtonElement | null;
+                if (isPinned) {
+                    announcePolite(i18n.t('post.unpinning'));
+                    window.go.services.SocialService.UnpinPost().then(() => {
+                        focusedPost.dataset.pinned = "";
+                        if (state.loggedInPinnedPostUri === uri) {
+                            state.loggedInPinnedPostUri = "";
+                        }
+                        if (btn) {
+                            btn.textContent = i18n.t('post.actionPin');
+                            btn.setAttribute('aria-label', i18n.t('post.pinPostAria'));
+                        }
+                        announceAssertive(i18n.t('post.unpinSuccess'));
+                    }).catch((err: unknown) => announceAssertive(i18n.t('shortcuts.errorUnpin', { msg: String(err) })));
+                } else {
+                    announcePolite(i18n.t('post.pinning'));
+                    window.go.services.SocialService.PinPost(uri, cid).then(() => {
+                        focusedPost.dataset.pinned = "true";
+                        state.loggedInPinnedPostUri = uri;
+                        if (btn) {
+                            btn.textContent = i18n.t('post.actionUnpin');
+                            btn.setAttribute('aria-label', i18n.t('post.unpinPostAria'));
+                        }
+                        announceAssertive(i18n.t('post.pinSuccess'));
+                    }).catch((err: unknown) => announceAssertive(i18n.t('shortcuts.errorPin', { msg: String(err) })));
+                }
             } else {
                 announceAssertive(i18n.t('shortcuts.noPostFocused'));
             }
@@ -880,6 +967,9 @@ export function setupShortcuts() {
                 } else if (state.currentTab === 'saved') {
                 announcePolite(i18n.t('shortcuts.loadingMore'));
                 loadSavedPosts(true);
+                } else if (state.currentTab === 'search') {
+                announcePolite(i18n.t('shortcuts.loadingMore'));
+                loadMoreSearch();
                 }
             }
             break;

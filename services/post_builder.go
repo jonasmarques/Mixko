@@ -314,47 +314,101 @@ func (s *PostBuilderService) fetchOwnPostRecord(ctx context.Context, c *xrpc.Cli
 	return &rec
 }
 
-func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Client, postUri string, threadgate string, listUris []string) error {
-	var allow []*bsky.FeedThreadgate_Allow_Elem
-	switch threadgate {
-	case "nobody":
-		allow = []*bsky.FeedThreadgate_Allow_Elem{}
-	case "mentioned":
-		allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
-			FeedThreadgate_MentionRule: &bsky.FeedThreadgate_MentionRule{
-				LexiconTypeID: "app.bsky.feed.threadgate#mentionRule",
-			},
-		})
-	case "following":
-		allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
-			FeedThreadgate_FollowingRule: &bsky.FeedThreadgate_FollowingRule{
-				LexiconTypeID: "app.bsky.feed.threadgate#followingRule",
-			},
-		})
-	case "list":
-		for _, lUri := range listUris {
-			if lUri != "" {
-				allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
-					FeedThreadgate_ListRule: &bsky.FeedThreadgate_ListRule{
-						LexiconTypeID: "app.bsky.feed.threadgate#listRule",
-						List:          lUri,
-					},
-				})
+func buildThreadgateAllow(ruleSpec string, listUris []string) ([]*bsky.FeedThreadgate_Allow_Elem, bool, bool) {
+	allow := []*bsky.FeedThreadgate_Allow_Elem{}
+	hasReplyRestriction := false
+	disableQuotes := false
+
+	tokens := strings.Split(ruleSpec, ",")
+	for _, raw := range tokens {
+		tok := strings.TrimSpace(raw)
+		switch tok {
+		case "", "everyone":
+			// no restriction
+		case "disable_quotes":
+			disableQuotes = true
+		case "nobody":
+			hasReplyRestriction = true
+		case "mentioned":
+			hasReplyRestriction = true
+			allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
+				FeedThreadgate_MentionRule: &bsky.FeedThreadgate_MentionRule{
+					LexiconTypeID: "app.bsky.feed.threadgate#mentionRule",
+				},
+			})
+		case "following":
+			hasReplyRestriction = true
+			allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
+				FeedThreadgate_FollowingRule: &bsky.FeedThreadgate_FollowingRule{
+					LexiconTypeID: "app.bsky.feed.threadgate#followingRule",
+				},
+			})
+		case "followers":
+			hasReplyRestriction = true
+			allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
+				FeedThreadgate_FollowerRule: &bsky.FeedThreadgate_FollowerRule{
+					LexiconTypeID: "app.bsky.feed.threadgate#followerRule",
+				},
+			})
+		case "list":
+			hasReplyRestriction = true
+			for _, lUri := range listUris {
+				if lUri != "" {
+					allow = append(allow, &bsky.FeedThreadgate_Allow_Elem{
+						FeedThreadgate_ListRule: &bsky.FeedThreadgate_ListRule{
+							LexiconTypeID: "app.bsky.feed.threadgate#listRule",
+							List:          lUri,
+						},
+					})
+				}
 			}
 		}
 	}
-	
+	return allow, hasReplyRestriction, disableQuotes
+}
+
+func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Client, postUri string, threadgate string, listUris []string) error {
+	allow, hasReplyRestriction, disableQuotes := buildThreadgateAllow(threadgate, listUris)
+
+	parts := strings.Split(postUri, "/")
+	if len(parts) < 5 {
+		return fmt.Errorf("invalid post uri")
+	}
+	rkey := parts[4]
+
+	if disableQuotes {
+		pg := &bsky.FeedPostgate{
+			LexiconTypeID: "app.bsky.feed.postgate",
+			Post:          postUri,
+			CreatedAt:     nowISO8601(),
+			EmbeddingRules: []*bsky.FeedPostgate_EmbeddingRules_Elem{
+				{
+					FeedPostgate_DisableRule: &bsky.FeedPostgate_DisableRule{
+						LexiconTypeID: "app.bsky.feed.postgate#disableRule",
+					},
+				},
+			},
+		}
+		if _, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.feed.postgate",
+			Repo:       c.Auth.Did,
+			Rkey:       rkey,
+			Record:     &util.LexiconTypeDecoder{Val: pg},
+		}); err != nil {
+			return err
+		}
+	}
+
+	if !hasReplyRestriction {
+		return nil
+	}
+
 	tg := &bsky.FeedThreadgate{
 		LexiconTypeID: "app.bsky.feed.threadgate",
 		Post:          postUri,
 		CreatedAt:     nowISO8601(),
 		Allow:         allow,
 	}
-	parts := strings.Split(postUri, "/")
-	if len(parts) < 5 {
-		return fmt.Errorf("invalid post uri")
-	}
-	rkey := parts[4]
 
 	input := &atproto.RepoPutRecord_Input{
 		Collection: "app.bsky.feed.threadgate",
@@ -367,6 +421,7 @@ func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Clien
 	_, err := atproto.RepoPutRecord(ctx, c, input)
 	return err
 }
+
 
 func (s *PostBuilderService) uploadBlob(ctx context.Context, c *xrpc.Client, path string) (*util.LexBlob, error) {
 	localPath, cleanup, err := ResolvePathOrDataURL(path)
@@ -921,4 +976,562 @@ func (s *PostBuilderService) UnbookmarkPost(bookmarkUri, postUri string) error {
 		})
 	})
 }
+
+func (s *PostBuilderService) UnhideReply(postUri string, replyUri string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		parts := strings.Split(postUri, "/")
+		if len(parts) < 3 {
+			return fmt.Errorf("invalid post uri")
+		}
+		rkey := parts[len(parts)-1]
+
+		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.feed.threadgate", c.Auth.Did, rkey)
+		if err != nil || res == nil || res.Value == nil || res.Value.Val == nil {
+			return nil
+		}
+		var tg bsky.FeedThreadgate
+		bytes, err := json.Marshal(res.Value.Val)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(bytes, &tg); err != nil {
+			return err
+		}
+
+		filtered := make([]string, 0, len(tg.HiddenReplies))
+		for _, h := range tg.HiddenReplies {
+			if h != replyUri {
+				filtered = append(filtered, h)
+			}
+		}
+		tg.HiddenReplies = filtered
+
+		_, err = atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.feed.threadgate",
+			Repo:       c.Auth.Did,
+			Rkey:       rkey,
+			Record:     &util.LexiconTypeDecoder{Val: &tg},
+		})
+		return err
+	})
+}
+
+func (s *PostBuilderService) UpdateThreadgate(postUri string, ruleSpec string, listUris []string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		parts := strings.Split(postUri, "/")
+		if len(parts) < 5 {
+			return fmt.Errorf("invalid post uri")
+		}
+		rkey := parts[4]
+
+		allow, hasReplyRestriction, disableQuotes := buildThreadgateAllow(ruleSpec, listUris)
+
+		if strings.Contains(ruleSpec, "disable_quotes") || strings.Contains(ruleSpec, "enable_quotes") {
+			_ = s.togglePostQuotesInternal(ctx, c, postUri, disableQuotes)
+		}
+
+		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.feed.threadgate", c.Auth.Did, rkey)
+		var existing bsky.FeedThreadgate
+		hasExisting := false
+		if err == nil && res != nil && res.Value != nil && res.Value.Val != nil {
+			if bytes, mErr := json.Marshal(res.Value.Val); mErr == nil {
+				if json.Unmarshal(bytes, &existing) == nil {
+					hasExisting = true
+				}
+			}
+		}
+
+		if !hasReplyRestriction {
+			if hasExisting && len(existing.HiddenReplies) > 0 {
+				existing.Allow = nil
+				_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+					Collection: "app.bsky.feed.threadgate",
+					Repo:       c.Auth.Did,
+					Rkey:       rkey,
+					Record:     &util.LexiconTypeDecoder{Val: &existing},
+				})
+				return err
+			}
+			if hasExisting {
+				if _, err := atproto.RepoDeleteRecord(ctx, c, &atproto.RepoDeleteRecord_Input{
+					Collection: "app.bsky.feed.threadgate",
+					Repo:       c.Auth.Did,
+					Rkey:       rkey,
+				}); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		tg := bsky.FeedThreadgate{
+			LexiconTypeID: "app.bsky.feed.threadgate",
+			Post:          postUri,
+			CreatedAt:     nowISO8601(),
+			Allow:         allow,
+		}
+		if hasExisting {
+			if existing.CreatedAt != "" {
+				tg.CreatedAt = existing.CreatedAt
+			}
+			tg.HiddenReplies = existing.HiddenReplies
+		}
+
+		_, err = atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.feed.threadgate",
+			Repo:       c.Auth.Did,
+			Rkey:       rkey,
+			Record:     &util.LexiconTypeDecoder{Val: &tg},
+		})
+		return err
+	})
+}
+
+func (s *PostBuilderService) getExistingPostgate(ctx context.Context, c *xrpc.Client, postUri, rkey string) (*bsky.FeedPostgate, bool) {
+	res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.feed.postgate", c.Auth.Did, rkey)
+	if err == nil && res != nil && res.Value != nil && res.Value.Val != nil {
+		var pg bsky.FeedPostgate
+		if bytes, mErr := json.Marshal(res.Value.Val); mErr == nil {
+			if json.Unmarshal(bytes, &pg) == nil {
+				pg.LexiconTypeID = "app.bsky.feed.postgate"
+				if pg.Post == "" {
+					pg.Post = postUri
+				}
+				if pg.CreatedAt == "" {
+					pg.CreatedAt = nowISO8601()
+				}
+				return &pg, true
+			}
+		}
+	}
+	return &bsky.FeedPostgate{
+		LexiconTypeID: "app.bsky.feed.postgate",
+		Post:          postUri,
+		CreatedAt:     nowISO8601(),
+	}, false
+}
+
+func (s *PostBuilderService) togglePostQuotesInternal(ctx context.Context, c *xrpc.Client, postUri string, disableQuotes bool) error {
+	parts := strings.Split(postUri, "/")
+	if len(parts) < 5 {
+		return fmt.Errorf("invalid post uri")
+	}
+	rkey := parts[4]
+
+	pg, exists := s.getExistingPostgate(ctx, c, postUri, rkey)
+	if disableQuotes {
+		pg.EmbeddingRules = []*bsky.FeedPostgate_EmbeddingRules_Elem{
+			{
+				FeedPostgate_DisableRule: &bsky.FeedPostgate_DisableRule{
+					LexiconTypeID: "app.bsky.feed.postgate#disableRule",
+				},
+			},
+		}
+	} else {
+		pg.EmbeddingRules = nil
+	}
+
+	if len(pg.EmbeddingRules) == 0 && len(pg.DetachedEmbeddingUris) == 0 {
+		if exists {
+			_, err := atproto.RepoDeleteRecord(ctx, c, &atproto.RepoDeleteRecord_Input{
+				Collection: "app.bsky.feed.postgate",
+				Repo:       c.Auth.Did,
+				Rkey:       rkey,
+			})
+			return err
+		}
+		return nil
+	}
+
+	_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+		Collection: "app.bsky.feed.postgate",
+		Repo:       c.Auth.Did,
+		Rkey:       rkey,
+		Record:     &util.LexiconTypeDecoder{Val: pg},
+	})
+	return err
+}
+
+func (s *PostBuilderService) TogglePostQuotes(postUri string, disableQuotes bool) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		return s.togglePostQuotesInternal(ctx, c, postUri, disableQuotes)
+	})
+}
+
+func (s *PostBuilderService) DetachQuote(quotedPostUri, quotingPostUri string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		parts := strings.Split(quotedPostUri, "/")
+		if len(parts) < 5 {
+			return fmt.Errorf("invalid post uri")
+		}
+		rkey := parts[4]
+
+		pg, _ := s.getExistingPostgate(ctx, c, quotedPostUri, rkey)
+		for _, u := range pg.DetachedEmbeddingUris {
+			if u == quotingPostUri {
+				return nil
+			}
+		}
+		pg.DetachedEmbeddingUris = append(pg.DetachedEmbeddingUris, quotingPostUri)
+
+		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.feed.postgate",
+			Repo:       c.Auth.Did,
+			Rkey:       rkey,
+			Record:     &util.LexiconTypeDecoder{Val: pg},
+		})
+		return err
+	})
+}
+
+func (s *PostBuilderService) ReattachQuote(quotedPostUri, quotingPostUri string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		parts := strings.Split(quotedPostUri, "/")
+		if len(parts) < 5 {
+			return fmt.Errorf("invalid post uri")
+		}
+		rkey := parts[4]
+
+		pg, exists := s.getExistingPostgate(ctx, c, quotedPostUri, rkey)
+		if !exists {
+			return nil
+		}
+		filtered := make([]string, 0, len(pg.DetachedEmbeddingUris))
+		for _, u := range pg.DetachedEmbeddingUris {
+			if u != quotingPostUri {
+				filtered = append(filtered, u)
+			}
+		}
+		pg.DetachedEmbeddingUris = filtered
+
+		if len(pg.EmbeddingRules) == 0 && len(pg.DetachedEmbeddingUris) == 0 {
+			_, err := atproto.RepoDeleteRecord(ctx, c, &atproto.RepoDeleteRecord_Input{
+				Collection: "app.bsky.feed.postgate",
+				Repo:       c.Auth.Did,
+				Rkey:       rkey,
+			})
+			return err
+		}
+
+		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.feed.postgate",
+			Repo:       c.Auth.Did,
+			Rkey:       rkey,
+			Record:     &util.LexiconTypeDecoder{Val: pg},
+		})
+		return err
+	})
+}
+
+// ApplyPostExtras attaches self-labels, video captions (.vtt), and/or postgate rules to an authored post.
+func (s *PostBuilderService) ApplyPostExtras(postUri string, selfLabels []string, disableQuotes bool, captionPath string, captionLang string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		if disableQuotes {
+			if err := s.togglePostQuotesInternal(ctx, c, postUri, true); err != nil {
+				return err
+			}
+		}
+
+		if len(selfLabels) == 0 && captionPath == "" {
+			return nil
+		}
+
+		parts := strings.Split(postUri, "/")
+		if len(parts) < 5 {
+			return fmt.Errorf("invalid post uri")
+		}
+		rkey := parts[4]
+
+		rec := s.fetchOwnPostRecord(ctx, c, postUri)
+		if rec == nil {
+			return fmt.Errorf("post record not found")
+		}
+
+		if len(selfLabels) > 0 {
+			vals := make([]*atproto.LabelDefs_SelfLabel, 0, len(selfLabels))
+			for _, v := range selfLabels {
+				vTrim := strings.TrimSpace(v)
+				if vTrim != "" {
+					vals = append(vals, &atproto.LabelDefs_SelfLabel{Val: vTrim})
+				}
+			}
+			if len(vals) > 0 {
+				rec.Labels = &bsky.FeedPost_Labels{
+					LabelDefs_SelfLabels: &atproto.LabelDefs_SelfLabels{
+						LexiconTypeID: "com.atproto.label.defs#selfLabels",
+						Values:        vals,
+					},
+				}
+			}
+		}
+
+		if captionPath != "" {
+			localPath, cleanup, err := ResolvePathOrDataURL(captionPath)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
+			f, err := os.Open(localPath)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			upRes, err := atproto.RepoUploadBlob(ctx, c, f)
+			if err != nil {
+				return err
+			}
+			if upRes.Blob != nil {
+				upRes.Blob.MimeType = "text/vtt"
+			}
+			lang := captionLang
+			if lang == "" {
+				lang = "en"
+			}
+			capItem := &bsky.EmbedVideo_Caption{
+				File: upRes.Blob,
+				Lang: lang,
+			}
+			if rec.Embed != nil {
+				if rec.Embed.EmbedVideo != nil {
+					rec.Embed.EmbedVideo.Captions = append(rec.Embed.EmbedVideo.Captions, capItem)
+				} else if rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil && rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
+					rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo.Captions = append(rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo.Captions, capItem)
+				}
+			}
+		}
+
+		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.feed.post",
+			Repo:       c.Auth.Did,
+			Rkey:       rkey,
+			Record:     &util.LexiconTypeDecoder{Val: rec},
+		})
+		return err
+	})
+}
+
+func (s *PostBuilderService) GetVideoUploadLimits() (*VideoUploadLimitsDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *VideoUploadLimitsDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		authOut, err := atproto.ServerGetServiceAuth(ctx, c, "did:web:video.bsky.app", 0, "app.bsky.video.getUploadLimits")
+		if err != nil {
+			return err
+		}
+		videoClient := &xrpc.Client{
+			Client: c.Client,
+			Host:   "https://video.bsky.app",
+			Auth: &xrpc.AuthInfo{
+				AccessJwt: authOut.Token,
+				Did:       c.Auth.Did,
+				Handle:    c.Auth.Handle,
+			},
+		}
+		res, err := bsky.VideoGetUploadLimits(ctx, videoClient)
+		if err != nil {
+			return err
+		}
+		out = &VideoUploadLimitsDTO{
+			CanUpload: res.CanUpload,
+		}
+		if res.RemainingDailyVideos != nil {
+			out.RemainingDailyVideos = *res.RemainingDailyVideos
+		}
+		if res.RemainingDailyBytes != nil {
+			out.RemainingDailyBytes = *res.RemainingDailyBytes
+		}
+		if res.Message != nil {
+			out.Message = *res.Message
+		}
+		if res.Error != nil {
+			out.Error = *res.Error
+		}
+		return nil
+	})
+	return out, err
+}
+
+func buildDraftRecord(text string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) *bsky.DraftDefs_Draft {
+	var labelsUnion *bsky.DraftDefs_DraftPost_Labels
+	if len(selfLabels) > 0 {
+		vals := make([]*atproto.LabelDefs_SelfLabel, 0, len(selfLabels))
+		for _, v := range selfLabels {
+			if strings.TrimSpace(v) != "" {
+				vals = append(vals, &atproto.LabelDefs_SelfLabel{Val: strings.TrimSpace(v)})
+			}
+		}
+		if len(vals) > 0 {
+			labelsUnion = &bsky.DraftDefs_DraftPost_Labels{
+				LabelDefs_SelfLabels: &atproto.LabelDefs_SelfLabels{
+					LexiconTypeID: "com.atproto.label.defs#selfLabels",
+					Values:        vals,
+				},
+			}
+		}
+	}
+
+	var tgAllow []*bsky.DraftDefs_Draft_ThreadgateAllow_Elem
+	for _, r := range threadgateAllow {
+		switch strings.TrimSpace(r) {
+		case "mentioned":
+			tgAllow = append(tgAllow, &bsky.DraftDefs_Draft_ThreadgateAllow_Elem{
+				FeedThreadgate_MentionRule: &bsky.FeedThreadgate_MentionRule{
+					LexiconTypeID: "app.bsky.feed.threadgate#mentionRule",
+				},
+			})
+		case "following":
+			tgAllow = append(tgAllow, &bsky.DraftDefs_Draft_ThreadgateAllow_Elem{
+				FeedThreadgate_FollowingRule: &bsky.FeedThreadgate_FollowingRule{
+					LexiconTypeID: "app.bsky.feed.threadgate#followingRule",
+				},
+			})
+		case "followers":
+			tgAllow = append(tgAllow, &bsky.DraftDefs_Draft_ThreadgateAllow_Elem{
+				FeedThreadgate_FollowerRule: &bsky.FeedThreadgate_FollowerRule{
+					LexiconTypeID: "app.bsky.feed.threadgate#followerRule",
+				},
+			})
+		}
+	}
+
+	var pgRules []*bsky.DraftDefs_Draft_PostgateEmbeddingRules_Elem
+	if disableQuotes {
+		pgRules = append(pgRules, &bsky.DraftDefs_Draft_PostgateEmbeddingRules_Elem{
+			FeedPostgate_DisableRule: &bsky.FeedPostgate_DisableRule{
+				LexiconTypeID: "app.bsky.feed.postgate#disableRule",
+			},
+		})
+	}
+
+	return &bsky.DraftDefs_Draft{
+		Langs: langs,
+		Posts: []*bsky.DraftDefs_DraftPost{
+			{
+				Text:   text,
+				Labels: labelsUnion,
+			},
+		},
+		ThreadgateAllow:        tgAllow,
+		PostgateEmbeddingRules: pgRules,
+	}
+}
+
+func (s *PostBuilderService) GetDrafts(cursor string) (*DraftListDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	out := &DraftListDTO{Drafts: []*DraftDTO{}}
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.DraftGetDrafts(ctx, c, cursor, 50)
+		if err != nil {
+			return err
+		}
+		if res.Cursor != nil {
+			out.Cursor = *res.Cursor
+		}
+		for _, dv := range res.Drafts {
+			if dv == nil || dv.Draft == nil {
+				continue
+			}
+			d := &DraftDTO{
+				ID:        dv.Id,
+				CreatedAt: dv.CreatedAt,
+				UpdatedAt: dv.UpdatedAt,
+				Langs:     dv.Draft.Langs,
+			}
+			if len(dv.Draft.Posts) > 0 && dv.Draft.Posts[0] != nil {
+				p0 := dv.Draft.Posts[0]
+				d.Text = p0.Text
+				if p0.Labels != nil && p0.Labels.LabelDefs_SelfLabels != nil {
+					for _, lv := range p0.Labels.LabelDefs_SelfLabels.Values {
+						if lv != nil && lv.Val != "" {
+							d.SelfLabels = append(d.SelfLabels, lv.Val)
+						}
+					}
+				}
+			}
+			for _, tga := range dv.Draft.ThreadgateAllow {
+				if tga == nil {
+					continue
+				}
+				if tga.FeedThreadgate_MentionRule != nil {
+					d.ThreadgateAllow = append(d.ThreadgateAllow, "mentioned")
+				} else if tga.FeedThreadgate_FollowingRule != nil {
+					d.ThreadgateAllow = append(d.ThreadgateAllow, "following")
+				} else if tga.FeedThreadgate_FollowerRule != nil {
+					d.ThreadgateAllow = append(d.ThreadgateAllow, "followers")
+				} else if tga.FeedThreadgate_ListRule != nil {
+					d.ThreadgateAllow = append(d.ThreadgateAllow, "list:"+tga.FeedThreadgate_ListRule.List)
+				}
+			}
+			for _, pgr := range dv.Draft.PostgateEmbeddingRules {
+				if pgr != nil && pgr.FeedPostgate_DisableRule != nil {
+					d.DisableQuotes = true
+				}
+			}
+			out.Drafts = append(out.Drafts, d)
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *PostBuilderService) CreateDraft(text string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) (string, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var draftID string
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		draft := buildDraftRecord(text, langs, selfLabels, threadgateAllow, disableQuotes)
+		res, err := bsky.DraftCreateDraft(ctx, c, &bsky.DraftCreateDraft_Input{
+			Draft: draft,
+		})
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			draftID = res.Id
+		}
+		return nil
+	})
+	return draftID, err
+}
+
+func (s *PostBuilderService) UpdateDraft(id string, text string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		draft := buildDraftRecord(text, langs, selfLabels, threadgateAllow, disableQuotes)
+		return bsky.DraftUpdateDraft(ctx, c, &bsky.DraftUpdateDraft_Input{
+			Draft: &bsky.DraftDefs_DraftWithId{
+				Id:    id,
+				Draft: draft,
+			},
+		})
+	})
+}
+
+func (s *PostBuilderService) DeleteDraft(id string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		return bsky.DraftDeleteDraft(ctx, c, &bsky.DraftDeleteDraft_Input{
+			Id: id,
+		})
+	})
+}
+
 

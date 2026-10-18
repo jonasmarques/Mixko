@@ -6,7 +6,11 @@ export function GetNotificationPreferences():Promise<services.NotificationPrefer
 
 export function GetNotifications(arg1:string):Promise<services.NotificationListDTO>;
 
+export function GetNotificationsFiltered(arg1:string,arg2:Array<string>,arg3:boolean):Promise<services.NotificationListDTO>;
+
 export function GetUnreadCount():Promise<number>;
+
+export function ListActivitySubscriptions(arg1:string):Promise<services.ProfileListDTO>;
 
 export function PutActivitySubscription(arg1:string,arg2:boolean,arg3:boolean):Promise<services.ActivitySubscriptionDTO>;
 
