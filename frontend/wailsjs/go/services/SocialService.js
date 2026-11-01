@@ -262,6 +262,10 @@ export function UpdateProfile(arg1, arg2) {
   return window['go']['services']['SocialService']['UpdateProfile'](arg1, arg2);
 }
 
+export function UpdateProfileWithLinks(arg1, arg2, arg3) {
+  return window['go']['services']['SocialService']['UpdateProfileWithLinks'](arg1, arg2, arg3);
+}
+
 export function UpdateSavedFeeds(arg1, arg2) {
   return window['go']['services']['SocialService']['UpdateSavedFeeds'](arg1, arg2);
 }

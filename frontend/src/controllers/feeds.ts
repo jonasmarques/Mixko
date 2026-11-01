@@ -1,4 +1,4 @@
-import { esc } from '../utils/helpers';
+import { esc, linkify, renderProfileLink } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog } from '../utils/dialog';
@@ -113,9 +113,10 @@ export async function loadFeedsTab() {
                     const shortcutBadge = index < 9 ? ` <strong>(Atalho: Alt+Shift+${index + 1})</strong>` : '';
                     const pinnedBadge = feed.pinned ? i18n.t('feeds.pinnedBadge') : '';
                     const pinBtnLabel = feed.pinned ? i18n.t('feeds.unpin') : i18n.t('feeds.pin');
+                    const creatorHtml = feed.creator ? renderProfileLink(feed.creator) : '';
                     div.innerHTML = `
                         <h3>${esc(feed.displayName)}${pinnedBadge}</h3>
-                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator || '' })}${shortcutBadge}</small>
+                        <small>${i18n.t('feeds.createdBy', { creator: creatorHtml })}${shortcutBadge}</small>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn-open-feed" data-uri="${feed.uri}">${i18n.t('feeds.openFeed')}</button>
                             <button class="btn-pin-feed" data-uri="${feed.uri}" data-pinned="${feed.pinned ? '1' : '0'}">${pinBtnLabel}</button>
@@ -254,8 +255,8 @@ export async function loadFeedsTab() {
 
                     div.innerHTML = `
                         <h3>${esc(feed.displayName)}${statusBadge}</h3>
-                        <p>${feed.description || i18n.t('feeds.noDescription')}</p>
-                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}</small>
+                        <p>${linkify(feed.description || i18n.t('feeds.noDescription'))}</p>
+                        <small>${i18n.t('feeds.createdBy', { creator: renderProfileLink(feed.creator) })}</small>
                         <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: (feed.likesCount || feed.likeCount || 0).toString() })}</div>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
                             ${actionButtonsHtml}
@@ -378,8 +379,8 @@ export async function loadFeedsTab() {
                     div.dataset.uri = feed.uri;
                     div.innerHTML = `
                         <h3>${esc(feed.displayName)}</h3>
-                        <p>${esc(feed.description || i18n.t('feeds.noDescription'))}</p>
-                        <small>${i18n.t('feeds.createdBy', { creator: feed.creator })}</small>
+                        <p>${linkify(feed.description || i18n.t('feeds.noDescription'))}</p>
+                        <small>${i18n.t('feeds.createdBy', { creator: renderProfileLink(feed.creator) })}</small>
                         <div style="font-size: 0.8em; margin-top: 5px;">${i18n.t('feeds.likes', { count: (feed.likeCount || 0).toString() })}</div>
                         <div class="actions" style="margin-top: 10px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn-open-feed">${esc(i18n.t('feeds.openFeed'))}</button>
@@ -508,8 +509,8 @@ export async function loadFeedsTab() {
 
                     const followBtnLabel = prof.viewerFollowing ? i18n.t('profile.unfollowBtn') : i18n.t('profile.followBtn');
                     div.innerHTML = `
-                        <h3>${esc(prof.displayName || prof.handle)} <small>(@${esc(prof.handle)})</small></h3>
-                        ${prof.description ? `<p>${esc(prof.description)}</p>` : ''}
+                        <h3>${esc(prof.displayName || prof.handle)} <small>(${renderProfileLink(prof.handle)})</small></h3>
+                        ${prof.description ? `<p>${linkify(prof.description)}</p>` : ''}
                         <div class="actions" style="margin-top:8px; display:flex; gap:8px;">
                             <button type="button" class="btn-open-suggested-profile">${i18n.t('lists.viewProfile')}</button>
                             <button type="button" class="btn-follow-suggested" data-did="${esc(prof.did)}" data-following="${esc(prof.viewerFollowing || '')}">${followBtnLabel}</button>

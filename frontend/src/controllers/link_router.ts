@@ -4,7 +4,8 @@ import { switchTab } from './tabs';
 import { viewListFeed } from './lists';
 import { createPostArticle } from '../components/post';
 import { i18n } from '../utils/i18n';
-import { esc, parseAppUrl } from '../utils/helpers';
+import { esc, parseAppUrl, renderProfileLink } from '../utils/helpers';
+import type { StarterPackDTO } from '../types/dto';
 
 async function resolveHandleToDID(handle: string): Promise<string> {
     const profile = await window.go.services.SocialService.GetProfile(handle);
@@ -116,7 +117,7 @@ async function routeStarterPack(handle: string, rkey: string): Promise<void> {
         dialog.style.cssText = 'padding:20px; border-radius:8px; border:1px solid var(--border-color,#444); background:var(--bg-color,#1e1e2e); color:var(--text-color,#fff); max-width:440px; width:90%;';
 
         const packs = await window.go.services.SocialService.GetActorStarterPacks(did, '');
-        const pack = packs?.starterPacks?.find((p: any) => p.uri === uri) ?? packs?.starterPacks?.[0];
+        const pack = packs?.starterPacks?.find((p: StarterPackDTO) => p.uri === uri) ?? packs?.starterPacks?.[0];
 
         dialog.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
@@ -127,7 +128,7 @@ async function routeStarterPack(handle: string, rkey: string): Promise<void> {
             ${pack ? `
                 <p><strong>${esc(pack.name)}</strong></p>
                 ${pack.description ? `<p style="color:#aaa; font-size:0.9em;">${esc(pack.description)}</p>` : ''}
-                <p style="font-size:0.85em;">${esc(i18n.t('router.createdBy', { handle: pack.creator }))}</p>
+                <p style="font-size:0.85em;">${renderProfileLink(pack.creator, i18n.t('router.createdBy', { handle: pack.creator }))}</p>
                 <p style="font-size:0.8em; color:#777; word-break:break-all;">${esc(uri)}</p>
             ` : `<p>${esc(i18n.t('router.starterPackOf', { handle, rkey }))}</p><p style="font-size:0.8em; color:#777; word-break:break-all;">${esc(uri)}</p>`}
         `;
@@ -247,6 +248,15 @@ export function setupLinkDelegation(): void {
         const handle = target.dataset.handle ?? '';
         const rkey = target.dataset.rkey ?? '';
         const tag = target.dataset.tag ?? '';
+
+        if (route === 'profile' || route === 'feed' || route === 'list' || route === 'hashtag') {
+            document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach((dlg) => {
+                dlg.close();
+                if (dlg.classList.contains('custom-dialog')) {
+                    dlg.remove();
+                }
+            });
+        }
 
         switch (route) {
             case 'profile':

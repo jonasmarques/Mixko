@@ -231,7 +231,10 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
             if (repliedToMe) {
                 notifText = i18n.t('notif.repliedYourPost', { text: replyText });
             } else {
-                const parentAuthor = formatAuthor(notif.replyParentAuthorName || "", parentHandle);
+                const baseParentAuthor = formatAuthor(notif.replyParentAuthorName || "", parentHandle);
+                const parentAuthor = (parentHandle && baseParentAuthor && !baseParentAuthor.includes(parentHandle))
+                    ? `${baseParentAuthor} (@${parentHandle.replace(/^@/, '')})`
+                    : (baseParentAuthor || (parentHandle ? `@${parentHandle.replace(/^@/, '')}` : ""));
                 // Unnamed parent: the notification still only reached us because
                 // we own the thread root, so say that rather than claim the post.
                 notifText = parentAuthor

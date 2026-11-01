@@ -99,7 +99,7 @@
             
             <br/><br/>
             <label for="post-video" data-i18n="compose.videoLabel">Ou Anexar Vídeo:</label>
-            <input type="file" id="post-video" accept="video/mp4, video/webm, video/quicktime" />
+            <input type="file" id="post-video" accept="video/mp4, video/webm, video/quicktime, video/mpeg, .mp4, .mov, .webm, .mpeg" />
             <div id="video-limits-info" style="font-size: 0.85em; color: var(--text-muted, #888); margin-top: 4px;"></div>
 
             <br/>
@@ -226,6 +226,13 @@
 
           <label for="edit-profile-banner" style="margin-top: 10px; display: block;" data-i18n="modals.editBanner">Imagem de Capa (Banner):</label>
           <input type="file" id="edit-profile-banner" accept="image/*" tabindex="0" />
+
+          <fieldset id="edit-profile-links-fieldset" style="margin-top: 15px;">
+            <legend data-i18n="profile.linksTitle">Links do Perfil</legend>
+            <small style="display: block; margin-bottom: 8px;" data-i18n="profile.linksDesc">Adicione até 10 links externos ao seu perfil.</small>
+            <div id="edit-profile-links-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+            <button type="button" id="btn-add-profile-link" data-i18n="profile.addLinkBtn">+ Adicionar Link</button>
+          </fieldset>
 
           <fieldset style="margin-top: 15px;">
             <legend data-i18n="modals.editSelfLabels">Rótulos de Conteúdo da Conta (Self Labels)</legend>
@@ -540,6 +547,7 @@
                         <option value="mentioned" data-i18n="compose.tgMentioned">Apenas Mencionados</option>
                         <option value="following" data-i18n="compose.tgFollowing">Quem eu sigo</option>
                         <option value="followers" data-i18n="sec2.tgFollowers">Meus Seguidores</option>
+                        <option value="followers,mentioned" data-i18n="sec2.tgFollowersMentioned">Seguidores + Mencionados</option>
                         <option value="following,followers" data-i18n="sec2.tgFollowingFollowers">Quem sigo + Seguidores</option>
                       </select>
                     </div>
@@ -983,7 +991,7 @@
         <span id="posts-list-desc" class="sr-only"></span>
         <div id="posts-list-container" role="feed" aria-label="Lista de posts" data-i18n-aria="modals.postsList" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;"></div>
         <div class="actions" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-          <button type="button" id="btn-load-other-replies" class="hidden" data-i18n="sec2.loadHiddenRepliesBtn">Carregar respostas adicionais / ocultas (Thread V2)</button>
+          <button type="button" id="btn-load-other-replies" class="hidden" data-i18n="sec2.loadHiddenRepliesBtn">Carregar respostas adicionais / ocultas</button>
           <button type="button" id="btn-close-posts-list" data-i18n="app.close">Fechar</button>
         </div>
       </dialog>

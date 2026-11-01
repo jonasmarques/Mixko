@@ -2,7 +2,7 @@ import { state } from '../config/state';
 import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { reloadCurrentTab } from './tabs';
-import { getFilePathOrDataUrl, esc, escUrl } from '../utils/helpers';
+import { getFilePathOrDataUrl, esc, escUrl, countGraphemes } from '../utils/helpers';
 import { initGifModal, openGifPicker } from '../components/gif_modal';
 import { i18n, translateError } from '../utils/i18n';
 import { MentionAutocomplete } from '../components/mention_autocomplete';
@@ -41,7 +41,7 @@ export async function loadUserListsForThreadgate() {
 }
 
 export function updateCharCounter(text: string) {
-    const len = text.length;
+    const len = countGraphemes(text);
     const remaining = 300 - len;
     const charCounter = document.getElementById('char-counter') as HTMLDivElement;
     if (charCounter) {
@@ -87,10 +87,15 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
       localStorage.setItem('postLanguage', defaultCode);
   }
   
-  const savedGate = localStorage.getItem('postThreadgate');
-  if (savedGate && postThreadgateInput) {
+  const rawSavedGate = localStorage.getItem('postThreadgate') || 'everyone';
+  const savedGate = rawSavedGate === 'everybody' ? 'everyone' : rawSavedGate;
+  if (postThreadgateInput) {
+      postThreadgateInput.disabled = mode === 'reply';
       postThreadgateInput.value = savedGate;
-      if (savedGate === 'list' && tgListContainer) {
+      if (!postThreadgateInput.value) {
+          postThreadgateInput.value = 'everyone';
+      }
+      if (postThreadgateInput.value === 'list' && mode !== 'reply' && tgListContainer) {
           tgListContainer.classList.remove('hidden');
       } else if (tgListContainer) {
           tgListContainer.classList.add('hidden');
@@ -139,14 +144,15 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
 
   const videoLimitsEl = document.getElementById('video-limits-info');
   if (videoLimitsEl) {
-      videoLimitsEl.textContent = '';
+      const defaultInfo = i18n.t('compose.videoLimitsDefault');
+      videoLimitsEl.textContent = defaultInfo;
       window.go.services.PostBuilderService.GetVideoUploadLimits().then(limits => {
           if (!limits) return;
           if (!limits.canUpload) {
               videoLimitsEl.textContent = limits.message || i18n.t('sec2.videoUploadBlocked');
           } else if (limits.remainingDailyVideos > 0) {
               const mb = Math.round((limits.remainingDailyBytes || 0) / (1024 * 1024));
-              videoLimitsEl.textContent = i18n.t('sec2.videoUploadLimitsInfo', { videos: String(limits.remainingDailyVideos), mb: String(mb) });
+              videoLimitsEl.textContent = `${defaultInfo} • ${i18n.t('sec2.videoUploadLimitsInfo', { videos: String(limits.remainingDailyVideos), mb: String(mb) })}`;
           }
       }).catch(() => {});
   }
@@ -249,16 +255,31 @@ export function closeComposeModal() {
 interface PostLinkState {
     fetchedLinkUrl: string;
     dismissedLinkUrl: string;
-    linkPreviewTimer: any;
+    linkPreviewTimer: ReturnType<typeof setTimeout> | null;
 }
 
 let post0State: PostLinkState = { fetchedLinkUrl: "", dismissedLinkUrl: "", linkPreviewTimer: null };
 
+function extractFirstUrlFromText(text: string): string | null {
+    const httpMatch = text.match(/https?:\/\/[^\s<>"]+/i);
+    if (httpMatch) {
+        return httpMatch[0].replace(/[.,;:?!"'>)\]]+$/, '');
+    }
+    const bareMatch = text.match(/(?:^|[\s(])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|co|app|dev|me|info|biz|tv|gg|xyz|social|br|pt|es|uk|de|fr|it|ca|au|jp|kr|cn|in|ru|mx|ar|cl)(?:\/[^\s<>"]*)?)/i);
+    if (bareMatch && bareMatch[1]) {
+        const cleaned = bareMatch[1].replace(/[.,;:?!"'>)\]]+$/, '');
+        if (cleaned) {
+            return `https://${cleaned}`;
+        }
+    }
+    return null;
+}
+
 function checkAndFetchLinkPreviewForPost(pState: PostLinkState, text: string, containerEl: HTMLDivElement | null) {
     if (!containerEl) return;
-    const urlMatch = text.match(/https?:\/\/[^\s]+/i);
+    const url = extractFirstUrlFromText(text);
 
-    if (!urlMatch) {
+    if (!url) {
         if (!pState.fetchedLinkUrl) {
             pState.dismissedLinkUrl = "";
             containerEl.innerHTML = "";
@@ -267,7 +288,6 @@ function checkAndFetchLinkPreviewForPost(pState: PostLinkState, text: string, co
         return;
     }
 
-    const url = urlMatch[0];
     if (url === pState.dismissedLinkUrl || url === pState.fetchedLinkUrl) return;
 
     if (pState.linkPreviewTimer) clearTimeout(pState.linkPreviewTimer);
@@ -451,6 +471,18 @@ export function setupCompose() {
         postVideoInput.addEventListener('change', async (e) => {
             const files = (e.target as HTMLInputElement).files;
             if (files && files.length > 0) {
+                const file = files[0];
+                const maxBytes = 300 * 1024 * 1024;
+                if (file.size > maxBytes) {
+                    const msg = i18n.t('compose.videoTooLarge');
+                    announceAssertive(msg);
+                    alert(msg);
+                    postVideoInput.value = "";
+                    selectedVideo = "";
+                    if (videoAltContainer) videoAltContainer.classList.add('hidden');
+                    return;
+                }
+
                 if (postImageInput) postImageInput.value = "";
                 selectedImages = [];
                 selectedGifUrl = "";
@@ -459,13 +491,25 @@ export function setupCompose() {
                 if (gifContainer) gifContainer.classList.add('hidden');
                 if (altContainer) altContainer.innerHTML = '';
 
-                selectedVideo = await getFilePathOrDataUrl(files[0]);
+                selectedVideo = await getFilePathOrDataUrl(file);
 
                 try {
-                    const videoUrl = URL.createObjectURL(files[0]);
+                    const videoUrl = URL.createObjectURL(file);
                     const tempVideo = document.createElement('video');
                     tempVideo.preload = 'metadata';
                     tempVideo.onloadedmetadata = () => {
+                        if (tempVideo.duration && Number.isFinite(tempVideo.duration) && tempVideo.duration > 600.5) {
+                            URL.revokeObjectURL(videoUrl);
+                            const msg = i18n.t('compose.videoTooLong');
+                            announceAssertive(msg);
+                            alert(msg);
+                            postVideoInput.value = "";
+                            selectedVideo = "";
+                            selectedVideoWidth = 0;
+                            selectedVideoHeight = 0;
+                            if (videoAltContainer) videoAltContainer.classList.add('hidden');
+                            return;
+                        }
                         selectedVideoWidth = tempVideo.videoWidth || 0;
                         selectedVideoHeight = tempVideo.videoHeight || 0;
                         URL.revokeObjectURL(videoUrl);
@@ -661,7 +705,7 @@ export function setupCompose() {
             
             textarea.addEventListener('input', (e) => {
                 const val = (e.target as HTMLTextAreaElement).value;
-                const len = val.length;
+                const len = countGraphemes(val);
                 const remaining = 300 - len;
                 counter.textContent = i18n.t('compose.charsRemaining', { count: remaining.toString() });
                 if (remaining <= 5) {
@@ -740,12 +784,16 @@ export function setupCompose() {
           }
           
           const language = postLanguageInput ? postLanguageInput.value : "";
-          const threadgate = postThreadgateInput ? postThreadgateInput.value : "everyone";
+          const rawGate = postThreadgateInput && !postThreadgateInput.disabled ? (postThreadgateInput.value || "everyone") : "everyone";
+          const normalizedGate = rawGate === "everybody" ? "everyone" : rawGate;
           const selectedListUri = (document.getElementById('post-threadgate-list') as HTMLSelectElement)?.value || "";
-          const listUris = (threadgate === 'list' && selectedListUri) ? [selectedListUri] : [];
+          const listUris = (normalizedGate === 'list' && selectedListUri) ? [selectedListUri] : [];
           const selfLabels: string[] = [];
           document.querySelectorAll<HTMLInputElement>('.post-self-label:checked').forEach(cb => selfLabels.push(cb.value));
           const disableQuotes = (document.getElementById('post-disable-quotes') as HTMLInputElement | null)?.checked === true;
+          const threadgate = disableQuotes
+              ? (normalizedGate === 'everyone' ? 'disable_quotes' : `${normalizedGate},disable_quotes`)
+              : normalizedGate;
           
           const imageSources = selectedImages.length > 0 ? selectedImages : [];
           const videoPath = selectedVideo;
@@ -754,7 +802,7 @@ export function setupCompose() {
           for (let i = 0; i < postItems.length; i++) {
               const item = postItems[i];
               const isFirstPost = i === 0;
-              const hasMedia = isFirstPost && (selectedImages.length > 0 || selectedVideo !== "");
+              const hasMedia = isFirstPost && (selectedImages.length > 0 || selectedVideo !== "" || selectedGifUrl !== "");
 
               if (item.text.trim() === "" && !hasMedia) {
                   const errorMsg = postItems.length > 1
@@ -770,10 +818,11 @@ export function setupCompose() {
                   return;
               }
 
-              if (item.text.length > 300) {
+              const graphemeLen = countGraphemes(item.text);
+              if (graphemeLen > 300) {
                   const errorMsg = postItems.length > 1
-                      ? i18n.t('compose.tooLongThreadPost', { count: (i + 1).toString(), length: item.text.length.toString() })
-                      : i18n.t('compose.tooLongPost', { length: item.text.length.toString() });
+                      ? i18n.t('compose.tooLongThreadPost', { count: (i + 1).toString(), length: graphemeLen.toString() })
+                      : i18n.t('compose.tooLongPost', { length: graphemeLen.toString() });
                   announceAssertive(errorMsg);
                   alert(errorMsg);
                   if (isFirstPost) {
@@ -787,8 +836,35 @@ export function setupCompose() {
 
           const btnSubmit = document.getElementById('btn-submit-post') as HTMLButtonElement;
           const btnAddPost = document.getElementById('btn-add-thread-post') as HTMLButtonElement;
+          const originalSubmitText = btnSubmit ? btnSubmit.textContent || i18n.t('compose.submit') : i18n.t('compose.submit');
           if (btnSubmit) btnSubmit.disabled = true;
           if (btnAddPost) btnAddPost.disabled = true;
+
+          let offVideoProgress: (() => void) | null = null;
+          let lastVideoAnnounceKey = '';
+          if ((videoPath !== "" || selectedGifUrl !== "") && window.runtime?.EventsOn) {
+              if (btnSubmit) btnSubmit.textContent = i18n.t('compose.videoUploading');
+              offVideoProgress = window.runtime.EventsOn('video_upload_progress', (data: { state?: string; progress?: number }) => {
+                  const st = data?.state || '';
+                  const prog = typeof data?.progress === 'number' ? data.progress : 0;
+                  let statusMsg = '';
+                  if (st === 'UPLOADING') {
+                      statusMsg = i18n.t('compose.videoUploading');
+                  } else if (st === 'INDEXING' || st === 'JOB_STATE_COMPLETED') {
+                      statusMsg = i18n.t('compose.videoIndexing');
+                  } else {
+                      statusMsg = i18n.t('compose.videoProcessing', { progress: String(prog) });
+                  }
+                  if (btnSubmit && statusMsg) {
+                      btnSubmit.textContent = statusMsg;
+                  }
+                  const announceKey = st === 'UPLOADING' || st === 'INDEXING' || st === 'JOB_STATE_COMPLETED' ? st : `${st}:${Math.floor(prog / 25)}`;
+                  if (statusMsg && announceKey !== lastVideoAnnounceKey) {
+                      lastVideoAnnounceKey = announceKey;
+                      announcePolite(statusMsg);
+                  }
+              });
+          }
 
           announcePolite(postItems.length > 1 ? i18n.t('compose.publishingMultiple', { count: postItems.length.toString() }) : i18n.t('compose.publishingSingle'));
           try {
@@ -821,8 +897,8 @@ export function setupCompose() {
                 if (!res || !res.uri || !res.cid) {
                     throw new Error(i18n.t('compose.threadRefMissing', { count: (i + 1).toString() }));
                 }
-                if (i === 0 && (selfLabels.length > 0 || disableQuotes || selectedCaptionPath !== "")) {
-                    await window.go.services.PostBuilderService.ApplyPostExtras(res.uri, selfLabels, disableQuotes, selectedCaptionPath, language || 'pt');
+                if (i === 0 && (selfLabels.length > 0 || selectedCaptionPath !== "")) {
+                    await window.go.services.PostBuilderService.ApplyPostExtras(res.uri, selfLabels, false, selectedCaptionPath, language || 'pt');
                 }
                 currentReplyUri = res.uri;
                 currentReplyCid = res.cid;
@@ -836,20 +912,25 @@ export function setupCompose() {
                 }
             }
             
-            if (btnSubmit) btnSubmit.disabled = false;
-            if (btnAddPost) btnAddPost.disabled = false;
             announceAssertive(postItems.length > 1 ? i18n.t('compose.threadSuccess') : i18n.t('compose.postSuccess'));
             forceCloseComposeModal();
             if (state.currentTab !== 'notifications') {
                 reloadCurrentTab();
             }
           } catch (err: unknown) {
-            if (btnSubmit) btnSubmit.disabled = false;
-            if (btnAddPost) btnAddPost.disabled = false;
             console.error("Error publishing post:", err);
             const msg = i18n.t('compose.publishError') + translateError(err);
             announceAssertive(msg);
             alert(msg);
+          } finally {
+            if (offVideoProgress) {
+                offVideoProgress();
+            }
+            if (btnSubmit) {
+                btnSubmit.disabled = false;
+                btnSubmit.textContent = originalSubmitText;
+            }
+            if (btnAddPost) btnAddPost.disabled = false;
           }
         });
     }

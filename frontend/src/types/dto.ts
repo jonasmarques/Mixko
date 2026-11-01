@@ -149,12 +149,21 @@ export interface ActorStatusDTO {
     isActive: boolean;
 }
 
+export interface ProfileLinkDTO {
+    uri?: string;
+    cid?: string;
+    title: string;
+    url: string;
+}
+
 export interface ProfileDTO {
     did: string;
     handle: string;
     displayName: string;
     description: string;
     avatar: string;
+    website?: string;
+    links?: ProfileLinkDTO[];
     followersCount: number;
     followsCount: number;
     postsCount: number;
@@ -315,7 +324,8 @@ export interface UpdateInfoDTO {
     hasUpdate: boolean;
     currentVersion: string;
     latestVersion: string;
-    releaseURL: string;
+    releaseUrl?: string;
+    releaseURL?: string;
 }
 
 export interface ChatMemberDTO {

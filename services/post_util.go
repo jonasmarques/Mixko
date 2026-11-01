@@ -87,54 +87,116 @@ func fetchRemote(ctx context.Context, rawURL string) (*http.Response, error) {
 	return resp, nil
 }
 
+func trimURLTrailingPunctuation(raw string) string {
+	for len(raw) > 0 {
+		last := raw[len(raw)-1]
+		if strings.IndexByte(".,;:?!\"'>]", last) != -1 {
+			raw = raw[:len(raw)-1]
+			continue
+		}
+		if last == ')' && strings.Count(raw, ")") > strings.Count(raw, "(") {
+			raw = raw[:len(raw)-1]
+			continue
+		}
+		break
+	}
+	return raw
+}
+
 // ParseFacets parses mentions, links, and tags from text and generates Facets.
 func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.RichtextFacet {
 	var facets []*bsky.RichtextFacet
 	textBytes := []byte(text)
 
-	// Links
-	// Exclude trailing punctuation like .,;!? from the match
-	linkRegex := regexp.MustCompile(`https?://[^\s]+[^.,;:?!"' \n]`)
+	type byteSpan struct {
+		start int
+		end   int
+	}
+	var occupied []byteSpan
+	overlaps := func(s, e int) bool {
+		for _, sp := range occupied {
+			if s < sp.end && e > sp.start {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Mentions first so @user.bsky.social is resolved as a mention and not a bare-domain link
+	mentionRegex := regexp.MustCompile(`(?:^|[\s(])@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)`)
+	for _, match := range mentionRegex.FindAllSubmatchIndex(textBytes, -1) {
+		handleStart, handleEnd := match[2], match[3]
+		start := handleStart - 1 // include '@'
+		end := handleEnd
+		handle := string(textBytes[handleStart:handleEnd])
+		occupied = append(occupied, byteSpan{start: start, end: end})
+		if c != nil {
+			res, err := atproto.IdentityResolveHandle(ctx, c, handle)
+			if err == nil && res != nil && res.Did != "" {
+				facets = append(facets, &bsky.RichtextFacet{
+					Index:    &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
+					Features: []*bsky.RichtextFacet_Features_Elem{{RichtextFacet_Mention: &bsky.RichtextFacet_Mention{Did: res.Did}}},
+				})
+			}
+		}
+	}
+
+	// Explicit http(s) links
+	linkRegex := regexp.MustCompile(`https?://[^\s<>"]+`)
 	for _, match := range linkRegex.FindAllIndex(textBytes, -1) {
 		start, end := match[0], match[1]
-		uri := string(textBytes[start:end])
+		raw := string(textBytes[start:end])
+		cleaned := trimURLTrailingPunctuation(raw)
+		if cleaned == "http://" || cleaned == "https://" || cleaned == "" {
+			continue
+		}
+		end = start + len(cleaned)
+		if overlaps(start, end) {
+			continue
+		}
+		occupied = append(occupied, byteSpan{start: start, end: end})
 		facets = append(facets, &bsky.RichtextFacet{
-			Index: &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
+			Index:    &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
+			Features: []*bsky.RichtextFacet_Features_Elem{{RichtextFacet_Link: &bsky.RichtextFacet_Link{Uri: cleaned}}},
+		})
+	}
+
+	// Bare domain links (e.g. bsky.app/profile/... or example.com)
+	bareLinkRegex := regexp.MustCompile(`(?i)(?:^|[\s(])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|co|app|dev|me|info|biz|tv|gg|xyz|social|br|pt|es|uk|de|fr|it|ca|au|jp|kr|cn|in|ru|mx|ar|cl)(?:/[^\s<>"]*)?)`)
+	for _, match := range bareLinkRegex.FindAllSubmatchIndex(textBytes, -1) {
+		start, end := match[2], match[3]
+		if start > 0 && (textBytes[start-1] == '@' || textBytes[start-1] == '/' || textBytes[start-1] == '.') {
+			continue
+		}
+		raw := string(textBytes[start:end])
+		cleaned := trimURLTrailingPunctuation(raw)
+		if cleaned == "" {
+			continue
+		}
+		end = start + len(cleaned)
+		if overlaps(start, end) {
+			continue
+		}
+		occupied = append(occupied, byteSpan{start: start, end: end})
+		uri := "https://" + cleaned
+		facets = append(facets, &bsky.RichtextFacet{
+			Index:    &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
 			Features: []*bsky.RichtextFacet_Features_Elem{{RichtextFacet_Link: &bsky.RichtextFacet_Link{Uri: uri}}},
 		})
 	}
 
-	// Mentions
-	// Use boundaries to avoid matching emails like user@domain.com
-	mentionRegex := regexp.MustCompile(`(?:^|\s)@([a-zA-Z0-9.-]+)`)
-	for _, match := range mentionRegex.FindAllSubmatchIndex(textBytes, -1) {
-		// Because we match `^|\s`, the start index of the actual @ might be offset by 1 if there's a space
-		start := match[0]
-		if string(textBytes[start]) == " " || string(textBytes[start]) == "\n" {
-			start++
-		}
-		end := match[1]
-		handle := string(textBytes[match[2]:match[3]])
-		res, err := atproto.IdentityResolveHandle(ctx, c, handle)
-		if err == nil {
-			facets = append(facets, &bsky.RichtextFacet{
-				Index: &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
-				Features: []*bsky.RichtextFacet_Features_Elem{{RichtextFacet_Mention: &bsky.RichtextFacet_Mention{Did: res.Did}}},
-			})
-		}
-	}
-
 	// Tags
-	tagRegex := regexp.MustCompile(`(?i)(?:^|\s)#([a-z0-9_-]+)`)
+	tagRegex := regexp.MustCompile(`(?i)(?:^|[\s(])#([\p{L}\p{N}_-]+)`)
 	for _, match := range tagRegex.FindAllSubmatchIndex(textBytes, -1) {
-		start := match[0]
-		if string(textBytes[start]) == " " || string(textBytes[start]) == "\n" {
-			start++
+		tagStart, tagEnd := match[2], match[3]
+		start := tagStart - 1 // include '#'
+		end := tagEnd
+		if overlaps(start, end) {
+			continue
 		}
-		end := match[1]
-		tag := string(textBytes[match[2]:match[3]])
+		tag := string(textBytes[tagStart:tagEnd])
 		facets = append(facets, &bsky.RichtextFacet{
-			Index: &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
+			Index:    &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
 			Features: []*bsky.RichtextFacet_Features_Elem{{RichtextFacet_Tag: &bsky.RichtextFacet_Tag{Tag: tag}}},
 		})
 	}
@@ -335,6 +397,8 @@ func ResolvePathOrDataURL(pathOrData string) (string, func(), error) {
 			ext = ".mov"
 		} else if strings.Contains(mimeType, "webm") {
 			ext = ".webm"
+		} else if strings.Contains(mimeType, "mpeg") || strings.Contains(mimeType, "mpg") {
+			ext = ".mpeg"
 		} else if exts, _ := mime.ExtensionsByType(mimeType); len(exts) > 0 {
 			ext = exts[0]
 		}

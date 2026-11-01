@@ -15,6 +15,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var sharedTransport = &http.Transport{
@@ -97,6 +98,16 @@ func (c *ATClient) AppContext() context.Context {
 		return context.Background()
 	}
 	return c.appCtx
+}
+
+// EmitEvent safely emits a Wails runtime event if the Wails application context is initialized.
+func (c *ATClient) EmitEvent(eventName string, optionalData ...interface{}) {
+	c.mu.RLock()
+	ctx := c.appCtx
+	c.mu.RUnlock()
+	if ctx != nil {
+		runtime.EventsEmit(ctx, eventName, optionalData...)
+	}
 }
 
 // NewContext returns a context for a single API call: cancelled when the app

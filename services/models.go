@@ -279,12 +279,21 @@ type ActorStatusDTO struct {
 	IsActive    bool   `json:"isActive"`
 }
 
+type ProfileLinkDTO struct {
+	URI   string `json:"uri,omitempty"`
+	CID   string `json:"cid,omitempty"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
 type ProfileDTO struct {
 	DID                        string                   `json:"did"`
 	Handle                     string                   `json:"handle"`
 	DisplayName                string                   `json:"displayName"`
 	Description                string                   `json:"description"`
 	Avatar                     string                   `json:"avatar"`
+	Website                    string                   `json:"website,omitempty"`
+	Links                      []ProfileLinkDTO         `json:"links,omitempty"`
 	Followers                  int64                    `json:"followersCount"`
 	Follows                    int64                    `json:"followsCount"`
 	Posts                      int64                    `json:"postsCount"`

@@ -100,7 +100,13 @@
         "replyEverybody": "Everyone (Default)",
         "replyFollowing": "People I follow",
         "replyMentioned": "Only mentioned users",
-        "replyNobody": "Nobody (replies disabled)"
+        "replyNobody": "Nobody (replies disabled)",
+        "videoTooLarge": "Video exceeds the maximum allowed size of 300 MB.",
+        "videoTooLong": "Video exceeds the maximum allowed duration of 10 minutes.",
+        "videoUploading": "Uploading video...",
+        "videoProcessing": "Processing video on Bluesky ({{progress}}%)...",
+        "videoIndexing": "Finalizing video post...",
+        "videoLimitsDefault": "Formats: MP4, MOV, WEBM, MPEG • Max 10 min / 300 MB"
     },
     "modals": {
         "profilePicker": "Go to profile of...",
@@ -278,7 +284,14 @@
         "loadingKnownFollowers": "Loading followers in common...",
         "noKnownFollowers": "No followers in common found.",
         "knownFollowersTitle": "Followers in common",
-        "knownFollowersClosed": "Followers in common section closed."
+        "knownFollowersClosed": "Followers in common section closed.",
+        "linksTitle": "Profile Links",
+        "linksDesc": "Add up to 10 external links to your profile.",
+        "addLinkBtn": "+ Add Link",
+        "linkTitlePlaceholder": "Title (e.g. Website, GitHub)",
+        "linkUrlPlaceholder": "https://example.com",
+        "removeLinkBtn": "Remove",
+        "maxLinksReached": "Maximum of 10 links reached."
     },
     "feeds": {
         "loading": "Loading...",
@@ -1241,7 +1254,7 @@
         "showMoreLikeThisBtn": "+ More like this",
         "showLessLikeThisBtn": "- Less like this",
         "feedbackSentMsg": "Feedback sent to feed algorithm!",
-        "loadHiddenRepliesBtn": "Load additional / hidden replies (Thread V2)",
+        "loadHiddenRepliesBtn": "Load additional / hidden replies",
         "noAdditionalRepliesMsg": "No additional replies found.",
         "tabFeeds": "Feeds",
         "noFeedsForUser": "No feeds created by this profile.",

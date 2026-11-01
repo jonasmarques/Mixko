@@ -25,6 +25,7 @@ import type {
   PostRefDTO,
   PreferencesDTO,
   ProfileDTO,
+  ProfileLinkDTO,
   ProfileListDTO,
   RelationshipDTO,
   SavedAccountDTO,
@@ -165,6 +166,7 @@ declare global {
           UpdateVerificationPrefs(hideBadges: boolean): Promise<void>;
           UpdateSavedFeeds(pinnedUris: string[], savedUris: string[]): Promise<void>;
           UpdateProfile(displayName: string, description: string): Promise<void>;
+          UpdateProfileWithLinks(displayName: string, description: string, links: ProfileLinkDTO[]): Promise<void>;
           UploadProfileAvatar(imagePath: string): Promise<void>;
           UploadProfileBanner(imagePath: string): Promise<void>;
           CreateList(name: string, purpose: string, description: string): Promise<void>;
@@ -250,6 +252,9 @@ declare global {
           SearchPosts(filter: PostSearchFilter): Promise<FeedDTO>;
           SearchProfiles(query: string, cursor: string): Promise<ProfileListDTO>;
           SearchProfilesTypeahead(query: string): Promise<ProfileListDTO>;
+        };
+        UpdaterService: {
+          CheckForUpdate(): Promise<UpdateInfoDTO>;
         };
       };
       main: {

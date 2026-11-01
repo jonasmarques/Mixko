@@ -136,7 +136,9 @@ export async function loadTimeline(loadMore = false, keepFocus = false) {
         });
         if (!restored) {
             state.focusedPostIndex = 0;
-            state.currentPosts[0].focus();
+            if (!document.querySelector('dialog[open]')) {
+                state.currentPosts[0].focus();
+            }
         }
     }
   } catch (err: any) {

@@ -1,5 +1,5 @@
 import Hls from 'hls.js';
-import { linkify, esc, escUrl } from '../utils/helpers';
+import { linkify, esc, escUrl, renderProfileLink } from '../utils/helpers';
 import { formatPostDate } from '../utils/format';
 import { announcePolite, announceAssertive, getPostAccessibleLabel, formatAuthor } from '../utils/a11y';
 import { confirmDialog, promptDialog, promptReportDetails } from '../utils/dialog';
@@ -308,11 +308,13 @@ export function createPostArticle(
     const isDidRoot = post.rootAuthor ? post.rootAuthor.startsWith('did:') : false;
     if (!isDidReply) {
       const formattedReplyTo = formatAuthor(post.replyToAuthorName || "", post.replyToAuthor);
+      const replyToLink = renderProfileLink(post.replyToAuthor, formattedReplyTo);
       if (post.rootAuthor && !isDidRoot && post.rootAuthor !== post.replyToAuthor) {
         const formattedRoot = formatAuthor(post.rootAuthorName || "", post.rootAuthor);
-        replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyToMultiple', { replyTo: formattedReplyTo, rootAuthor: formattedRoot }))}:</small></div>`;
+        const rootLink = renderProfileLink(post.rootAuthor, formattedRoot);
+        replyContext = `<div class="reply-context"><small>${i18n.t('post.inReplyToMultiple', { replyTo: replyToLink, rootAuthor: rootLink })}:</small></div>`;
       } else {
-        replyContext = `<div class="reply-context"><small>${esc(i18n.t('post.inReplyTo', { handle: formattedReplyTo }))}:</small></div>`;
+        replyContext = `<div class="reply-context"><small>${i18n.t('post.inReplyTo', { handle: replyToLink })}:</small></div>`;
       }
     }
   }
@@ -323,7 +325,11 @@ export function createPostArticle(
     if (post.repostedByHandle) {
       article.dataset.repostedByHandle = post.repostedByHandle;
     }
-    repostContext = `<div class="repost-context"><small>${esc(i18n.t('post.repostedBy', { handle: post.repostedBy }))}</small></div>`;
+    const repostHandle = post.repostedByHandle || post.repostedBy;
+    const repostAuthorHtml = repostHandle && !repostHandle.includes(' ')
+      ? renderProfileLink(repostHandle, post.repostedBy)
+      : esc(post.repostedBy);
+    repostContext = `<div class="repost-context"><small>${i18n.t('post.repostedBy', { handle: repostAuthorHtml })}</small></div>`;
   }
 
   let altsContext = "";
@@ -443,8 +449,8 @@ export function createPostArticle(
         <div class="quote-context" style="border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 5px;">
           <header>
             ${detachBtn}
-            <strong>${esc(post.quotePost.authorName || post.quotePost.authorHandle)}</strong>
-            <span>@${esc(post.quotePost.authorHandle)}</span>
+            <strong>${renderProfileLink(post.quotePost.authorHandle, post.quotePost.authorName || post.quotePost.authorHandle)}</strong>
+            <span>${renderProfileLink(post.quotePost.authorHandle)}</span>
           </header>
           <div class="post-content">
             <p>${post.quotePost.text ? linkify(post.quotePost.text) : i18n.t(post.quotePost.hasMedia ? 'post.mediaAttached' : 'post.contentNotAvailable')}</p>
@@ -613,8 +619,8 @@ export function createPostArticle(
     ${repostContext}
     ${replyContext}
     <header>
-      <strong>${esc(authorDisplay)}</strong>${verifiedBadgeHtml}
-      ${showHandleSpan ? `<span>@${esc(post.authorHandle)}</span>` : ''}
+      <strong>${renderProfileLink(post.authorHandle, authorDisplay)}</strong>${verifiedBadgeHtml}
+      ${showHandleSpan ? `<span>${renderProfileLink(post.authorHandle)}</span>` : ''}
       <small>${esc(formattedTime)}</small>
     </header>
     ${labelBannerHtml}
@@ -1002,7 +1008,7 @@ export function createPostArticle(
     const uri = article.dataset.uri;
     if (!uri) return;
     const gateChoices = [
-      { value: 'everybody', label: i18n.t('compose.replyEverybody') },
+      { value: 'everyone', label: i18n.t('compose.replyEverybody') },
       { value: 'nobody', label: i18n.t('compose.replyNobody') },
       { value: 'mentioned', label: i18n.t('compose.replyMentioned') },
       { value: 'following', label: i18n.t('compose.replyFollowing') },

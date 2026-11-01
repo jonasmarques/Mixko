@@ -135,6 +135,8 @@ export namespace bsky {
 	    knownFollowers?: ActorDefs_KnownFollowers;
 	    muted?: boolean;
 	    mutedByList?: GraphDefs_ListViewBasic;
+	    mutedOnlyQuoteposts?: boolean;
+	    mutedOnlyReposts?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ActorDefs_ViewerState(source);
@@ -151,6 +153,8 @@ export namespace bsky {
 	        this.knownFollowers = this.convertValues(source["knownFollowers"], ActorDefs_KnownFollowers);
 	        this.muted = source["muted"];
 	        this.mutedByList = this.convertValues(source["mutedByList"], GraphDefs_ListViewBasic);
+	        this.mutedOnlyQuoteposts = source["mutedOnlyQuoteposts"];
+	        this.mutedOnlyReposts = source["mutedOnlyReposts"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1395,6 +1399,8 @@ export namespace bsky {
 	    indexedAt: string;
 	    labels?: atproto.LabelDefs_Label[];
 	    likeCount?: number;
+	    opThreadPostCount?: number;
+	    opThreadPostIndex?: number;
 	    quoteCount?: number;
 	    replyCount?: number;
 	    repostCount?: number;
@@ -1414,6 +1420,8 @@ export namespace bsky {
 	        this.indexedAt = source["indexedAt"];
 	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
 	        this.likeCount = source["likeCount"];
+	        this.opThreadPostCount = source["opThreadPostCount"];
+	        this.opThreadPostIndex = source["opThreadPostIndex"];
 	        this.quoteCount = source["quoteCount"];
 	        this.replyCount = source["replyCount"];
 	        this.repostCount = source["repostCount"];
@@ -1675,6 +1683,38 @@ export namespace bsky {
 	}
 	
 	
+	export class FeedDefs_KnownLikers {
+	    actors: ActorDefs_ProfileViewBasic[];
+	    count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FeedDefs_KnownLikers(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.actors = this.convertValues(source["actors"], ActorDefs_ProfileViewBasic);
+	        this.count = source["count"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class FeedDefs_NotFoundPost {
 	    $type: string;
 	    notFound: boolean;
@@ -1694,6 +1734,7 @@ export namespace bsky {
 	export class FeedDefs_ViewerState {
 	    bookmarked?: boolean;
 	    embeddingDisabled?: boolean;
+	    knownLikers?: FeedDefs_KnownLikers;
 	    like?: string;
 	    pinned?: boolean;
 	    replyDisabled?: boolean;
@@ -1708,12 +1749,31 @@ export namespace bsky {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.bookmarked = source["bookmarked"];
 	        this.embeddingDisabled = source["embeddingDisabled"];
+	        this.knownLikers = this.convertValues(source["knownLikers"], FeedDefs_KnownLikers);
 	        this.like = source["like"];
 	        this.pinned = source["pinned"];
 	        this.replyDisabled = source["replyDisabled"];
 	        this.repost = source["repost"];
 	        this.threadMuted = source["threadMuted"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class FeedDefs_ThreadgateView {
 	    cid?: string;
@@ -3396,12 +3456,32 @@ export namespace services {
 		    return a;
 		}
 	}
+	export class ProfileLinkDTO {
+	    uri?: string;
+	    cid?: string;
+	    title: string;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProfileLinkDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.uri = source["uri"];
+	        this.cid = source["cid"];
+	        this.title = source["title"];
+	        this.url = source["url"];
+	    }
+	}
 	export class ProfileDTO {
 	    did: string;
 	    handle: string;
 	    displayName: string;
 	    description: string;
 	    avatar: string;
+	    website?: string;
+	    links?: ProfileLinkDTO[];
 	    followersCount: number;
 	    followsCount: number;
 	    postsCount: number;
@@ -3432,6 +3512,8 @@ export namespace services {
 	        this.displayName = source["displayName"];
 	        this.description = source["description"];
 	        this.avatar = source["avatar"];
+	        this.website = source["website"];
+	        this.links = this.convertValues(source["links"], ProfileLinkDTO);
 	        this.followersCount = source["followersCount"];
 	        this.followsCount = source["followsCount"];
 	        this.postsCount = source["postsCount"];
@@ -3470,6 +3552,7 @@ export namespace services {
 		    return a;
 		}
 	}
+	
 	export class ProfileListDTO {
 	    cursor: string;
 	    profiles: ProfileDTO[];

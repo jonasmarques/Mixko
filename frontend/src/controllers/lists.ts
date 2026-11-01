@@ -1,4 +1,4 @@
-import { esc } from '../utils/helpers';
+import { esc, renderProfileLink } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { confirmDialog, promptDialog } from '../utils/dialog';
@@ -126,7 +126,7 @@ export async function viewListMembers(listUri: string, listName: string, isOwner
                 <div class="post-item member-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px; background:#121212; border-radius:6px; gap:8px;">
                     <div>
                         <strong>${esc(p.displayName || p.handle)}</strong>
-                        <small style="display:block; color:#aaa;">@${esc(p.handle)}</small>
+                        <small style="display:block; color:#aaa;">${renderProfileLink(p.handle)}</small>
                     </div>
                     <div style="display:flex; gap:6px; align-items:center;">
                         <button type="button" class="btn-open-member-profile" data-handle="${esc(p.handle)}" style="padding:4px 10px;">${i18n.t('lists.viewProfile')}</button>

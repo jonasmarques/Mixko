@@ -32,7 +32,7 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		var algo string = "reverse-chronological"
-		res, err := bsky.FeedGetTimeline(ctx, c, algo, cursor, limit)
+		res, err := bsky.FeedGetTimeline(ctx, c, algo, cursor, limit, "")
 		if err != nil {
 			return err
 		}
@@ -169,6 +169,40 @@ func extractVideoCaptionsFromRecord(recVal interface{}, authorDid string) []Vide
 		}
 	}
 	return out
+}
+
+func ExtractVideoFromRecord(recVal interface{}, authorDid string) *VideoEmbedDTO {
+	if recVal == nil || authorDid == "" {
+		return nil
+	}
+	raw, err := json.Marshal(recVal)
+	if err != nil {
+		return nil
+	}
+	var rec bsky.FeedPost
+	if json.Unmarshal(raw, &rec) != nil || rec.Embed == nil {
+		return nil
+	}
+	var vid *bsky.EmbedVideo
+	if rec.Embed.EmbedVideo != nil {
+		vid = rec.Embed.EmbedVideo
+	} else if rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil && rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
+		vid = rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+	}
+	if vid == nil || vid.Video == nil {
+		return nil
+	}
+	cid := vid.Video.Ref.String()
+	if cid == "" {
+		return nil
+	}
+	return &VideoEmbedDTO{
+		Playlist:     fmt.Sprintf("https://video.bsky.app/watch/%s/%s/playlist.m3u8", url.PathEscape(authorDid), url.PathEscape(cid)),
+		Thumbnail:    fmt.Sprintf("https://video.bsky.app/watch/%s/%s/thumbnail.jpg", url.PathEscape(authorDid), url.PathEscape(cid)),
+		Alt:          safeString(vid.Alt),
+		Presentation: safeString(vid.Presentation),
+		Captions:     extractVideoCaptionsFromRecord(recVal, authorDid),
+	}
 }
 
 func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
@@ -442,6 +476,12 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 					quotePost.HasMedia = true
 				}
 			}
+			if quotePost.Video == nil && quoteRecVal != nil {
+				quotePost.Video = ExtractVideoFromRecord(quoteRecVal, rv.Author.Did)
+				if quotePost.Video != nil {
+					quotePost.HasMedia = true
+				}
+			}
 		}
 	}
 
@@ -493,6 +533,9 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 		if video != nil && video.Alt == "" {
 			video.Alt = ExtractVideoAltFromRecord(recVal)
 		}
+	}
+	if video == nil && recVal != nil {
+		video = ExtractVideoFromRecord(recVal, post.Author.Did)
 	}
 
 	viewerLike := ""
@@ -748,7 +791,7 @@ func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*
 	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.FeedGetListFeed(ctx, c, cursor, limit, listUri)
+		res, err := bsky.FeedGetListFeed(ctx, c, cursor, limit, listUri, "")
 		if err != nil {
 			return err
 		}
@@ -989,7 +1032,7 @@ func (s *FeedService) GetQuotes(uri string, cid string, cursor string) (*FeedDTO
 	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.FeedGetQuotes(ctx, c, cid, cursor, 100, uri)
+		res, err := bsky.FeedGetQuotes(ctx, c, cid, cursor, 100, "", uri)
 		if err != nil {
 			return err
 		}

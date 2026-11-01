@@ -91,8 +91,36 @@ function routeAttrs(route: AppRoute, url: string): string {
 
 const LINK_STYLE = 'color: var(--brand-color, #0066cc);';
 
+function escWithBreaks(value: string): string {
+    return esc(value).replace(/\r?\n/g, '<br>');
+}
+
+function splitUrlTrailingPunctuation(raw: string): { clean: string; trailing: string } {
+    let clean = raw;
+    let trailing = '';
+    while (clean.length > 0) {
+        const last = clean[clean.length - 1];
+        if ('. ,;:?!"\'>]'.includes(last)) {
+            trailing = last + trailing;
+            clean = clean.slice(0, -1);
+            continue;
+        }
+        if (last === ')') {
+            const opens = (clean.match(/\(/g) || []).length;
+            const closes = (clean.match(/\)/g) || []).length;
+            if (closes > opens) {
+                trailing = last + trailing;
+                clean = clean.slice(0, -1);
+                continue;
+            }
+        }
+        break;
+    }
+    return { clean, trailing };
+}
+
 /**
- * Turns URLs and hashtags in plain text into anchors.
+ * Turns URLs, bare domains, @mentions, hashtags, and line breaks in plain text into HTML.
  *
  * The text is tokenised first and each piece is escaped as it is appended, so
  * markup in the source text is rendered literally and never interpreted.
@@ -100,39 +128,88 @@ const LINK_STYLE = 'color: var(--brand-color, #0066cc);';
 export function linkify(text: string): string {
     if (!text) return '';
 
-    const tokenRegex = /(https?:\/\/[^\s<>"]+)|(#[\p{L}\p{N}_]+)/gu;
+    const tokenRegex = /(https?:\/\/[^\s<>"]+)|(@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63})|(#[\p{L}\p{N}_-]+)|(\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:com|org|net|edu|gov|io|co|app|dev|me|info|biz|tv|gg|xyz|social|br|pt|es|uk|de|fr|it|ca|au|jp|kr|cn|in|ru|mx|ar|cl)(?:\/[^\s<>"]*)?)/giu;
 
     let out = '';
     let cursor = 0;
 
     for (const match of text.matchAll(tokenRegex)) {
         const index = match.index ?? 0;
-        out += esc(text.slice(cursor, index));
+        const prevChar = index > 0 ? text[index - 1] : '';
+        const [token, urlMatch, mentionMatch, hashMatch, bareDomainMatch] = match;
 
-        const [token, urlMatch, hashMatch] = match;
+        const hasBoundaryBefore = index === 0 || /[\s([{"'«“‘]/.test(prevChar);
+        if ((mentionMatch || hashMatch || bareDomainMatch) && !hasBoundaryBefore) {
+            continue;
+        }
 
-        if (hashMatch) {
+        out += escWithBreaks(text.slice(cursor, index));
+
+        if (mentionMatch) {
+            const handle = mentionMatch.slice(1);
+            out += `<a href="#" class="app-link link-internal link-mention" data-route="profile" data-handle="${esc(handle)}" style="${LINK_STYLE}">${esc(mentionMatch)}</a>`;
+        } else if (hashMatch) {
             const tag = hashMatch.slice(1);
             out += `<a href="#" class="app-link link-hashtag" data-route="hashtag" data-tag="${esc(tag)}" style="${LINK_STYLE}">${esc(hashMatch)}</a>`;
-        } else {
-            const url = urlMatch;
-            const route = parseAppUrl(url);
+        } else if (urlMatch || bareDomainMatch) {
+            const rawToken = urlMatch || bareDomainMatch;
+            const { clean, trailing } = splitUrlTrailingPunctuation(rawToken);
+            const fullUrl = urlMatch ? clean : `https://${clean}`;
+            const route = parseAppUrl(fullUrl);
 
             if (route) {
-                out += `<a href="#" class="app-link link-internal" ${routeAttrs(route, url)} style="${LINK_STYLE}">${esc(url)}</a>`;
+                out += `<a href="#" class="app-link link-internal" ${routeAttrs(route, fullUrl)} style="${LINK_STYLE}">${esc(clean)}</a>${escWithBreaks(trailing)}`;
             } else {
-                // Opened through the Go runtime by the delegated handler in
-                // link_router.ts; an inline onclick would be both fragile and
-                // an injection point.
-                out += `<a href="#" class="app-link link-external" data-external-url="${escUrl(url)}" style="${LINK_STYLE}">${esc(url)}</a>`;
+                out += `<a href="#" class="app-link link-external" data-external-url="${escUrl(fullUrl)}" style="${LINK_STYLE}">${esc(clean)}</a>${escWithBreaks(trailing)}`;
             }
         }
 
         cursor = index + token.length;
     }
 
-    out += esc(text.slice(cursor));
+    out += escWithBreaks(text.slice(cursor));
     return out;
+}
+
+/**
+ * Renders a clickable @handle or author name link that navigates to the user's profile.
+ */
+export function renderProfileLink(handle: string, label?: string, extraClass = ''): string {
+    const rawHandle = String(handle ?? '').trim().replace(/^@/, '');
+    const display = label !== undefined && label !== '' ? label : `@${rawHandle}`;
+    if (!rawHandle) {
+        return esc(display);
+    }
+    const cls = ['app-link', 'link-internal', 'profile-handle-link', extraClass].filter(Boolean).join(' ');
+    return `<a href="#" class="${esc(cls)}" data-route="profile" data-handle="${esc(rawHandle)}" style="${LINK_STYLE}">${esc(display)}</a>`;
+}
+
+interface IntlSegmenterInstance {
+    segment(input: string): Iterable<{ segment: string }>;
+}
+
+interface IntlWithSegmenter {
+    Segmenter?: new (locales?: string | string[], options?: { granularity?: 'grapheme' | 'word' | 'sentence' }) => IntlSegmenterInstance;
+}
+
+const SegmenterCtor = typeof Intl !== 'undefined' ? (Intl as unknown as IntlWithSegmenter).Segmenter : undefined;
+const graphemeSegmenter: IntlSegmenterInstance | null = SegmenterCtor
+    ? new SegmenterCtor(undefined, { granularity: 'grapheme' })
+    : null;
+
+/**
+ * Counts Unicode user-perceived characters (grapheme clusters), matching ATProto's 300-grapheme post limit.
+ */
+export function countGraphemes(text: string): number {
+    if (!text) return 0;
+    if (graphemeSegmenter) {
+        let count = 0;
+        for (const _ of graphemeSegmenter.segment(text)) {
+            count++;
+        }
+        return count;
+    }
+    return Array.from(text).length;
 }
 
 export function getFilePathOrDataUrl(file: File): Promise<string> {

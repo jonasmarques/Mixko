@@ -1,6 +1,6 @@
 import { state } from '../config/state';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
-import { linkify, esc, escUrl } from '../utils/helpers';
+import { linkify, esc, escUrl, renderProfileLink } from '../utils/helpers';
 import { confirmDialog, promptDialog, promptReportDetails } from '../utils/dialog';
 import { createPostArticle, registerInlineVideo, cleanupContainerVideos } from '../components/post';
 import { formatPostDate } from '../utils/format';
@@ -557,8 +557,11 @@ function buildChatMessageElement(convoId: string, msg: ChatMessageDTO): HTMLElem
       } else if (msg.replyToSender) {
         replySenderDisplay = msg.replyToSender;
       }
+      const replySenderHtml = (!replyIsMe && msg.replyToSenderHandle)
+        ? renderProfileLink(msg.replyToSenderHandle, replySenderDisplay)
+        : esc(replySenderDisplay);
       replyInfo = `<div style="border-left: 3px solid var(--brand-color, #1da1f2); padding-left: 10px; margin-bottom: 10px; font-size: 0.9em; opacity: 0.85; background: rgba(29, 161, 242, 0.08); padding: 6px 10px; border-radius: 4px;">
-          <strong>↩ ${esc(replySenderDisplay)}:</strong> ${linkify(msg.replyToMessageText || "")}
+          <strong>↩ ${replySenderHtml}:</strong> ${linkify(msg.replyToMessageText || "")}
       </div>`;
       accessibleLabel = i18n.t('chat.replyingToAccessible', { msg: msg.replyToMessageText || "", rest: accessibleLabel });
   }
@@ -588,13 +591,18 @@ function buildChatMessageElement(convoId: string, msg: ChatMessageDTO): HTMLElem
     ${emojiPickerButtons}
   </div>`;
 
+  const senderHandleForLink = !isMe ? (msg.senderHandle || (msg.sender && msg.sender.includes('.') ? msg.sender : '')) : '';
+  const senderHeaderHtml = senderHandleForLink
+    ? renderProfileLink(senderHandleForLink, senderDisplay)
+    : esc(senderDisplay);
+
   div.dataset.text = accessibleLabel;
   div.setAttribute('aria-label', div.dataset.text);
   div.style.position = 'relative';
   div.innerHTML = `
     ${replyInfo}
     <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-      <div><strong>${esc(senderDisplay)}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${esc(msgDateFormatted)}</small>` : ''}</div>
+      <div><strong>${senderHeaderHtml}:</strong>${msgDateFormatted ? `<small style="margin-left: 8px; opacity: 0.7;">${esc(msgDateFormatted)}</small>` : ''}</div>
     </header>
     <div class="post-content">
       <p style="margin:4px 0;">${msgContent}</p>

@@ -100,7 +100,13 @@
         "replyEverybody": "Todos (Padrão)",
         "replyFollowing": "Quem eu sigo",
         "replyMentioned": "Apenas pessoas mencionadas",
-        "replyNobody": "Ninguém (respostas desativadas)"
+        "replyNobody": "Ninguém (respostas desativadas)",
+        "videoTooLarge": "O vídeo excede o tamanho máximo permitido de 300 MB.",
+        "videoTooLong": "O vídeo excede a duração máxima permitida de 10 minutos.",
+        "videoUploading": "Enviando vídeo...",
+        "videoProcessing": "Processando vídeo no Bluesky ({{progress}}%)...",
+        "videoIndexing": "Finalizando publicação do vídeo...",
+        "videoLimitsDefault": "Formatos: MP4, MOV, WEBM, MPEG • Máx. 10 min / 300 MB"
     },
     "modals": {
         "profilePicker": "Ir para o perfil de...",
@@ -289,7 +295,14 @@
         "loadingKnownFollowers": "Carregando seguidores em comum...",
         "noKnownFollowers": "Nenhum seguidor em comum encontrado.",
         "knownFollowersTitle": "Seguidores em comum",
-        "knownFollowersClosed": "Seção de seguidores em comum fechada."
+        "knownFollowersClosed": "Seção de seguidores em comum fechada.",
+        "linksTitle": "Links do Perfil",
+        "linksDesc": "Adicione até 10 links externos ao seu perfil.",
+        "addLinkBtn": "+ Adicionar Link",
+        "linkTitlePlaceholder": "Título (ex: Meu Site, GitHub)",
+        "linkUrlPlaceholder": "https://exemplo.com",
+        "removeLinkBtn": "Remover",
+        "maxLinksReached": "Máximo de 10 links atingido."
     },
     "feeds": {
         "loading": "Carregando...",
@@ -1250,7 +1263,7 @@
         "showMoreLikeThisBtn": "+ Ver mais assim",
         "showLessLikeThisBtn": "- Ver menos assim",
         "feedbackSentMsg": "Preferência enviada ao algoritmo do feed!",
-        "loadHiddenRepliesBtn": "Carregar respostas adicionais / ocultas (Thread V2)",
+        "loadHiddenRepliesBtn": "Carregar respostas adicionais / ocultas",
         "noAdditionalRepliesMsg": "Nenhuma resposta adicional encontrada.",
         "tabFeeds": "Feeds",
         "noFeedsForUser": "Nenhum feed criado por este perfil.",

@@ -1,4 +1,4 @@
-import { esc } from '../utils/helpers';
+import { esc, renderProfileLink } from '../utils/helpers';
 import { state } from '../config/state';
 import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
@@ -38,7 +38,7 @@ function showProfilesModal(title: string, profiles: any[]) {
             div.style.padding = '10px';
             div.style.borderBottom = '1px solid #ccc';
             div.style.cursor = 'pointer';
-            div.innerHTML = `<strong>${esc(p.displayName || p.handle)}</strong> <small>@${esc(p.handle)}</small>`;
+            div.innerHTML = `<strong>${esc(p.displayName || p.handle)}</strong> <small>${renderProfileLink(p.handle)}</small>`;
             div.setAttribute('aria-label', `${i18n.t('app.profile')}: ${p.displayName || p.handle}, @${p.handle}`);
             
             const selectProfile = () => {
@@ -1002,14 +1002,25 @@ export function setupShortcuts() {
             if (state.focusedPostIndex >= 0) {
                 const p = state.currentPosts[state.focusedPostIndex];
                 const handles = new Set<string>();
-                if (p.dataset.authorHandle) handles.add(p.dataset.authorHandle);
-                if (p.dataset.replyTo) handles.add(p.dataset.replyTo);
+                const addHandle = (raw?: string) => {
+                    if (!raw) return;
+                    const clean = raw.trim().replace(/^@/, '');
+                    if (clean && !clean.startsWith('did:') && !clean.includes(' ')) {
+                        handles.add(clean);
+                    }
+                };
+                addHandle(p.dataset.authorHandle);
+                addHandle(p.dataset.replyTo);
+                addHandle(p.dataset.rootAuthor);
                 if (p.dataset.repostedByHandle) {
-                    handles.add(p.dataset.repostedByHandle);
+                    addHandle(p.dataset.repostedByHandle);
                 } else if (p.dataset.repostedBy) {
-                    handles.add(p.dataset.repostedBy);
+                    addHandle(p.dataset.repostedBy);
                 }
-                if (p.dataset.quoteAuthorHandle) handles.add(p.dataset.quoteAuthorHandle);
+                addHandle(p.dataset.quoteAuthorHandle);
+                p.querySelectorAll<HTMLElement>('[data-route="profile"][data-handle]').forEach(el => {
+                    addHandle(el.dataset.handle);
+                });
 
                 const handleArr = Array.from(handles);
                 if (handleArr.length === 1) {
@@ -1100,15 +1111,16 @@ export function setupShortcuts() {
             e.preventDefault();
             if (state.focusedPostIndex >= 0) {
                 const p = state.currentPosts[state.focusedPostIndex];
-                const targetUrl = p.dataset.externalUrl || p.dataset.quoteExternalUrl;
+                const extAnchor = p.querySelector<HTMLElement>('a.link-external[data-external-url]');
+                const targetUrl = p.dataset.externalUrl || p.dataset.quoteExternalUrl || extAnchor?.dataset.externalUrl;
                 if (targetUrl) {
-                    (window as any).runtime.BrowserOpenURL(targetUrl);
+                    (window as unknown as { runtime: { BrowserOpenURL: (u: string) => void } }).runtime.BrowserOpenURL(targetUrl);
                     announcePolite(i18n.t('shortcuts.openingLink'));
                 } else {
                     const textToSearch = `${p.dataset.text || ""} ${p.dataset.quoteText || ""}`.trim();
                     const urlMatch = textToSearch.match(/(https?:\/\/[^\s]+)/);
                     if (urlMatch) {
-                        (window as any).runtime.BrowserOpenURL(urlMatch[0]);
+                        (window as unknown as { runtime: { BrowserOpenURL: (u: string) => void } }).runtime.BrowserOpenURL(urlMatch[0]);
                         announcePolite(i18n.t('shortcuts.openingLink'));
                     } else {
                         announcePolite(i18n.t('shortcuts.noLinkFound'));

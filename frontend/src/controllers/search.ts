@@ -1,4 +1,4 @@
-import { esc } from '../utils/helpers';
+import { esc, linkify, renderProfileLink } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle } from '../components/post';
@@ -11,7 +11,7 @@ function createSearchProfileArticle(prof: ProfileDTO): HTMLElement {
     div.classList.add('post-item');
     div.setAttribute('tabindex', '0');
     div.dataset.text = i18n.t('search.profileAria', { name: prof.displayName || prof.handle, desc: prof.description || "" });
-    div.innerHTML = `<h3>${esc(prof.displayName)} <small>(@${esc(prof.handle)})</small></h3><p>${esc(prof.description || '')}</p>`;
+    div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3><p>${linkify(prof.description || '')}</p>`;
     
     div.dataset.index = state.currentPosts.length.toString();
     div.addEventListener('focus', () => {
@@ -42,8 +42,8 @@ function createSearchStarterPackArticle(item: StarterPackDTO): HTMLElement {
     article.setAttribute('tabindex', '0');
     article.dataset.index = state.currentPosts.length.toString();
     article.innerHTML = `
-        <h3>${esc(item.name)} <small>(@${esc(item.creator)})</small></h3>
-        <p>${esc(item.description || '')}</p>
+        <h3>${esc(item.name)} <small>(${renderProfileLink(item.creator)})</small></h3>
+        <p>${linkify(item.description || '')}</p>
         <div style="margin-top:6px; display:flex; gap:8px;">
             <button type="button" class="btn-view-pack">${esc(i18n.t('sec2.viewStarterPackBtn'))}</button>
             ${item.listUri ? `<button type="button" class="btn-follow-pack">${esc(i18n.t('profile.followAllBtn'))}</button>` : ''}
@@ -62,7 +62,7 @@ function createSearchStarterPackArticle(item: StarterPackDTO): HTMLElement {
         detailsBox.innerHTML = `<p>${esc(i18n.t('modals.loading'))}</p>`;
         try {
             const detail = await window.go.services.SocialService.GetStarterPack(item.uri);
-            const membersHtml = (detail?.members || []).map(m => `<li>${esc(m.displayName || m.handle)} (@${esc(m.handle)})</li>`).join('');
+            const membersHtml = (detail?.members || []).map(m => `<li>${esc(m.displayName || m.handle)} (${renderProfileLink(m.handle)})</li>`).join('');
             detailsBox.innerHTML = `<ul>${membersHtml || '<li>-</li>'}</ul>`;
         } catch (err: unknown) {
             detailsBox.innerHTML = `<p>${esc(String(err))}</p>`;

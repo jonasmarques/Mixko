@@ -177,7 +177,6 @@ export async function updateChat() {
 export async function initApp() {
     window.focus();
     document.body.focus();
-    checkAppUpdates();
     const lastHandle = localStorage.getItem('lastHandle');
     if (lastHandle) {
         const idInput = document.getElementById('identifier') as HTMLInputElement;
@@ -206,4 +205,5 @@ export async function initApp() {
     } catch (err) {
         announcePolite(i18n.t('auth.readyToLogin'));
     }
+    checkAppUpdates();
 }

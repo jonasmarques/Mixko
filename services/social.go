@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"mime"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -600,6 +602,19 @@ func parseVerificationState(v *bsky.ActorDefs_VerificationState) (bool, bool) {
 	return verified, trusted
 }
 
+type profileLinkViewRaw struct {
+	URI   string `json:"uri"`
+	CID   string `json:"cid"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
+	Icon  string `json:"icon,omitempty"`
+}
+
+type profileViewDetailedWithLinks struct {
+	bsky.ActorDefs_ProfileViewDetailed
+	Links []profileLinkViewRaw `json:"links,omitempty"`
+}
+
 func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
@@ -608,7 +623,8 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 		if actor == "" {
 			actor = c.Auth.Did
 		}
-		res, err := bsky.ActorGetProfile(ctx, c, actor)
+		var res profileViewDetailedWithLinks
+		err := c.Do(ctx, xrpc.Query, "", "app.bsky.actor.getProfile", map[string]interface{}{"actor": actor}, nil, &res)
 		if err != nil {
 			return err
 		}
@@ -692,6 +708,11 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 		}
 
 		verified, trustedVerifier := parseVerificationState(res.Verification)
+		website := safeString(res.Website)
+		links, resolvedWebsite := s.fetchProfileLinks(ctx, c, res.Did, website, res.Links)
+		if resolvedWebsite != "" {
+			website = resolvedWebsite
+		}
 
 		out = &ProfileDTO{
 			DID:                        res.Did,
@@ -699,6 +720,8 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 			DisplayName:                name,
 			Description:                desc,
 			Avatar:                     safeString(res.Avatar),
+			Website:                    website,
+			Links:                      links,
 			Followers:                  followers,
 			Follows:                    follows,
 			Posts:                      posts,
@@ -781,7 +804,7 @@ func (s *SocialService) GetFollowers(actor string, cursor string) (*ProfileListD
 	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.GraphGetFollowers(ctx, c, actor, cursor, 30)
+		res, err := bsky.GraphGetFollowers(ctx, c, actor, cursor, 30, "")
 		if err != nil {
 			return err
 		}
@@ -801,7 +824,7 @@ func (s *SocialService) GetFollows(actor string, cursor string) (*ProfileListDTO
 	defer cancel()
 	var out *ProfileListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.GraphGetFollows(ctx, c, actor, cursor, 30)
+		res, err := bsky.GraphGetFollows(ctx, c, actor, cursor, 30, "")
 		if err != nil {
 			return err
 		}
@@ -1017,53 +1040,431 @@ func (s *SocialService) GetActorStarterPacks(actorDID string, cursor string) (*S
 	return out, err
 }
 
-func (s *SocialService) UpdateProfile(displayName, description string) error {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		var profile bsky.ActorProfile
-		var swapRecord *string
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
-		if err == nil && res != nil {
-			swapRecord = res.Cid
-			if res.Value != nil {
-				if existingProfile, ok := res.Value.Val.(*bsky.ActorProfile); ok {
-					profile = *existingProfile
-				} else {
-					bytes, err := json.Marshal(res.Value.Val)
-					if err == nil {
-						json.Unmarshal(bytes, &profile)
+type rawRepoRecordItem struct {
+	URI   string                 `json:"uri"`
+	CID   string                 `json:"cid"`
+	Value map[string]interface{} `json:"value"`
+}
+
+type rawRepoListRecordsOutput struct {
+	Cursor  string              `json:"cursor"`
+	Records []rawRepoRecordItem `json:"records"`
+}
+
+type rawRepoGetRecordOutput struct {
+	URI   string                 `json:"uri"`
+	CID   string                 `json:"cid"`
+	Value map[string]interface{} `json:"value"`
+}
+
+type rawRepoMutationOutput struct {
+	URI string `json:"uri"`
+	CID string `json:"cid"`
+}
+
+func (s *SocialService) rawRepoGetRecord(ctx context.Context, c *xrpc.Client, repo, collection, rkey string) (*rawRepoGetRecordOutput, error) {
+	params := map[string]interface{}{
+		"repo":       repo,
+		"collection": collection,
+		"rkey":       rkey,
+	}
+	var out rawRepoGetRecordOutput
+	err := c.Do(ctx, xrpc.Query, "", "com.atproto.repo.getRecord", params, nil, &out)
+	if err == nil && out.Value != nil {
+		return &out, nil
+	}
+	pdsHost := s.clientMgr.ResolvePDSHost(ctx, repo)
+	if pdsHost == "" {
+		return nil, err
+	}
+	if !strings.HasPrefix(pdsHost, "http://") && !strings.HasPrefix(pdsHost, "https://") {
+		pdsHost = "https://" + pdsHost
+	}
+	pdsHost = strings.TrimRight(pdsHost, "/")
+	u := fmt.Sprintf("%s/xrpc/com.atproto.repo.getRecord?repo=%s&collection=%s&rkey=%s",
+		pdsHost, url.QueryEscape(repo), url.QueryEscape(collection), url.QueryEscape(rkey))
+	req, rErr := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if rErr != nil {
+		return nil, rErr
+	}
+	httpClient := &http.Client{Timeout: 8 * time.Second}
+	resp, hErr := httpClient.Do(req)
+	if hErr != nil {
+		return nil, hErr
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	if dErr := json.NewDecoder(resp.Body).Decode(&out); dErr != nil {
+		return nil, dErr
+	}
+	return &out, nil
+}
+
+func (s *SocialService) rawRepoListRecords(ctx context.Context, c *xrpc.Client, repo, collection string, limit int) (*rawRepoListRecordsOutput, error) {
+	params := map[string]interface{}{
+		"repo":       repo,
+		"collection": collection,
+		"limit":      limit,
+	}
+	var out rawRepoListRecordsOutput
+	err := c.Do(ctx, xrpc.Query, "", "com.atproto.repo.listRecords", params, nil, &out)
+	if err == nil {
+		return &out, nil
+	}
+	pdsHost := s.clientMgr.ResolvePDSHost(ctx, repo)
+	if pdsHost == "" {
+		return nil, err
+	}
+	if !strings.HasPrefix(pdsHost, "http://") && !strings.HasPrefix(pdsHost, "https://") {
+		pdsHost = "https://" + pdsHost
+	}
+	pdsHost = strings.TrimRight(pdsHost, "/")
+	u := fmt.Sprintf("%s/xrpc/com.atproto.repo.listRecords?repo=%s&collection=%s&limit=%d",
+		pdsHost, url.QueryEscape(repo), url.QueryEscape(collection), limit)
+	req, rErr := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if rErr != nil {
+		return nil, rErr
+	}
+	httpClient := &http.Client{Timeout: 8 * time.Second}
+	resp, hErr := httpClient.Do(req)
+	if hErr != nil {
+		return nil, hErr
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	if dErr := json.NewDecoder(resp.Body).Decode(&out); dErr != nil {
+		return nil, dErr
+	}
+	return &out, nil
+}
+
+func (s *SocialService) fetchProfileLinks(ctx context.Context, c *xrpc.Client, actorDid string, initialWebsite string, hydratedLinks []profileLinkViewRaw) ([]ProfileLinkDTO, string) {
+	website := strings.TrimSpace(initialWebsite)
+	var links []ProfileLinkDTO
+	seenURLs := make(map[string]bool)
+	addLink := func(l ProfileLinkDTO) {
+		u := strings.TrimSpace(l.URL)
+		if u == "" {
+			return
+		}
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			u = "https://" + u
+		}
+		key := strings.ToLower(u)
+		if seenURLs[key] {
+			return
+		}
+		seenURLs[key] = true
+		title := strings.TrimSpace(l.Title)
+		if title == "" {
+			title = u
+		}
+		links = append(links, ProfileLinkDTO{
+			URI:   l.URI,
+			CID:   l.CID,
+			Title: title,
+			URL:   u,
+		})
+	}
+
+	isSelf := c.Auth != nil && actorDid == c.Auth.Did
+	if !isSelf && len(hydratedLinks) > 0 {
+		for _, hl := range hydratedLinks {
+			addLink(ProfileLinkDTO{
+				URI:   hl.URI,
+				CID:   hl.CID,
+				Title: hl.Title,
+				URL:   hl.URL,
+			})
+		}
+	}
+
+	if isSelf || len(links) == 0 {
+		linkByURI := make(map[string]ProfileLinkDTO)
+		var repoLinksOrder []ProfileLinkDTO
+		if listRes, err := s.rawRepoListRecords(ctx, c, actorDid, "app.bsky.actor.link", 50); err == nil && listRes != nil {
+			for _, rec := range listRes.Records {
+				if rec.Value == nil {
+					continue
+				}
+				u, _ := rec.Value["url"].(string)
+				if u == "" {
+					u, _ = rec.Value["uri"].(string)
+				}
+				t, _ := rec.Value["title"].(string)
+				if t == "" {
+					t, _ = rec.Value["label"].(string)
+				}
+				if u != "" {
+					dto := ProfileLinkDTO{
+						URI:   rec.URI,
+						CID:   rec.CID,
+						Title: t,
+						URL:   u,
+					}
+					linkByURI[rec.URI] = dto
+					repoLinksOrder = append(repoLinksOrder, dto)
+				}
+			}
+		}
+
+		if profRes, err := s.rawRepoGetRecord(ctx, c, actorDid, "app.bsky.actor.profile", "self"); err == nil && profRes != nil && profRes.Value != nil {
+			raw := profRes.Value
+			if w, ok := raw["website"].(string); ok && strings.TrimSpace(w) != "" && website == "" {
+				website = strings.TrimSpace(w)
+			}
+			if rawLinks, ok := raw["links"].([]interface{}); ok {
+				for _, item := range rawLinks {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					refURI, _ := m["uri"].(string)
+					directURL, _ := m["url"].(string)
+					title, _ := m["title"].(string)
+					if title == "" {
+						title, _ = m["label"].(string)
+					}
+					if strings.HasPrefix(refURI, "at://") {
+						if resolved, exists := linkByURI[refURI]; exists {
+							addLink(resolved)
+						}
+					} else if directURL != "" {
+						addLink(ProfileLinkDTO{Title: title, URL: directURL})
+					} else if strings.HasPrefix(refURI, "http://") || strings.HasPrefix(refURI, "https://") {
+						addLink(ProfileLinkDTO{Title: title, URL: refURI})
 					}
 				}
 			}
 		}
 
-		profile.LexiconTypeID = "app.bsky.actor.profile"
-		if displayName != "" {
-			d := displayName
-			profile.DisplayName = &d
-		} else {
-			profile.DisplayName = nil
+		for _, rl := range repoLinksOrder {
+			addLink(rl)
 		}
-		if description != "" {
-			desc := description
-			profile.Description = &desc
-		} else {
-			profile.Description = nil
-		}
+	}
 
-		input := &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.actor.profile",
-			Repo:       c.Auth.Did,
-			Rkey:       "self",
-			Record: &util.LexiconTypeDecoder{
-				Val: &profile,
-			},
-			SwapRecord: swapRecord,
+	if len(links) == 0 && len(hydratedLinks) > 0 {
+		for _, hl := range hydratedLinks {
+			addLink(ProfileLinkDTO{
+				URI:   hl.URI,
+				CID:   hl.CID,
+				Title: hl.Title,
+				URL:   hl.URL,
+			})
 		}
+	}
 
-		_, err = atproto.RepoPutRecord(ctx, c, input)
+	if website != "" {
+		addLink(ProfileLinkDTO{Title: website, URL: website})
+	} else if len(links) > 0 {
+		website = links[0].URL
+	}
+
+	return links, website
+}
+
+func (s *SocialService) mutateOwnProfileRecord(ctx context.Context, c *xrpc.Client, mutate func(raw map[string]interface{}) error) error {
+	raw := map[string]interface{}{}
+	var swapRecord string
+	res, err := s.rawRepoGetRecord(ctx, c, c.Auth.Did, "app.bsky.actor.profile", "self")
+	if err == nil && res != nil {
+		swapRecord = res.CID
+		if res.Value != nil {
+			raw = res.Value
+		}
+	}
+	raw["$type"] = "app.bsky.actor.profile"
+	if err := mutate(raw); err != nil {
 		return err
+	}
+	body := map[string]interface{}{
+		"repo":       c.Auth.Did,
+		"collection": "app.bsky.actor.profile",
+		"rkey":       "self",
+		"record":     raw,
+	}
+	if swapRecord != "" {
+		body["swapRecord"] = swapRecord
+	}
+	var out rawRepoMutationOutput
+	return c.Do(ctx, xrpc.Procedure, "application/json", "com.atproto.repo.putRecord", nil, body, &out)
+}
+
+func (s *SocialService) UpdateProfile(displayName, description string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			if displayName != "" {
+				raw["displayName"] = displayName
+			} else {
+				delete(raw, "displayName")
+			}
+			if description != "" {
+				raw["description"] = description
+			} else {
+				delete(raw, "description")
+			}
+			return nil
+		})
+	})
+}
+
+func (s *SocialService) UpdateProfileWithLinks(displayName, description string, links []ProfileLinkDTO) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cleaned := make([]ProfileLinkDTO, 0, len(links))
+		for _, l := range links {
+			u := strings.TrimSpace(l.URL)
+			if u == "" {
+				continue
+			}
+			if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+				u = "https://" + u
+			}
+			t := strings.TrimSpace(l.Title)
+			if t == "" {
+				t = u
+			}
+			cleaned = append(cleaned, ProfileLinkDTO{
+				URI:   strings.TrimSpace(l.URI),
+				CID:   strings.TrimSpace(l.CID),
+				Title: t,
+				URL:   u,
+			})
+			if len(cleaned) >= 10 {
+				break
+			}
+		}
+
+		existingByURI := make(map[string]rawRepoRecordItem)
+		existingByURL := make(map[string]rawRepoRecordItem)
+		if listRes, lErr := s.rawRepoListRecords(ctx, c, c.Auth.Did, "app.bsky.actor.link", 50); lErr == nil && listRes != nil {
+			for _, rec := range listRes.Records {
+				if rec.URI == "" {
+					continue
+				}
+				existingByURI[rec.URI] = rec
+				if rec.Value != nil {
+					if u, ok := rec.Value["url"].(string); ok && u != "" {
+						existingByURL[strings.ToLower(strings.TrimSpace(u))] = rec
+					}
+				}
+			}
+		}
+
+		keptURIs := make(map[string]bool)
+		strongRefs := make([]map[string]interface{}, 0, len(cleaned))
+		for _, l := range cleaned {
+			var matched rawRepoRecordItem
+			hasMatch := false
+			if l.URI != "" {
+				if ex, ok := existingByURI[l.URI]; ok {
+					matched = ex
+					hasMatch = true
+				}
+			}
+			if !hasMatch {
+				if ex, ok := existingByURL[strings.ToLower(l.URL)]; ok && !keptURIs[ex.URI] {
+					matched = ex
+					hasMatch = true
+				}
+			}
+
+			if hasMatch && matched.URI != "" {
+				keptURIs[matched.URI] = true
+				parts := strings.Split(matched.URI, "/")
+				rkey := parts[len(parts)-1]
+				recMap := map[string]interface{}{}
+				for k, v := range matched.Value {
+					recMap[k] = v
+				}
+				recMap["$type"] = "app.bsky.actor.link"
+				recMap["url"] = l.URL
+				recMap["title"] = l.Title
+				if _, ok := recMap["createdAt"].(string); !ok {
+					recMap["createdAt"] = nowISO8601()
+				}
+				putBody := map[string]interface{}{
+					"repo":       c.Auth.Did,
+					"collection": "app.bsky.actor.link",
+					"rkey":       rkey,
+					"record":     recMap,
+				}
+				var putOut rawRepoMutationOutput
+				if err := c.Do(ctx, xrpc.Procedure, "application/json", "com.atproto.repo.putRecord", nil, putBody, &putOut); err == nil && putOut.URI != "" {
+					strongRefs = append(strongRefs, map[string]interface{}{
+						"uri": putOut.URI,
+						"cid": putOut.CID,
+					})
+					continue
+				}
+				strongRefs = append(strongRefs, map[string]interface{}{
+					"uri": matched.URI,
+					"cid": matched.CID,
+				})
+				continue
+			}
+
+			createBody := map[string]interface{}{
+				"repo":       c.Auth.Did,
+				"collection": "app.bsky.actor.link",
+				"record": map[string]interface{}{
+					"$type":     "app.bsky.actor.link",
+					"url":       l.URL,
+					"title":     l.Title,
+					"createdAt": nowISO8601(),
+				},
+			}
+			var createOut rawRepoMutationOutput
+			if err := c.Do(ctx, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, createBody, &createOut); err == nil && createOut.URI != "" {
+				keptURIs[createOut.URI] = true
+				strongRefs = append(strongRefs, map[string]interface{}{
+					"uri": createOut.URI,
+					"cid": createOut.CID,
+				})
+			}
+		}
+
+		for uri := range existingByURI {
+			if keptURIs[uri] {
+				continue
+			}
+			parts := strings.Split(uri, "/")
+			rkey := parts[len(parts)-1]
+			if rkey != "" {
+				_, _ = atproto.RepoDeleteRecord(ctx, c, &atproto.RepoDeleteRecord_Input{
+					Collection: "app.bsky.actor.link",
+					Repo:       c.Auth.Did,
+					Rkey:       rkey,
+				})
+			}
+		}
+
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			if displayName != "" {
+				raw["displayName"] = displayName
+			} else {
+				delete(raw, "displayName")
+			}
+			if description != "" {
+				raw["description"] = description
+			} else {
+				delete(raw, "description")
+			}
+			if len(strongRefs) > 0 {
+				raw["links"] = strongRefs
+			} else {
+				delete(raw, "links")
+				delete(raw, "website")
+			}
+			return nil
+		})
 	})
 }
 
@@ -1215,36 +1616,10 @@ func (s *SocialService) UploadProfileAvatar(imagePath string) error {
 		if err != nil {
 			return err
 		}
-
-		var profile bsky.ActorProfile
-		var swapRecord *string
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
-		if err == nil && res != nil {
-			swapRecord = res.Cid
-			if res.Value != nil {
-				if existingProfile, ok := res.Value.Val.(*bsky.ActorProfile); ok {
-					profile = *existingProfile
-				} else {
-					bytes, err := json.Marshal(res.Value.Val)
-					if err == nil {
-						_ = json.Unmarshal(bytes, &profile)
-					}
-				}
-			}
-		}
-		profile.LexiconTypeID = "app.bsky.actor.profile"
-		profile.Avatar = blobRef
-
-		input := &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.actor.profile",
-			Repo:       c.Auth.Did,
-			Rkey:       "self",
-			Record:     &util.LexiconTypeDecoder{Val: &profile},
-			SwapRecord: swapRecord,
-		}
-
-		_, err = atproto.RepoPutRecord(ctx, c, input)
-		return err
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			raw["avatar"] = blobRef
+			return nil
+		})
 	})
 }
 
@@ -1256,36 +1631,10 @@ func (s *SocialService) UploadProfileBanner(imagePath string) error {
 		if err != nil {
 			return err
 		}
-
-		var profile bsky.ActorProfile
-		var swapRecord *string
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
-		if err == nil && res != nil {
-			swapRecord = res.Cid
-			if res.Value != nil {
-				if existingProfile, ok := res.Value.Val.(*bsky.ActorProfile); ok {
-					profile = *existingProfile
-				} else {
-					bytes, err := json.Marshal(res.Value.Val)
-					if err == nil {
-						_ = json.Unmarshal(bytes, &profile)
-					}
-				}
-			}
-		}
-		profile.LexiconTypeID = "app.bsky.actor.profile"
-		profile.Banner = blobRef
-
-		input := &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.actor.profile",
-			Repo:       c.Auth.Did,
-			Rkey:       "self",
-			Record:     &util.LexiconTypeDecoder{Val: &profile},
-			SwapRecord: swapRecord,
-		}
-
-		_, err = atproto.RepoPutRecord(ctx, c, input)
-		return err
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			raw["banner"] = blobRef
+			return nil
+		})
 	})
 }
 
@@ -1588,36 +1937,13 @@ func (s *SocialService) PinPost(postUri string, cid string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
-		if err != nil {
-			return err
-		}
-
-		var profile bsky.ActorProfile
-		bytes, err := json.Marshal(res.Value.Val)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(bytes, &profile); err != nil {
-			return fmt.Errorf("failed to unmarshal profile: %w", err)
-		}
-		profile.LexiconTypeID = "app.bsky.actor.profile"
-		
-		profile.PinnedPost = &atproto.RepoStrongRef{
-			Uri: postUri,
-			Cid: cid,
-		}
-
-		input := &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.actor.profile",
-			Repo:       c.Auth.Did,
-			Rkey:       "self",
-			Record:     &util.LexiconTypeDecoder{Val: &profile},
-			SwapRecord: res.Cid,
-		}
-
-		_, err = atproto.RepoPutRecord(ctx, c, input)
-		return err
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			raw["pinnedPost"] = &atproto.RepoStrongRef{
+				Uri: postUri,
+				Cid: cid,
+			}
+			return nil
+		})
 	})
 }
 
@@ -1625,58 +1951,23 @@ func (s *SocialService) AddSelfLabel(val string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
-		if err != nil {
-			return err
-		}
-
-		var profile bsky.ActorProfile
-		bytes, err := json.Marshal(res.Value.Val)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(bytes, &profile); err != nil {
-			return fmt.Errorf("failed to unmarshal profile: %w", err)
-		}
-		profile.LexiconTypeID = "app.bsky.actor.profile"
-
-		if profile.Labels == nil {
-			profile.Labels = &bsky.ActorProfile_Labels{
-				LabelDefs_SelfLabels: &atproto.LabelDefs_SelfLabels{
-					Values: []*atproto.LabelDefs_SelfLabel{},
-				},
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			var selfLabels atproto.LabelDefs_SelfLabels
+			if rawLabels, ok := raw["labels"]; ok && rawLabels != nil {
+				if b, err := json.Marshal(rawLabels); err == nil {
+					_ = json.Unmarshal(b, &selfLabels)
+				}
 			}
-		}
-
-		// Try to decode SelfLabels
-		var selfLabels atproto.LabelDefs_SelfLabels
-		bytesLabels, err := json.Marshal(profile.Labels.LabelDefs_SelfLabels)
-		if err == nil {
-			json.Unmarshal(bytesLabels, &selfLabels)
-		}
-
-		for _, l := range selfLabels.Values {
-			if l.Val == val {
-				return nil // already has label
+			for _, l := range selfLabels.Values {
+				if l != nil && l.Val == val {
+					return nil
+				}
 			}
-		}
-
-		selfLabels.Values = append(selfLabels.Values, &atproto.LabelDefs_SelfLabel{
-			Val: val,
+			selfLabels.LexiconTypeID = "com.atproto.label.defs#selfLabels"
+			selfLabels.Values = append(selfLabels.Values, &atproto.LabelDefs_SelfLabel{Val: val})
+			raw["labels"] = &selfLabels
+			return nil
 		})
-
-		profile.Labels.LabelDefs_SelfLabels = &selfLabels
-
-		input := &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.actor.profile",
-			Repo:       c.Auth.Did,
-			Rkey:       "self",
-			Record:     &util.LexiconTypeDecoder{Val: &profile},
-			SwapRecord: res.Cid,
-		}
-
-		_, err = atproto.RepoPutRecord(ctx, c, input)
-		return err
 	})
 }
 
@@ -1723,53 +2014,34 @@ func (s *SocialService) RemoveSelfLabel(val string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
-		if err != nil {
-			return err
-		}
-
-		var profile bsky.ActorProfile
-		bytes, err := json.Marshal(res.Value.Val)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(bytes, &profile); err != nil {
-			return fmt.Errorf("failed to unmarshal profile: %w", err)
-		}
-		profile.LexiconTypeID = "app.bsky.actor.profile"
-
-		if profile.Labels == nil || profile.Labels.LabelDefs_SelfLabels == nil {
-			return nil
-		}
-
-		var selfLabels atproto.LabelDefs_SelfLabels
-		bytesLabels, err := json.Marshal(profile.Labels.LabelDefs_SelfLabels)
-		if err != nil {
-			return nil
-		}
-		if err := json.Unmarshal(bytesLabels, &selfLabels); err != nil {
-			return nil
-		}
-
-		var newValues []*atproto.LabelDefs_SelfLabel
-		for _, l := range selfLabels.Values {
-			if l.Val != val {
-				newValues = append(newValues, l)
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			rawLabels, ok := raw["labels"]
+			if !ok || rawLabels == nil {
+				return nil
 			}
-		}
-		selfLabels.Values = newValues
-		profile.Labels.LabelDefs_SelfLabels = &selfLabels
-
-		input := &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.actor.profile",
-			Repo:       c.Auth.Did,
-			Rkey:       "self",
-			Record:     &util.LexiconTypeDecoder{Val: &profile},
-			SwapRecord: res.Cid,
-		}
-
-		_, err = atproto.RepoPutRecord(ctx, c, input)
-		return err
+			var selfLabels atproto.LabelDefs_SelfLabels
+			b, err := json.Marshal(rawLabels)
+			if err != nil {
+				return nil
+			}
+			if err := json.Unmarshal(b, &selfLabels); err != nil {
+				return nil
+			}
+			var newValues []*atproto.LabelDefs_SelfLabel
+			for _, l := range selfLabels.Values {
+				if l != nil && l.Val != val {
+					newValues = append(newValues, l)
+				}
+			}
+			if len(newValues) == 0 {
+				delete(raw, "labels")
+			} else {
+				selfLabels.LexiconTypeID = "com.atproto.label.defs#selfLabels"
+				selfLabels.Values = newValues
+				raw["labels"] = &selfLabels
+			}
+			return nil
+		})
 	})
 }
 
@@ -1777,32 +2049,10 @@ func (s *SocialService) UnpinPost() error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.actor.profile", c.Auth.Did, "self")
-		if err != nil {
-			return err
-		}
-
-		var profile bsky.ActorProfile
-		bytes, err := json.Marshal(res.Value.Val)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(bytes, &profile); err != nil {
-			return fmt.Errorf("failed to unmarshal profile: %w", err)
-		}
-		profile.LexiconTypeID = "app.bsky.actor.profile"
-		profile.PinnedPost = nil
-
-		input := &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.actor.profile",
-			Repo:       c.Auth.Did,
-			Rkey:       "self",
-			Record:     &util.LexiconTypeDecoder{Val: &profile},
-			SwapRecord: res.Cid,
-		}
-
-		_, err = atproto.RepoPutRecord(ctx, c, input)
-		return err
+		return s.mutateOwnProfileRecord(ctx, c, func(raw map[string]interface{}) error {
+			delete(raw, "pinnedPost")
+			return nil
+		})
 	})
 }
 

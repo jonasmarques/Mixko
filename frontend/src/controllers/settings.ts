@@ -1,10 +1,10 @@
-import { esc } from '../utils/helpers';
+import { esc, linkify, renderProfileLink } from '../utils/helpers';
 import { state } from '../config/state';
 import { announcePolite, announceAssertive, getPostAccessibleLabel } from '../utils/a11y';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
 import { i18n } from '../utils/i18n';
-import { NotificationPreferencesDTO, NotificationFilterablePrefDTO, NotificationSimplePrefDTO, SavedAccountDTO, AppPasswordDTO, ProfileDTO } from '../types/dto';
+import { NotificationPreferencesDTO, NotificationFilterablePrefDTO, NotificationSimplePrefDTO, SavedAccountDTO, AppPasswordDTO, ProfileDTO, LabelerDTO } from '../types/dto';
 
 type FilterableKey = 'like' | 'repost' | 'reply' | 'mention' | 'quote' | 'follow' | 'likeViaRepost' | 'repostViaRepost';
 type SimpleKey = 'subscribedPost' | 'starterpackJoined' | 'verified' | 'unverified';
@@ -252,7 +252,10 @@ export async function loadSettings() {
             const defGateSel = document.getElementById('setting-default-threadgate') as HTMLSelectElement | null;
             const defDisQuotesCb = document.getElementById('setting-default-disable-quotes') as HTMLInputElement | null;
             if (defGateSel && prefs.defaultThreadgateRules && prefs.defaultThreadgateRules.length > 0) {
-                defGateSel.value = prefs.defaultThreadgateRules[0];
+                const rawRule = prefs.defaultThreadgateRules.join(',');
+                const normalized = rawRule === 'everyone' ? 'everybody' : rawRule;
+                defGateSel.value = normalized;
+                localStorage.setItem('postThreadgate', normalized === 'everybody' ? 'everyone' : normalized);
             }
             if (defDisQuotesCb) defDisQuotesCb.checked = Boolean(prefs.defaultDisableQuotes);
 
@@ -267,11 +270,11 @@ export async function loadSettings() {
             if (mutedRes.profiles.length === 0) {
                 mutedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noMuted')}</p>`;
             }
-            mutedRes.profiles.forEach((p: any) => {
+            mutedRes.profiles.forEach((p: ProfileDTO) => {
                 const div = document.createElement('div');
                 div.style.padding = '5px';
                 div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>@${esc(p.handle)}</span> <button class="btn-unmute" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnmute')}</button>`;
+                div.innerHTML = `<span>${renderProfileLink(p.handle)}</span> <button class="btn-unmute" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnmute')}</button>`;
                 mutedListDiv.appendChild(div);
             });
             mutedListDiv.querySelectorAll('.btn-unmute').forEach(btn => {
@@ -296,11 +299,11 @@ export async function loadSettings() {
             if (blockedRes.profiles.length === 0) {
                 blockedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noBlocked')}</p>`;
             }
-            blockedRes.profiles.forEach((p: any) => {
+            blockedRes.profiles.forEach((p: ProfileDTO) => {
                 const div = document.createElement('div');
                 div.style.padding = '5px';
                 div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>@${esc(p.handle)}</span> <button class="btn-unblock" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnblock')}</button>`;
+                div.innerHTML = `<span>${renderProfileLink(p.handle)}</span> <button class="btn-unblock" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnblock')}</button>`;
                 blockedListDiv.appendChild(div);
             });
             blockedListDiv.querySelectorAll('.btn-unblock').forEach(btn => {
@@ -327,7 +330,7 @@ export async function loadSettings() {
                 if (!labelers || labelers.length === 0) {
                     subscribedLabelersListDiv.innerHTML = `<p style="color: #888; font-size: 0.9em;">${i18n.t('settingsMsgs.noLabelers')}</p>`;
                 } else {
-                    labelers.forEach((l: any) => {
+                    labelers.forEach((l: LabelerDTO) => {
                         const div = document.createElement('div');
                         div.style.display = 'flex';
                         div.style.alignItems = 'center';
@@ -338,17 +341,12 @@ export async function loadSettings() {
                         div.style.borderLeft = '3px solid #3b82f6';
                         div.innerHTML = `
                             <div>
-                                <strong><a href="#" class="open-labeler-profile" data-handle="${esc(l.handle)}" style="color: #60a5fa; text-decoration: none;">${esc(l.displayName || l.handle)}</a></strong>
-                                <span style="font-size: 0.85em; color: #aaa;">(@${esc(l.handle)})</span>
-                                ${l.description ? `<p style="margin: 2px 0 0 0; font-size: 0.85em; color: #ccc;">${esc(l.description)}</p>` : ''}
+                                <strong>${renderProfileLink(l.handle, l.displayName || l.handle)}</strong>
+                                <span style="font-size: 0.85em; color: #aaa;">(${renderProfileLink(l.handle)})</span>
+                                ${l.description ? `<p style="margin: 2px 0 0 0; font-size: 0.85em; color: #ccc;">${linkify(l.description)}</p>` : ''}
                             </div>
                             <button type="button" class="btn-unsubscribe-setting" data-did="${l.did}" data-handle="${l.handle}" style="background-color: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;">${i18n.t('settingsMsgs.btnUnsub')}</button>
                         `;
-                        div.querySelector('.open-labeler-profile')?.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            state.currentHandle = l.handle;
-                            switchTab('profile');
-                        });
                         div.querySelector('.btn-unsubscribe-setting')?.addEventListener('click', async (e) => {
                             e.preventDefault();
                             if (await confirmDialog(i18n.t('settingsMsgs.unsubConfirm', { handle: l.handle }), i18n.t('settingsMsgs.btnUnsub'))) {
@@ -361,7 +359,7 @@ export async function loadSettings() {
                         subscribedLabelersListDiv.appendChild(div);
                     });
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Error loading subscribed labelers:", err);
                 subscribedLabelersListDiv.innerHTML = '<p style="color: #f87171;">' + i18n.t('settingsMsgs.labelerError') + '</p>';
             }
@@ -491,7 +489,7 @@ export async function loadSettings() {
                     mlRes.lists.forEach(lst => {
                         const row = document.createElement('div');
                         row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px; border-bottom:1px solid #444;';
-                        row.innerHTML = `<span><strong>${esc(lst.name)}</strong> <small>(@${esc(lst.creator)})</small></span> <button type="button">${esc(i18n.t('sec2.unmuteListBtn'))}</button>`;
+                        row.innerHTML = `<span><strong>${esc(lst.name)}</strong> <small>(${renderProfileLink(lst.creator)})</small></span> <button type="button">${esc(i18n.t('sec2.unmuteListBtn'))}</button>`;
                         row.querySelector('button')?.addEventListener('click', async () => {
                             try {
                                 await window.go.services.SocialService.UnmuteList(lst.uri);
@@ -519,7 +517,7 @@ export async function loadSettings() {
                     blRes.lists.forEach(lst => {
                         const row = document.createElement('div');
                         row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px; border-bottom:1px solid #444;';
-                        row.innerHTML = `<span><strong>${esc(lst.name)}</strong> <small>(@${esc(lst.creator)})</small></span> <button type="button">${esc(i18n.t('sec2.unblockListBtn'))}</button>`;
+                        row.innerHTML = `<span><strong>${esc(lst.name)}</strong> <small>(${renderProfileLink(lst.creator)})</small></span> <button type="button">${esc(i18n.t('sec2.unblockListBtn'))}</button>`;
                         row.querySelector('button')?.addEventListener('click', async () => {
                             try {
                                 await window.go.services.SocialService.UnblockList(lst.viewerBlock || lst.uri);
@@ -547,7 +545,7 @@ export async function loadSettings() {
                     subRes.profiles.forEach(prof => {
                         const row = document.createElement('div');
                         row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px; border-bottom:1px solid #444;';
-                        row.innerHTML = `<span><strong>${esc(prof.displayName || prof.handle)}</strong> <small>(@${esc(prof.handle)})</small></span> <button type="button">${esc(i18n.t('sec2.unsubscribeActivityBtn'))}</button>`;
+                        row.innerHTML = `<span><strong>${esc(prof.displayName || prof.handle)}</strong> <small>(${renderProfileLink(prof.handle)})</small></span> <button type="button">${esc(i18n.t('sec2.unsubscribeActivityBtn'))}</button>`;
                         row.querySelector('button')?.addEventListener('click', async () => {
                             try {
                                 await window.go.services.NotificationsService.PutActivitySubscription(prof.did, false, false);
@@ -719,10 +717,13 @@ export function setupSettings() {
                 const defGateSel = document.getElementById('setting-default-threadgate') as HTMLSelectElement | null;
                 const defDisQuotesCb = document.getElementById('setting-default-disable-quotes') as HTMLInputElement | null;
                 if (defGateSel) {
+                    const val = defGateSel.value || 'everybody';
+                    const rules = val.split(',').map(r => r.trim()).filter(Boolean);
                     await window.go.services.SocialService.UpdatePostInteractionDefaults(
-                        [defGateSel.value || 'everybody'],
+                        rules.length > 0 ? rules : ['everybody'],
                         Boolean(defDisQuotesCb?.checked)
                     );
+                    localStorage.setItem('postThreadgate', val === 'everybody' ? 'everyone' : val);
                 }
 
                 const interestsInput = document.getElementById('setting-interests-input') as HTMLInputElement | null;
@@ -1057,7 +1058,7 @@ export function setupSettings() {
             res.profiles.forEach((p: ProfileDTO) => {
                 const row = document.createElement('div');
                 row.style.padding = '4px 0';
-                row.innerHTML = `<strong>${esc(p.displayName || p.handle)}</strong> <small>(@${esc(p.handle)})</small>`;
+                row.innerHTML = `<strong>${esc(p.displayName || p.handle)}</strong> <small>(${renderProfileLink(p.handle)})</small>`;
                 listDiv.appendChild(row);
             });
         } catch (err: unknown) {

@@ -7,10 +7,57 @@ import { switchTab } from './tabs';
 import { loadTimeline } from './timeline';
 import { openChatConvo } from './chat';
 import { showMuteMenu } from './shortcuts';
-import { getFilePathOrDataUrl, esc, linkify } from '../utils/helpers';
+import { getFilePathOrDataUrl, esc, escUrl, linkify, renderProfileLink } from '../utils/helpers';
 import { i18n } from '../utils/i18n';
 import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
-import type { StarterPackDTO, ProfileDTO } from '../types/dto';
+import type { StarterPackDTO, ProfileDTO, ProfileLinkDTO } from '../types/dto';
+
+function createProfileLinkRowElement(link?: ProfileLinkDTO): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'profile-link-row';
+  row.style.cssText = 'display:flex; gap:6px; align-items:center; flex-wrap:wrap;';
+  if (link?.uri) row.dataset.uri = link.uri;
+  if (link?.cid) row.dataset.cid = link.cid;
+
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text';
+  titleInput.className = 'profile-link-title';
+  titleInput.placeholder = i18n.t('profile.linkTitlePlaceholder');
+  titleInput.setAttribute('aria-label', i18n.t('profile.linkTitlePlaceholder'));
+  titleInput.value = link?.title || '';
+  titleInput.style.cssText = 'flex:1; min-width:130px;';
+
+  const urlInput = document.createElement('input');
+  urlInput.type = 'url';
+  urlInput.className = 'profile-link-url';
+  urlInput.placeholder = i18n.t('profile.linkUrlPlaceholder');
+  urlInput.setAttribute('aria-label', i18n.t('profile.linkUrlPlaceholder'));
+  urlInput.value = link?.url || '';
+  urlInput.style.cssText = 'flex:2; min-width:180px;';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn-remove-profile-link';
+  removeBtn.textContent = i18n.t('profile.removeLinkBtn');
+  removeBtn.style.cssText = 'background:#ef4444; color:#fff; padding:4px 8px;';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+  });
+
+  row.appendChild(titleInput);
+  row.appendChild(urlInput);
+  row.appendChild(removeBtn);
+  return row;
+}
+
+function populateEditProfileLinks(links: ProfileLinkDTO[]) {
+  const listEl = document.getElementById('edit-profile-links-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  links.forEach((l) => {
+    listEl.appendChild(createProfileLinkRowElement(l));
+  });
+}
 
 /** @param silent suppresses the "loaded" announcement, for pages fetched to restore focus. */
 export async function loadProfile(loadMore = false, keepFocus = false, silent = false) {
@@ -151,15 +198,37 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             }
           }
 
+          const rawLinks: ProfileLinkDTO[] = Array.isArray(res.links) ? [...res.links] : [];
+          if (res.website && !rawLinks.some((l) => l.url === res.website)) {
+            rawLinks.push({ url: res.website, title: res.website });
+          }
+          let profileLinksHtml = "";
+          if (rawLinks.length > 0) {
+            const items = rawLinks
+              .filter((l) => Boolean(l.url))
+              .map((l) => {
+                const rawUrl = l.url.trim();
+                const fullUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+                const safeUrl = escUrl(fullUrl);
+                const label = esc(l.title || rawUrl);
+                return `<a href="${safeUrl}" class="app-link link-external profile-ext-link" data-external-url="${safeUrl}" style="display:inline-flex; align-items:center; gap:4px; margin-right:12px; color:var(--primary-color, #38bdf8); text-decoration:underline;">🔗 ${label}</a>`;
+              })
+              .join(" ");
+            if (items) {
+              profileLinksHtml = `<div class="profile-links-bar" style="margin: 8px 0; display:flex; flex-wrap:wrap; gap:8px;">${items}</div>`;
+            }
+          }
+
           container.innerHTML = `
             <div class="post-item profile-header" tabindex="0" data-text="${esc(i18n.t('profile.profileAriaDetails', { name: res.displayName, followsYou: res.viewerFollowedBy ? i18n.t('profile.followsYouAria') : '', isLabeler: res.isLabeler ? i18n.t('profile.isLabelerAria') : '', followers: res.followersCount.toString(), following: res.followsCount.toString(), shortcuts: res.isMe ? '' : i18n.t('profile.shortcutsAria') }))}">
               ${blockedNotice}
               ${liveStatusHtml}
               ${labelerBadge}
-              <h3>${esc(res.displayName)} (@${esc(res.handle)})${verificationBadgeHtml}</h3>
+              <h3>${esc(res.displayName)} (${renderProfileLink(res.handle)})${verificationBadgeHtml}</h3>
               ${res.viewerFollowedBy ? `<p><em>${i18n.t('profile.followsYouText')}</em></p>` : ''}
               <div id="known-followers-container" aria-live="polite" style="display:none; margin: 8px 0; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 6px;"></div>
-              <p>${linkify(res.description || '')}</p>
+              <p class="profile-bio">${linkify(res.description || '')}</p>
+              ${profileLinksHtml}
               <p>
                 <strong>${res.followersCount}</strong> ${i18n.t('profile.tabFollowers')} | 
                 <strong>${res.followsCount}</strong> ${i18n.t('profile.tabFollowing')} | 
@@ -549,6 +618,8 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                     if (avatarInput) avatarInput.value = '';
                     if (bannerInput) bannerInput.value = '';
 
+                    populateEditProfileLinks(rawLinks);
+
                     const labelCheckboxes = document.querySelectorAll<HTMLInputElement>('.edit-self-label');
                     labelCheckboxes.forEach(cb => { cb.checked = false; cb.dataset.initial = 'false'; });
 
@@ -620,8 +691,8 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 article.setAttribute('tabindex', '0');
                 article.dataset.index = state.currentPosts.length.toString();
                 article.innerHTML = `
-                    <h3>${esc(feed.displayName)} <small>(@${esc(feed.creator)})</small></h3>
-                    <p>${esc(feed.description || '')}</p>
+                    <h3>${esc(feed.displayName)} <small>(${renderProfileLink(feed.creator)})</small></h3>
+                    <p>${linkify(feed.description || '')}</p>
                     <small>${i18n.t('feeds.likesCount', { count: (feed.likeCount || 0).toString() })}</small>
                     <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
                         <button class="btn-open-actor-feed">${esc(i18n.t('feeds.openFeedBtn'))}</button>
@@ -675,7 +746,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 div.classList.add('post-item');
                 div.setAttribute('tabindex', '0');
                 div.dataset.text = i18n.t('profile.profileCardAria', { name: prof.displayName || prof.handle, desc: prof.description || '' });
-                div.innerHTML = `<h3>${esc(prof.displayName)} <small>(@${esc(prof.handle)})</small></h3><p>${esc(prof.description || '')}</p>`;
+                div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3><p>${linkify(prof.description || '')}</p>`;
                 
                 div.dataset.index = state.currentPosts.length.toString();
                 div.addEventListener('focus', () => {
@@ -747,7 +818,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
 
                 article.innerHTML = `
                     <h3>${esc(item.name)}</h3>
-                    <p>${esc(item.description || '')}</p>
+                    <p>${linkify(item.description || '')}</p>
                     <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
                         <button class="btn-view-starter-pack" data-uri="${esc(item.uri)}" style="padding:4px 10px;">${esc(i18n.t('sec2.viewStarterPackBtn'))}</button>
                         ${followAllBtnHtml}
@@ -769,8 +840,8 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                     detailsBox.innerHTML = `<p>${esc(i18n.t('modals.loading'))}</p>`;
                     try {
                         const detail = await window.go.services.SocialService.GetStarterPack(item.uri);
-                        const membersHtml = (detail?.members || []).map(m => `<li>${esc(m.displayName || m.handle)} (@${esc(m.handle)})</li>`).join('');
-                        const feedsHtml = (detail?.feeds || []).map(f => `<li>${esc(f.displayName)} (@${esc(f.creator)})</li>`).join('');
+                        const membersHtml = (detail?.members || []).map(m => `<li>${esc(m.displayName || m.handle)} (${renderProfileLink(m.handle)})</li>`).join('');
+                        const feedsHtml = (detail?.feeds || []).map(f => `<li>${esc(f.displayName)} (${renderProfileLink(f.creator)})</li>`).join('');
                         detailsBox.innerHTML = `
                             <p><strong>${esc(i18n.t('profile.tabFollowers'))}:</strong></p>
                             <ul>${membersHtml || `<li>-</li>`}</ul>
@@ -856,7 +927,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             state.currentPosts[0].focus();
         }
     }
-  } catch (err: any) { console.error(err); announceAssertive(i18n.t('profile.loadProfileError')); } 
+  } catch (err: unknown) { console.error(err); announceAssertive(i18n.t('profile.loadProfileError')); } 
   finally { container.setAttribute('aria-busy', 'false'); }
 }
 
@@ -864,7 +935,23 @@ export function setupProfile() {
   const editForm = document.getElementById('edit-profile-form') as HTMLFormElement;
   const cancelBtn = document.getElementById('btn-close-edit-profile');
   const saveBtn = document.getElementById('btn-save-profile') as HTMLButtonElement | null;
+  const addLinkBtn = document.getElementById('btn-add-profile-link') as HTMLButtonElement | null;
   const dialog = document.getElementById('edit-profile-modal') as HTMLDialogElement;
+
+  if (addLinkBtn) {
+    addLinkBtn.addEventListener('click', () => {
+      const listEl = document.getElementById('edit-profile-links-list');
+      if (!listEl) return;
+      const rows = listEl.querySelectorAll('.profile-link-row');
+      if (rows.length >= 10) {
+        announceAssertive(i18n.t('profile.maxLinksReached'));
+        return;
+      }
+      const newRow = createProfileLinkRowElement();
+      listEl.appendChild(newRow);
+      (newRow.querySelector('.profile-link-title') as HTMLInputElement | null)?.focus();
+    });
+  }
 
   if (editForm) {
     editForm.addEventListener('submit', (e) => {
@@ -906,10 +993,28 @@ export function setupProfile() {
     const name = nameInput?.value.trim() ?? '';
     const desc = descInput?.value.trim() ?? '';
 
+    const links: ProfileLinkDTO[] = [];
+    const linkRows = document.querySelectorAll<HTMLDivElement>('#edit-profile-links-list .profile-link-row');
+    linkRows.forEach((row) => {
+      const titleVal = (row.querySelector('.profile-link-title') as HTMLInputElement | null)?.value.trim() ?? '';
+      let urlVal = (row.querySelector('.profile-link-url') as HTMLInputElement | null)?.value.trim() ?? '';
+      if (urlVal) {
+        if (!/^https?:\/\//i.test(urlVal)) {
+          urlVal = `https://${urlVal}`;
+        }
+        links.push({
+          uri: row.dataset.uri || undefined,
+          cid: row.dataset.cid || undefined,
+          title: titleVal || urlVal,
+          url: urlVal
+        });
+      }
+    });
+
     if (saveBtn) saveBtn.disabled = true;
 
     try {
-      await window.go.services.SocialService.UpdateProfile(name, desc);
+      await window.go.services.SocialService.UpdateProfileWithLinks(name, desc, links);
 
       if (avatarInput?.files && avatarInput.files.length > 0) {
         const pathOrData = await getFilePathOrDataUrl(avatarInput.files[0]);
@@ -937,11 +1042,11 @@ export function setupProfile() {
 
       const headerTitle = document.querySelector('.profile-header h3');
       if (headerTitle) {
-        headerTitle.textContent = `${name || `@${state.currentHandle}`} (@${state.currentHandle})`;
+        headerTitle.innerHTML = `${esc(name || `@${state.currentHandle}`)} (${renderProfileLink(state.currentHandle)})`;
       }
-      const headerDesc = document.querySelector('.profile-header p:not(:has(em))');
-      if (headerDesc && !headerDesc.querySelector('strong')) {
-        headerDesc.textContent = desc;
+      const headerDesc = document.querySelector('.profile-header p.profile-bio');
+      if (headerDesc) {
+        headerDesc.innerHTML = linkify(desc);
       }
 
       announceAssertive(i18n.t('profile.profileUpdatedSuccess'));
