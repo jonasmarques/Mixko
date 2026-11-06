@@ -132,7 +132,7 @@ export function UpdatePostInteractionDefaults(arg1:Array<string>,arg2:boolean):P
 
 export function UpdateProfile(arg1:string,arg2:string):Promise<void>;
 
-export function UpdateProfileWithLinks(arg1:string,arg2:string,arg3:Array<services.ProfileLinkDTO>):Promise<void>;
+export function UpdateProfileWithLinks(arg1:string,arg2:string,arg3:string,arg4:Array<services.ProfileLinkDTO>):Promise<void>;
 
 export function UpdateSavedFeeds(arg1:Array<string>,arg2:Array<string>):Promise<void>;
 

@@ -3,16 +3,46 @@ import { announcePolite, announceAssertive, formatAuthor } from '../utils/a11y';
 import { createPostArticle, cleanupContainerVideos, bindContainerVideos } from '../components/post';
 import { i18n } from '../utils/i18n';
 import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload, restoreKeyOf } from '../utils/pagination';
+import type { NotificationDTO, PostDTO, PostView } from '../types/dto';
 
 /** Reasons whose post lives in reasonSubject, so several of them collapse into one row. */
 const GROUPABLE_REASONS = ['like', 'repost', 'like-via-repost', 'repost-via-repost'];
 
-function groupNotificationsList(notifications: any[], hydratedMap: Record<string, any> = {}): any[] {
-  const result: any[] = [];
-  const groupMap = new Map<string, { main: any; authors: string[]; origText: string; isRepostOfRepost: boolean }>();
+const FILTER_REASONS_MAP: Record<string, string> = {
+  all: '',
+  mentions: 'mention,reply,quote',
+  likes: 'like,like-via-repost',
+  reposts: 'repost,repost-via-repost',
+  follows: 'follow',
+};
+
+function resolveButtonFilterReason(btn: HTMLButtonElement): string {
+  if (btn.dataset.reason !== undefined && btn.dataset.reason !== '') {
+    return btn.dataset.reason;
+  }
+  const filterKey = btn.dataset.filter || 'all';
+  return FILTER_REASONS_MAP[filterKey] ?? (btn.dataset.reason || '');
+}
+
+function syncNotifFilterBarUI(filterBar: HTMLElement): void {
+  filterBar.querySelectorAll<HTMLButtonElement>('.btn-notif-filter').forEach(b => {
+    const isActive = resolveButtonFilterReason(b) === state.notifFilterReason;
+    b.classList.toggle('active', isActive);
+    b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    b.style.fontWeight = isActive ? 'bold' : 'normal';
+  });
+  const priorityCb = document.getElementById('notif-filter-priority') as HTMLInputElement | null;
+  if (priorityCb) {
+    priorityCb.checked = state.notifFilterPriority;
+  }
+}
+
+function groupNotificationsList(notifications: NotificationDTO[], hydratedMap: Record<string, PostDTO> = {}): NotificationDTO[] {
+  const result: NotificationDTO[] = [];
+  const groupMap = new Map<string, { main: NotificationDTO; authors: string[]; origText: string; isRepostOfRepost: boolean }>();
   const groupOrder: string[] = [];
 
-  notifications.forEach((notif: any) => {
+  notifications.forEach((notif: NotificationDTO) => {
     if (GROUPABLE_REASONS.includes(notif.reason) && notif.reasonSubject) {
       const key = `${notif.reason}:${notif.reasonSubject}`;
       const authorLabel = formatAuthor(notif.authorName, notif.authorHandle);
@@ -112,9 +142,12 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
     filterBar.dataset.bound = 'true';
     filterBar.querySelectorAll<HTMLButtonElement>('.btn-notif-filter').forEach(btn => {
       btn.addEventListener('click', () => {
-        state.notifFilterReason = btn.dataset.reason || '';
+        state.notifFilterReason = resolveButtonFilterReason(btn);
+        state.showOnlyMentions = state.notifFilterReason === FILTER_REASONS_MAP.mentions;
+        state.focusedPostIndex = -1;
+        syncNotifFilterBarUI(filterBar);
         filterBar.querySelectorAll<HTMLButtonElement>('.btn-notif-filter').forEach(b => {
-          b.style.fontWeight = (b.dataset.reason || '') === state.notifFilterReason ? 'bold' : 'normal';
+          b.style.fontWeight = resolveButtonFilterReason(b) === state.notifFilterReason ? 'bold' : 'normal';
         });
         loadNotifications(false);
       });
@@ -124,11 +157,13 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
       priorityCb.checked = state.notifFilterPriority;
       priorityCb.addEventListener('change', () => {
         state.notifFilterPriority = priorityCb.checked;
+        state.focusedPostIndex = -1;
         loadNotifications(false);
       });
     }
   }
 
+  if (filterBar) syncNotifFilterBarUI(filterBar);
   if (loadMore && state.notificationsCursor === "") {
     announcePolite(i18n.t('notif.endOfNotifs'));
     return;
@@ -151,16 +186,20 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
         ? await window.go.services.NotificationsService.GetNotificationsFiltered(state.notificationsCursor, reasons, state.notifFilterPriority)
         : await window.go.services.NotificationsService.GetNotifications(state.notificationsCursor);
       if (res) markPageLoaded('notifications');
-      if (res && res.notifications) {
+      const rawNotifications = (res && res.notifications) ? res.notifications : [];
+      const filteredNotifications = reasons.length > 0
+        ? rawNotifications.filter(n => reasons.includes(n.reason))
+        : rawNotifications;
+      if (filteredNotifications.length > 0) {
         if (!loadMore) {
           cleanupContainerVideos(container);
           container.innerHTML = '';
           state.currentPosts = [];
         }
-        let itemsToRender = res.notifications;
+        let itemsToRender = filteredNotifications;
 
-        const hydratedMap: Record<string, any> = {};
-        res.notifications.forEach((n) => {
+        const hydratedMap: Record<string, PostDTO> = {};
+        filteredNotifications.forEach((n) => {
             if (n.hydratedPost) {
                 const key = GROUPABLE_REASONS.includes(n.reason) && n.reasonSubject ? n.reasonSubject : n.uri;
                 hydratedMap[key] = n.hydratedPost;
@@ -168,10 +207,10 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
         });
 
         if (state.notificationFormat === 'combined') {
-          itemsToRender = groupNotificationsList(res.notifications, hydratedMap);
+          itemsToRender = groupNotificationsList(filteredNotifications, hydratedMap);
         }
 
-        itemsToRender.forEach((notif: any, idx: number) => {
+        itemsToRender.forEach((notif: NotificationDTO, idx: number) => {
           const postUri = GROUPABLE_REASONS.includes(notif.reason) && notif.reasonSubject
               ? notif.reasonSubject
               : notif.uri;
@@ -265,7 +304,38 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
             }
         }
 
-        const mockPost = {
+        const fallbackQuotePost: PostDTO | null = notif.quoteUri ? {
+            uri: notif.quoteUri,
+            cid: "",
+            authorName: notif.quoteAuthorName || "",
+            authorHandle: notif.quoteAuthorHandle || "",
+            authorDid: "",
+            text: notif.quoteText || "",
+            createdAt: "",
+            replyCount: 0,
+            repostCount: 0,
+            likeCount: 0,
+            isReply: false,
+            replyToAuthor: "",
+            replyToUri: "",
+            rootAuthor: "",
+            rootUri: "",
+            parentPost: null,
+            rootPost: null,
+            repostedBy: "",
+            repostedByHandle: "",
+            quotePost: null,
+            imageAlts: null,
+            images: null,
+            external: null,
+            video: null,
+            hasMedia: false,
+            viewerLike: "",
+            viewerRepost: "",
+            viewerBookmark: "",
+        } : null;
+
+        const mockPost: PostView = {
            uri: postUri,
            cid: notif.cid,
            authorDid: notif.authorDid,
@@ -283,12 +353,12 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
            likeCount: hydrated ? hydrated.likeCount : undefined,
            viewerLike: hydrated ? hydrated.viewerLike : undefined,
            viewerRepost: hydrated ? hydrated.viewerRepost : undefined,
-           quotePost: (hydrated && hydrated.quotePost) ? hydrated.quotePost : (notif.quoteUri ? {
-               uri: notif.quoteUri,
-               authorName: notif.quoteAuthorName,
-               authorHandle: notif.quoteAuthorHandle,
-               text: notif.quoteText,
-           } : undefined)
+           quotePost: (hydrated && hydrated.quotePost) ? hydrated.quotePost : fallbackQuotePost,
+
+
+
+
+
         };
         const article = createPostArticle(mockPost, idx, true, notif.reason);
         if (!article) return;
@@ -316,9 +386,26 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
       });
       bindContainerVideos(container);
       state.notificationsCursor = res.cursor || "";
-      if (!silent) announcePolite(i18n.t('notif.notifsLoaded', { count: state.currentPosts.length.toString() }));
-      window.go.services.NotificationsService.UpdateSeen(new Date().toISOString()).catch((e: any) => console.error(e));
-    } else { if (!loadMore) container.innerHTML = `<p>${i18n.t('notif.noNotifs')}</p>`; }
+      if (state.currentPosts.length === 0 && !loadMore) {
+        container.innerHTML = `<p>${i18n.t('notif.noNotifs')}</p>`;
+        state.focusedPostIndex = -1;
+        if (!silent) announcePolite(i18n.t('notif.noNotifs'));
+      } else if (!silent) {
+        announcePolite(i18n.t('notif.notifsLoaded', { count: state.currentPosts.length.toString() }));
+      }
+      window.go.services.NotificationsService.UpdateSeen(new Date().toISOString()).catch((e: unknown) => console.error(e));
+    } else {
+      state.notificationsCursor = res ? (res.cursor || "") : "";
+      if (!loadMore) {
+        cleanupContainerVideos(container);
+        container.innerHTML = `<p>${i18n.t('notif.noNotifs')}</p>`;
+        state.currentPosts = [];
+        state.focusedPostIndex = -1;
+        if (!silent) announcePolite(i18n.t('notif.noNotifs'));
+      } else if (state.notificationsCursor === "" && !silent) {
+        announcePolite(i18n.t('notif.endOfNotifs'));
+      }
+    }
     state.tabStates['notifications'].loaded = true;
     if (!loadMore && state.currentPosts.length > 0) {
         const focused = await restoreFocusAfterReload({
@@ -342,6 +429,6 @@ export async function loadNotifications(loadMore = false, keepFocus = false, sil
             state.focusedPostIndex = state.currentPosts.length - 1;
         }
     }
-  } catch (err: any) { console.error(err); announceAssertive(i18n.t('notif.loadError')); } 
+  } catch (err: unknown) { console.error(err); announceAssertive(i18n.t('notif.loadError')); } 
   finally { container.setAttribute('aria-busy', 'false'); }
 }

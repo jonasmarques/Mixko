@@ -10,8 +10,14 @@ function createSearchProfileArticle(prof: ProfileDTO): HTMLElement {
     const div = document.createElement('article');
     div.classList.add('post-item');
     div.setAttribute('tabindex', '0');
-    div.dataset.text = i18n.t('search.profileAria', { name: prof.displayName || prof.handle, desc: prof.description || "" });
-    div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3><p>${linkify(prof.description || '')}</p>`;
+    const nameWithPronouns = prof.pronouns
+        ? `${prof.displayName || prof.handle}. ${i18n.t('profile.pronounsLabel')}: ${prof.pronouns}`
+        : (prof.displayName || prof.handle);
+    const pronounsHtml = prof.pronouns
+        ? `<p class="profile-pronouns" style="margin: 2px 0; font-size: 0.9em; color: var(--text-muted, #9ca3af);">${esc(prof.pronouns)}</p>`
+        : '';
+    div.dataset.text = i18n.t('search.profileAria', { name: nameWithPronouns, desc: prof.description || "" });
+    div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3>${pronounsHtml}<p>${linkify(prof.description || '')}</p>`;
     
     div.dataset.index = state.currentPosts.length.toString();
     div.addEventListener('focus', () => {

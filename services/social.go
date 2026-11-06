@@ -709,9 +709,13 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 
 		verified, trustedVerifier := parseVerificationState(res.Verification)
 		website := safeString(res.Website)
-		links, resolvedWebsite := s.fetchProfileLinks(ctx, c, res.Did, website, res.Links)
+		pronouns := strings.TrimSpace(safeString(res.Pronouns))
+		links, resolvedWebsite, repoPronouns, hasRepoProfile := s.fetchProfileLinks(ctx, c, res.Did, website, res.Links)
 		if resolvedWebsite != "" {
 			website = resolvedWebsite
+		}
+		if hasRepoProfile && (res.Did == c.Auth.Did || pronouns == "") {
+			pronouns = repoPronouns
 		}
 
 		out = &ProfileDTO{
@@ -719,6 +723,7 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 			Handle:                     res.Handle,
 			DisplayName:                name,
 			Description:                desc,
+			Pronouns:                   pronouns,
 			Avatar:                     safeString(res.Avatar),
 			Website:                    website,
 			Links:                      links,
@@ -764,6 +769,7 @@ func ParseProfileView(view *bsky.ActorDefs_ProfileView) *ProfileDTO {
 		Handle:          view.Handle,
 		DisplayName:     safeString(view.DisplayName),
 		Description:     safeString(view.Description),
+		Pronouns:        strings.TrimSpace(safeString(view.Pronouns)),
 		Avatar:          safeString(view.Avatar),
 		ViewerFollowing: viewerFollowing,
 		Verified:        verified,
@@ -791,6 +797,7 @@ func ParseProfileViewBasic(view *bsky.ActorDefs_ProfileViewBasic) *ProfileDTO {
 		DID:             view.Did,
 		Handle:          view.Handle,
 		DisplayName:     safeString(view.DisplayName),
+		Pronouns:        strings.TrimSpace(safeString(view.Pronouns)),
 		Avatar:          safeString(view.Avatar),
 		ViewerFollowing: viewerFollowing,
 		Verified:        verified,
@@ -1142,8 +1149,10 @@ func (s *SocialService) rawRepoListRecords(ctx context.Context, c *xrpc.Client, 
 	return &out, nil
 }
 
-func (s *SocialService) fetchProfileLinks(ctx context.Context, c *xrpc.Client, actorDid string, initialWebsite string, hydratedLinks []profileLinkViewRaw) ([]ProfileLinkDTO, string) {
+func (s *SocialService) fetchProfileLinks(ctx context.Context, c *xrpc.Client, actorDid string, initialWebsite string, hydratedLinks []profileLinkViewRaw) ([]ProfileLinkDTO, string, string, bool) {
 	website := strings.TrimSpace(initialWebsite)
+	repoPronouns := ""
+	hasRepoProfile := false
 	var links []ProfileLinkDTO
 	seenURLs := make(map[string]bool)
 	addLink := func(l ProfileLinkDTO) {
@@ -1213,7 +1222,11 @@ func (s *SocialService) fetchProfileLinks(ctx context.Context, c *xrpc.Client, a
 		}
 
 		if profRes, err := s.rawRepoGetRecord(ctx, c, actorDid, "app.bsky.actor.profile", "self"); err == nil && profRes != nil && profRes.Value != nil {
+			hasRepoProfile = true
 			raw := profRes.Value
+			if p, ok := raw["pronouns"].(string); ok {
+				repoPronouns = strings.TrimSpace(p)
+			}
 			if w, ok := raw["website"].(string); ok && strings.TrimSpace(w) != "" && website == "" {
 				website = strings.TrimSpace(w)
 			}
@@ -1264,7 +1277,7 @@ func (s *SocialService) fetchProfileLinks(ctx context.Context, c *xrpc.Client, a
 		website = links[0].URL
 	}
 
-	return links, website
+	return links, website, repoPronouns, hasRepoProfile
 }
 
 func (s *SocialService) mutateOwnProfileRecord(ctx context.Context, c *xrpc.Client, mutate func(raw map[string]interface{}) error) error {
@@ -1314,7 +1327,24 @@ func (s *SocialService) UpdateProfile(displayName, description string) error {
 	})
 }
 
-func (s *SocialService) UpdateProfileWithLinks(displayName, description string, links []ProfileLinkDTO) error {
+func sanitizePronouns(pronouns string) string {
+	cleaned := strings.ReplaceAll(pronouns, "\r", " ")
+	cleaned = strings.ReplaceAll(cleaned, "\n", " ")
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return ""
+	}
+	runes := []rune(cleaned)
+	if len(runes) > 20 {
+		runes = runes[:20]
+	}
+	for len(runes) > 0 && len(string(runes)) > 200 {
+		runes = runes[:len(runes)-1]
+	}
+	return strings.TrimSpace(string(runes))
+}
+
+func (s *SocialService) UpdateProfileWithLinks(displayName, description, pronouns string, links []ProfileLinkDTO) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
@@ -1456,6 +1486,12 @@ func (s *SocialService) UpdateProfileWithLinks(displayName, description string, 
 				raw["description"] = description
 			} else {
 				delete(raw, "description")
+			}
+			cleanPronouns := sanitizePronouns(pronouns)
+			if cleanPronouns != "" {
+				raw["pronouns"] = cleanPronouns
+			} else {
+				delete(raw, "pronouns")
 			}
 			if len(strongRefs) > 0 {
 				raw["links"] = strongRefs

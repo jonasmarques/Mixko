@@ -8,7 +8,38 @@ import (
 )
 
 var globalDIDCache sync.Map
+var globalHandleToDIDCache sync.Map
 var globalAuthorCache sync.Map
+var globalPDSCache sync.Map
+
+func normalizePDSHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		host = "https://" + host
+	}
+	return strings.TrimRight(host, "/")
+}
+
+func CachePDSHost(did, host string) {
+	did = strings.TrimSpace(did)
+	normalized := normalizePDSHost(host)
+	if did == "" || normalized == "" {
+		return
+	}
+	globalPDSCache.Store(did, normalized)
+}
+
+func GetPDSHostForDID(did string) (string, bool) {
+	if val, ok := globalPDSCache.Load(strings.TrimSpace(did)); ok {
+		if host, ok := val.(string); ok && host != "" {
+			return host, true
+		}
+	}
+	return "", false
+}
 
 type AuthorIdentity struct {
 	DID         string `json:"did"`
@@ -22,6 +53,7 @@ func CacheAuthor(did, handle, displayName string) {
 	}
 	if handle != "" && !strings.HasPrefix(handle, "did:") {
 		globalDIDCache.Store(did, handle)
+		globalHandleToDIDCache.Store(strings.ToLower(strings.TrimSpace(handle)), did)
 	}
 	existing, ok := GetAuthorForDID(did)
 	if ok {
@@ -64,30 +96,39 @@ func GetHandleForDID(did string) (string, bool) {
 	return "", false
 }
 
+func GetDIDForHandle(handle string) (string, bool) {
+	if val, ok := globalHandleToDIDCache.Load(strings.ToLower(strings.TrimSpace(handle))); ok {
+		if did, ok := val.(string); ok && did != "" {
+			return did, true
+		}
+	}
+	return "", false
+}
 
 type PostDTO struct {
-	URI               string   `json:"uri"`
-	CID               string   `json:"cid"`
-	AuthorName        string   `json:"authorName"`
-	AuthorHandle      string   `json:"authorHandle"`
-	AuthorDID         string   `json:"authorDid"`
-	AuthorVerified    bool     `json:"authorVerified,omitempty"`
-	Text              string   `json:"text"`
-	CreatedAt         string   `json:"createdAt"`
-	ReplyCount        int64    `json:"replyCount"`
-	RepostCount       int64    `json:"repostCount"`
-	LikeCount         int64    `json:"likeCount"`
-	IsReply           bool     `json:"isReply"`
-	ReplyToAuthor     string   `json:"replyToAuthor"`
-	ReplyToAuthorName string   `json:"replyToAuthorName,omitempty"`
-	ReplyToURI        string   `json:"replyToUri"`
-	RootAuthor        string   `json:"rootAuthor"`
-	RootAuthorName    string   `json:"rootAuthorName,omitempty"`
-	RootURI           string   `json:"rootUri"`
-	ParentPost        *PostDTO `json:"parentPost"`
-	RootPost          *PostDTO `json:"rootPost"`
-	RepostedBy       string   `json:"repostedBy"`
-	RepostedByHandle string   `json:"repostedByHandle"`
+	URI               string            `json:"uri"`
+	CID               string            `json:"cid"`
+	AuthorName        string            `json:"authorName"`
+	AuthorHandle      string            `json:"authorHandle"`
+	AuthorDID         string            `json:"authorDid"`
+	AuthorPronouns    string            `json:"authorPronouns,omitempty"`
+	AuthorVerified    bool              `json:"authorVerified,omitempty"`
+	Text              string            `json:"text"`
+	CreatedAt         string            `json:"createdAt"`
+	ReplyCount        int64             `json:"replyCount"`
+	RepostCount       int64             `json:"repostCount"`
+	LikeCount         int64             `json:"likeCount"`
+	IsReply           bool              `json:"isReply"`
+	ReplyToAuthor     string            `json:"replyToAuthor"`
+	ReplyToAuthorName string            `json:"replyToAuthorName,omitempty"`
+	ReplyToURI        string            `json:"replyToUri"`
+	RootAuthor        string            `json:"rootAuthor"`
+	RootAuthorName    string            `json:"rootAuthorName,omitempty"`
+	RootURI           string            `json:"rootUri"`
+	ParentPost        *PostDTO          `json:"parentPost"`
+	RootPost          *PostDTO          `json:"rootPost"`
+	RepostedBy        string            `json:"repostedBy"`
+	RepostedByHandle  string            `json:"repostedByHandle"`
 	QuotePost         *PostDTO          `json:"quotePost"`
 	QuoteDetached     bool              `json:"quoteDetached,omitempty"`
 	QuoteDetachedURI  string            `json:"quoteDetachedUri,omitempty"`
@@ -178,22 +219,22 @@ type FeedDTO struct {
 }
 
 type NotificationDTO struct {
-	URI          string `json:"uri"`
-	CID          string `json:"cid"`
-	AuthorDID    string `json:"authorDid"`
-	AuthorName   string `json:"authorName"`
-	AuthorHandle string `json:"authorHandle"`
-	Reason        string `json:"reason"`
-	IndexedAt     string `json:"indexedAt"`
-	Text          string `json:"text"`
-	ReasonSubject string `json:"reasonSubject"`
-	HasMedia      bool   `json:"hasMedia"`
-	Video         *VideoEmbedDTO `json:"video"`
-	QuoteAuthorName   string `json:"quoteAuthorName,omitempty"`
-	QuoteAuthorHandle string `json:"quoteAuthorHandle,omitempty"`
-	QuoteText         string `json:"quoteText,omitempty"`
-	QuoteUri          string `json:"quoteUri,omitempty"`
-	HydratedPost      *PostDTO `json:"hydratedPost,omitempty"`
+	URI               string         `json:"uri"`
+	CID               string         `json:"cid"`
+	AuthorDID         string         `json:"authorDid"`
+	AuthorName        string         `json:"authorName"`
+	AuthorHandle      string         `json:"authorHandle"`
+	Reason            string         `json:"reason"`
+	IndexedAt         string         `json:"indexedAt"`
+	Text              string         `json:"text"`
+	ReasonSubject     string         `json:"reasonSubject"`
+	HasMedia          bool           `json:"hasMedia"`
+	Video             *VideoEmbedDTO `json:"video"`
+	QuoteAuthorName   string         `json:"quoteAuthorName,omitempty"`
+	QuoteAuthorHandle string         `json:"quoteAuthorHandle,omitempty"`
+	QuoteText         string         `json:"quoteText,omitempty"`
+	QuoteUri          string         `json:"quoteUri,omitempty"`
+	HydratedPost      *PostDTO       `json:"hydratedPost,omitempty"`
 	// Reply notifications also fire for the thread root author, so the post
 	// being answered is often somebody else's. These carry that author so the
 	// UI can say "replied to X" instead of assuming "replied to your post".
@@ -291,6 +332,7 @@ type ProfileDTO struct {
 	Handle                     string                   `json:"handle"`
 	DisplayName                string                   `json:"displayName"`
 	Description                string                   `json:"description"`
+	Pronouns                   string                   `json:"pronouns,omitempty"`
 	Avatar                     string                   `json:"avatar"`
 	Website                    string                   `json:"website,omitempty"`
 	Links                      []ProfileLinkDTO         `json:"links,omitempty"`
@@ -410,22 +452,22 @@ type ChatReactionDTO struct {
 }
 
 type ChatMessageDTO struct {
-	ID                        string            `json:"id"`
-	Rev                       string            `json:"rev"`
-	Sender                    string            `json:"sender"`
-	SenderDID                 string            `json:"senderDid"`
-	SenderHandle              string            `json:"senderHandle,omitempty"`
-	SenderDisplayName         string            `json:"senderDisplayName,omitempty"`
-	Text                      string            `json:"text"`
-	SentAt                    string            `json:"sentAt"`
-	EmbedURI                  string            `json:"embedUri,omitempty"`
-	ReplyToMessageID          string            `json:"replyToMessageId,omitempty"`
-	ReplyToMessageText        string            `json:"replyToMessageText,omitempty"`
-	ReplyToSender             string            `json:"replyToSender,omitempty"`
-	ReplyToSenderDID          string            `json:"replyToSenderDid,omitempty"`
-	ReplyToSenderHandle       string            `json:"replyToSenderHandle,omitempty"`
-	ReplyToSenderDisplayName  string            `json:"replyToSenderDisplayName,omitempty"`
-	Reactions                 []ChatReactionDTO `json:"reactions,omitempty"`
+	ID                       string            `json:"id"`
+	Rev                      string            `json:"rev"`
+	Sender                   string            `json:"sender"`
+	SenderDID                string            `json:"senderDid"`
+	SenderHandle             string            `json:"senderHandle,omitempty"`
+	SenderDisplayName        string            `json:"senderDisplayName,omitempty"`
+	Text                     string            `json:"text"`
+	SentAt                   string            `json:"sentAt"`
+	EmbedURI                 string            `json:"embedUri,omitempty"`
+	ReplyToMessageID         string            `json:"replyToMessageId,omitempty"`
+	ReplyToMessageText       string            `json:"replyToMessageText,omitempty"`
+	ReplyToSender            string            `json:"replyToSender,omitempty"`
+	ReplyToSenderDID         string            `json:"replyToSenderDid,omitempty"`
+	ReplyToSenderHandle      string            `json:"replyToSenderHandle,omitempty"`
+	ReplyToSenderDisplayName string            `json:"replyToSenderDisplayName,omitempty"`
+	Reactions                []ChatReactionDTO `json:"reactions,omitempty"`
 }
 
 type ChatMessagesDTO struct {
@@ -471,7 +513,7 @@ func ParseFeedPost(record interface{}) string {
 	if record == nil {
 		return ""
 	}
-	
+
 	// Convert to map or struct to extract Text reliably since it's inside LexiconTypeDecoder Val
 	bytes, err := json.Marshal(record)
 	if err != nil {
@@ -664,6 +706,36 @@ func ExtractReplyMetaFromRecord(record interface{}) (bool, string, string, strin
 }
 
 // Helper para extrair o alt do vídeo a partir do Record CBOR/JSON
+func ExtractQuoteURIFromRecord(record interface{}) string {
+	if record == nil {
+		return ""
+	}
+	bytes, err := json.Marshal(record)
+	if err != nil {
+		return ""
+	}
+	var obj struct {
+		Embed *struct {
+			Record *struct {
+				URI    string `json:"uri"`
+				Record *struct {
+					URI string `json:"uri"`
+				} `json:"record"`
+			} `json:"record"`
+		} `json:"embed"`
+	}
+	if err := json.Unmarshal(bytes, &obj); err != nil || obj.Embed == nil || obj.Embed.Record == nil {
+		return ""
+	}
+	if obj.Embed.Record.URI != "" {
+		return obj.Embed.Record.URI
+	}
+	if obj.Embed.Record.Record != nil && obj.Embed.Record.Record.URI != "" {
+		return obj.Embed.Record.Record.URI
+	}
+	return ""
+}
+
 func ExtractVideoAltFromRecord(record interface{}) string {
 	if record == nil {
 		return ""
@@ -674,8 +746,8 @@ func ExtractVideoAltFromRecord(record interface{}) string {
 	}
 	var obj struct {
 		Embed *struct {
-			Type string `json:"$type"`
-			Alt  string `json:"alt"`
+			Type  string `json:"$type"`
+			Alt   string `json:"alt"`
 			Media *struct {
 				Type string `json:"$type"`
 				Alt  string `json:"alt"`
@@ -833,6 +905,3 @@ type AgeAssuranceStateDTO struct {
 	Access          string `json:"access"`
 	LastInitiatedAt string `json:"lastInitiatedAt,omitempty"`
 }
-
-
-

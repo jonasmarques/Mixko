@@ -2697,6 +2697,7 @@ export namespace services {
 	    authorName: string;
 	    authorHandle: string;
 	    authorDid: string;
+	    authorPronouns?: string;
 	    authorVerified?: boolean;
 	    text: string;
 	    createdAt: string;
@@ -2742,6 +2743,7 @@ export namespace services {
 	        this.authorName = source["authorName"];
 	        this.authorHandle = source["authorHandle"];
 	        this.authorDid = source["authorDid"];
+	        this.authorPronouns = source["authorPronouns"];
 	        this.authorVerified = source["authorVerified"];
 	        this.text = source["text"];
 	        this.createdAt = source["createdAt"];
@@ -3479,6 +3481,7 @@ export namespace services {
 	    handle: string;
 	    displayName: string;
 	    description: string;
+	    pronouns?: string;
 	    avatar: string;
 	    website?: string;
 	    links?: ProfileLinkDTO[];
@@ -3511,6 +3514,7 @@ export namespace services {
 	        this.handle = source["handle"];
 	        this.displayName = source["displayName"];
 	        this.description = source["description"];
+	        this.pronouns = source["pronouns"];
 	        this.avatar = source["avatar"];
 	        this.website = source["website"];
 	        this.links = this.convertValues(source["links"], ProfileLinkDTO);

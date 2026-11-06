@@ -57,13 +57,16 @@ export function updateCharCounter(text: string) {
     }
 }
 
-export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', target?: {uri: string, cid: string, authorHandle?: string}) {
+export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', target?: {uri: string, cid: string, authorHandle?: string, authorPronouns?: string}) {
   state.composeMode = mode;
   state.composeTarget = target || null;
   
   if (DOM.composeTitle) {
-      if (mode === 'reply') DOM.composeTitle.textContent = i18n.t('compose.replyingTo', { handle: target?.authorHandle || '' });
-      else if (mode === 'quote') DOM.composeTitle.textContent = i18n.t('compose.quoting', { handle: target?.authorHandle || '' });
+      const handleWithPronouns = target?.authorHandle
+        ? (target.authorPronouns ? `${target.authorHandle} (${target.authorPronouns})` : target.authorHandle)
+        : '';
+      if (mode === 'reply') DOM.composeTitle.textContent = i18n.t('compose.replyingTo', { handle: handleWithPronouns });
+      else if (mode === 'quote') DOM.composeTitle.textContent = i18n.t('compose.quoting', { handle: handleWithPronouns });
       else DOM.composeTitle.textContent = i18n.t('compose.newPost');
   }
   

@@ -12,7 +12,7 @@ export const state = {
     currentHandle: "",
     currentTab: 'timeline' as 'timeline' | 'notifications' | 'profile' | 'chat' | 'feeds' | 'saved' | 'search' | 'settings' | 'lists',
     composeMode: 'post' as 'post' | 'reply' | 'quote',
-    composeTarget: null as {uri: string, cid: string, authorHandle?: string} | null,
+    composeTarget: null as {uri: string, cid: string, authorHandle?: string, authorPronouns?: string} | null,
     timelineCursor: "",
     profileCursor: "",
     notificationsCursor: "",

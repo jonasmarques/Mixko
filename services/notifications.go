@@ -33,6 +33,25 @@ func reasonUsesOwnURI(reason string) bool {
 	return false
 }
 
+func notificationMatchesFilters(item *bsky.NotificationListNotifications_Notification, reasonSet map[string]bool, priority bool) bool {
+	if item == nil {
+		return false
+	}
+	if len(reasonSet) > 0 && !reasonSet[item.Reason] {
+		return false
+	}
+	if priority {
+		switch item.Reason {
+		case "verified", "unverified", "subscribed-post", "contact-match":
+			return true
+		}
+		if item.Author == nil || item.Author.Viewer == nil || item.Author.Viewer.Following == nil || *item.Author.Viewer.Following == "" {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *NotificationsService) GetNotifications(cursor string) (*NotificationListDTO, error) {
 	return s.GetNotificationsFiltered(cursor, nil, false)
 }
@@ -42,15 +61,46 @@ func (s *NotificationsService) GetNotificationsFiltered(cursor string, reasons [
 	defer cancel()
 	var out *NotificationListDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.NotificationListNotifications(ctx, c, cursor, 50, priority, reasons, "")
-		if err != nil {
-			return err
+		reasonSet := make(map[string]bool, len(reasons))
+		for _, r := range reasons {
+			if r != "" {
+				reasonSet[r] = true
+			}
 		}
-		
-		out = &NotificationListDTO{Cursor: safeString(res.Cursor)}
-		
+
+		maxPages := 1
+		if len(reasonSet) > 0 || priority {
+			maxPages = 3
+		}
+
+		var matched []*bsky.NotificationListNotifications_Notification
+		currentCursor := cursor
+		nextCursor := ""
+
+		for page := 0; page < maxPages; page++ {
+			res, err := bsky.NotificationListNotifications(ctx, c, currentCursor, 50, priority, reasons, "")
+			if err != nil {
+				return err
+			}
+			nextCursor = safeString(res.Cursor)
+			for _, item := range res.Notifications {
+				if notificationMatchesFilters(item, reasonSet, priority) {
+					matched = append(matched, item)
+				}
+			}
+			if len(matched) > 0 || nextCursor == "" || nextCursor == currentCursor {
+				break
+			}
+			currentCursor = nextCursor
+		}
+
+		out = &NotificationListDTO{
+			Cursor:        nextCursor,
+			Notifications: []*NotificationDTO{},
+		}
+
 		var postUris []string
-		for _, item := range res.Notifications {
+		for _, item := range matched {
 			if reasonUsesReasonSubject(item.Reason) && item.ReasonSubject != nil {
 				postUris = append(postUris, *item.ReasonSubject)
 				if item.Record != nil {
@@ -101,7 +151,7 @@ func (s *NotificationsService) GetNotificationsFiltered(cursor string, reasons [
 			}
 		}
 
-		for _, item := range res.Notifications {
+		for _, item := range matched {
 			authorName := ""
 			if item.Author.DisplayName != nil { authorName = *item.Author.DisplayName }
 			

@@ -14,7 +14,6 @@ import (
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
-
 type FeedService struct {
 	clientMgr *ATClient
 }
@@ -36,7 +35,7 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 		if err != nil {
 			return err
 		}
-		
+
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
 		for _, item := range res.Feed {
 			if item.Post != nil {
@@ -81,7 +80,7 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 						dto.RootAuthor = rootPV.Author.Handle
 						dto.RootAuthorName = rootName
 						dto.RootURI = rootPV.Uri
-					dto.RootPost = ParsePostView(rootPV)
+						dto.RootPost = ParsePostView(rootPV)
 					}
 				}
 				out.Posts = append(out.Posts, dto)
@@ -93,7 +92,9 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 }
 
 func safeString(s *string) string {
-	if s == nil { return "" }
+	if s == nil {
+		return ""
+	}
 	return *s
 }
 
@@ -132,41 +133,81 @@ func extractVideoCaptionsFromRecord(recVal interface{}, authorDid string) []Vide
 	if err != nil {
 		return nil
 	}
-	type capRaw struct {
-		Lang string `json:"lang"`
-		File struct {
-			Ref struct {
-				Link string `json:"$link"`
-			} `json:"ref"`
-		} `json:"file"`
+	type capItem struct {
+		lang string
+		cid  string
 	}
-	var parsed struct {
-		Embed struct {
-			Captions []capRaw `json:"captions"`
-			Media    struct {
+	var caps []capItem
+
+	var feedPost bsky.FeedPost
+	if json.Unmarshal(raw, &feedPost) == nil && feedPost.Embed != nil {
+		var vid *bsky.EmbedVideo
+		if feedPost.Embed.EmbedVideo != nil {
+			vid = feedPost.Embed.EmbedVideo
+		} else if feedPost.Embed.EmbedRecordWithMedia != nil && feedPost.Embed.EmbedRecordWithMedia.Media != nil && feedPost.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
+			vid = feedPost.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+		}
+		if vid != nil {
+			for _, c := range vid.Captions {
+				if c != nil && c.File != nil {
+					if cid := c.File.Ref.String(); cid != "" && cid != "undefined" {
+						caps = append(caps, capItem{lang: c.Lang, cid: cid})
+					}
+				}
+			}
+		}
+	}
+
+	if len(caps) == 0 {
+		type capRaw struct {
+			Lang string `json:"lang"`
+			File struct {
+				Ref struct {
+					Link string `json:"$link"`
+				} `json:"ref"`
+				Cid string `json:"cid"`
+			} `json:"file"`
+		}
+		var parsed struct {
+			Embed struct {
 				Captions []capRaw `json:"captions"`
-			} `json:"media"`
-		} `json:"embed"`
+				Media    struct {
+					Captions []capRaw `json:"captions"`
+				} `json:"media"`
+			} `json:"embed"`
+		}
+		if json.Unmarshal(raw, &parsed) == nil {
+			rawCaps := parsed.Embed.Captions
+			if len(rawCaps) == 0 {
+				rawCaps = parsed.Embed.Media.Captions
+			}
+			for _, c := range rawCaps {
+				cid := c.File.Ref.Link
+				if cid == "" {
+					cid = c.File.Cid
+				}
+				if cid != "" {
+					caps = append(caps, capItem{lang: c.Lang, cid: cid})
+				}
+			}
+		}
 	}
-	if json.Unmarshal(raw, &parsed) != nil {
+
+	if len(caps) == 0 {
 		return nil
 	}
-	caps := parsed.Embed.Captions
-	if len(caps) == 0 {
-		caps = parsed.Embed.Media.Captions
-	}
+
+	pdsHost := ResolveAuthorPDSHost(authorDid)
 	var out []VideoCaptionDTO
 	for _, c := range caps {
-		if c.File.Ref.Link != "" {
-			lang := c.Lang
-			if lang == "" {
-				lang = "en"
-			}
-			out = append(out, VideoCaptionDTO{
-				Lang: lang,
-				URL:  "https://bsky.social/xrpc/com.atproto.sync.getBlob?did=" + url.QueryEscape(authorDid) + "&cid=" + url.QueryEscape(c.File.Ref.Link),
-			})
+		lang := c.lang
+		if lang == "" {
+			lang = "en"
 		}
+		out = append(out, VideoCaptionDTO{
+			Lang: lang,
+			URL:  pdsHost + "/xrpc/com.atproto.sync.getBlob?did=" + url.QueryEscape(authorDid) + "&cid=" + url.QueryEscape(c.cid),
+		})
 	}
 	return out
 }
@@ -179,50 +220,99 @@ func ExtractVideoFromRecord(recVal interface{}, authorDid string) *VideoEmbedDTO
 	if err != nil {
 		return nil
 	}
+	var cid, alt, presentation string
 	var rec bsky.FeedPost
-	if json.Unmarshal(raw, &rec) != nil || rec.Embed == nil {
-		return nil
+	if json.Unmarshal(raw, &rec) == nil && rec.Embed != nil {
+		var vid *bsky.EmbedVideo
+		if rec.Embed.EmbedVideo != nil {
+			vid = rec.Embed.EmbedVideo
+		} else if rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil && rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
+			vid = rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+		}
+		if vid != nil && vid.Video != nil {
+			cid = vid.Video.Ref.String()
+			alt = safeString(vid.Alt)
+			presentation = safeString(vid.Presentation)
+		}
 	}
-	var vid *bsky.EmbedVideo
-	if rec.Embed.EmbedVideo != nil {
-		vid = rec.Embed.EmbedVideo
-	} else if rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil && rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
-		vid = rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+	if cid == "" || cid == "undefined" {
+		type vidRaw struct {
+			Alt          string `json:"alt"`
+			Presentation string `json:"presentation"`
+			Video        struct {
+				Ref struct {
+					Link string `json:"$link"`
+				} `json:"ref"`
+				Cid string `json:"cid"`
+			} `json:"video"`
+		}
+		var parsed struct {
+			Embed struct {
+				vidRaw
+				Media vidRaw `json:"media"`
+			} `json:"embed"`
+		}
+		if json.Unmarshal(raw, &parsed) == nil {
+			v := parsed.Embed.vidRaw
+			if v.Video.Ref.Link == "" && v.Video.Cid == "" {
+				v = parsed.Embed.Media
+			}
+			cid = v.Video.Ref.Link
+			if cid == "" {
+				cid = v.Video.Cid
+			}
+			alt = v.Alt
+			presentation = v.Presentation
+		}
 	}
-	if vid == nil || vid.Video == nil {
-		return nil
-	}
-	cid := vid.Video.Ref.String()
-	if cid == "" {
+	if cid == "" || cid == "undefined" {
 		return nil
 	}
 	return &VideoEmbedDTO{
 		Playlist:     fmt.Sprintf("https://video.bsky.app/watch/%s/%s/playlist.m3u8", url.PathEscape(authorDid), url.PathEscape(cid)),
 		Thumbnail:    fmt.Sprintf("https://video.bsky.app/watch/%s/%s/thumbnail.jpg", url.PathEscape(authorDid), url.PathEscape(cid)),
-		Alt:          safeString(vid.Alt),
-		Presentation: safeString(vid.Presentation),
+		Alt:          alt,
+		Presentation: presentation,
 		Captions:     extractVideoCaptionsFromRecord(recVal, authorDid),
 	}
 }
 
 func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
-	if post == nil { return nil }
+	return parsePostViewWithRecord(post, nil)
+}
+
+func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface{}) *PostDTO {
+	if post == nil {
+		return nil
+	}
 	authorName := ""
-	if post.Author.DisplayName != nil { authorName = *post.Author.DisplayName }
+	if post.Author.DisplayName != nil {
+		authorName = *post.Author.DisplayName
+	}
 	CacheAuthor(post.Author.Did, post.Author.Handle, authorName)
 
 	authorVerified := false
 	if post.Author.Verification != nil && post.Author.Verification.VerifiedStatus == "valid" {
 		authorVerified = true
 	}
-	
+
 	replyCount, repostCount, likeCount := int64(0), int64(0), int64(0)
-	if post.ReplyCount != nil { replyCount = *post.ReplyCount }
-	if post.RepostCount != nil { repostCount = *post.RepostCount }
-	if post.LikeCount != nil { likeCount = *post.LikeCount }
+	if post.ReplyCount != nil {
+		replyCount = *post.ReplyCount
+	}
+	if post.RepostCount != nil {
+		repostCount = *post.RepostCount
+	}
+	if post.LikeCount != nil {
+		likeCount = *post.LikeCount
+	}
 
 	var recVal interface{}
-	if post.Record != nil { recVal = post.Record.Val }
+	if recOverride != nil {
+		recVal = recOverride
+	} else if post.Record != nil {
+		recVal = post.Record.Val
+	}
 
 	var postLabels []string
 	addLabel := func(val string) {
@@ -349,6 +439,7 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 				CID:            rv.Cid,
 				AuthorHandle:   rv.Author.Handle,
 				AuthorDID:      rv.Author.Did,
+				AuthorPronouns: strings.TrimSpace(safeString(rv.Author.Pronouns)),
 				AuthorVerified: qVerified,
 				Text:           ParseFeedPost(quoteRecVal),
 				CreatedAt:      rv.IndexedAt,
@@ -599,6 +690,7 @@ func ParsePostView(post *bsky.FeedDefs_PostView) *PostDTO {
 		AuthorName:        authorName,
 		AuthorHandle:      post.Author.Handle,
 		AuthorDID:         post.Author.Did,
+		AuthorPronouns:    strings.TrimSpace(safeString(post.Author.Pronouns)),
 		AuthorVerified:    authorVerified,
 		Text:              ParseFeedPost(recVal),
 		CreatedAt:         post.IndexedAt,
@@ -642,7 +734,7 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 		if err != nil {
 			return err
 		}
-		
+
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
 		for _, item := range res.Feed {
 			if item.Post != nil {
@@ -706,18 +798,190 @@ func (s *FeedService) GetThread(uri string, depth int64) (*bsky.FeedGetPostThrea
 	return out, err
 }
 
+func fetchRawRecordFromPDS(ctx context.Context, clientMgr *ATClient, c *xrpc.Client, repo, collection, rkey string) (string, string, map[string]interface{}, error) {
+	if clientMgr == nil || repo == "" || collection == "" || rkey == "" {
+		return "", "", nil, fmt.Errorf("invalid getRecord arguments")
+	}
+	var pdsClient *xrpc.Client
+	if c != nil && c.Auth != nil && repo == c.Auth.Did && c.Host != "" {
+		pdsClient = c
+	} else {
+		pdsHost := clientMgr.ResolvePDSHost(ctx, repo)
+		pdsClient = &xrpc.Client{
+			Host:   pdsHost,
+			Client: clientMgr.HTTPClient(),
+		}
+	}
+	var rawResp struct {
+		Uri   string                 `json:"uri"`
+		Cid   string                 `json:"cid"`
+		Value map[string]interface{} `json:"value"`
+	}
+	params := map[string]interface{}{
+		"repo":       repo,
+		"collection": collection,
+		"rkey":       rkey,
+	}
+	if err := pdsClient.Do(ctx, xrpc.Query, "", "com.atproto.repo.getRecord", params, nil, &rawResp); err != nil {
+		return "", "", nil, err
+	}
+	return rawResp.Uri, rawResp.Cid, rawResp.Value, nil
+}
+
+func (s *FeedService) resolveAuthorIdentityFromPDS(ctx context.Context, c *xrpc.Client, did string) (string, string) {
+	if author, ok := GetAuthorForDID(did); ok && author.Handle != "" && author.DisplayName != "" {
+		return author.Handle, author.DisplayName
+	}
+	handle, ok := GetHandleForDID(did)
+	if !ok || handle == "" {
+		s.clientMgr.ResolvePDSHost(ctx, did)
+		handle, _ = GetHandleForDID(did)
+	}
+	if handle == "" {
+		handle = did
+	}
+	displayName := ""
+	if _, _, profVal, err := fetchRawRecordFromPDS(ctx, s.clientMgr, c, did, "app.bsky.actor.profile", "self"); err == nil && profVal != nil {
+		displayName, _ = profVal["displayName"].(string)
+	}
+	CacheAuthor(did, handle, displayName)
+	return handle, displayName
+}
+
+func (s *FeedService) fetchPostDTOFromPDS(ctx context.Context, c *xrpc.Client, postURI string, hydrateQuote bool) *PostDTO {
+	repo, collection, rkey, ok := parseATURI(postURI)
+	if !ok || collection != "app.bsky.feed.post" {
+		return nil
+	}
+	did := repo
+	if !strings.HasPrefix(did, "did:") {
+		if cachedDID, ok := GetDIDForHandle(repo); ok && cachedDID != "" {
+			did = cachedDID
+		} else {
+			s.clientMgr.ResolvePDSHost(ctx, repo)
+			if cachedDID, ok := GetDIDForHandle(repo); ok && cachedDID != "" {
+				did = cachedDID
+			} else if c != nil {
+				if res, err := atproto.IdentityResolveHandle(ctx, c, repo); err == nil && res != nil && res.Did != "" {
+					did = res.Did
+					CacheDID(did, repo)
+				}
+			}
+		}
+		if !strings.HasPrefix(did, "did:") {
+			return nil
+		}
+	}
+	recURI, recCID, rawVal, err := fetchRawRecordFromPDS(ctx, s.clientMgr, c, did, collection, rkey)
+	if err != nil || rawVal == nil {
+		return nil
+	}
+	if recURI == "" {
+		recURI = fmt.Sprintf("at://%s/%s/%s", did, collection, rkey)
+	}
+	handle, displayName := s.resolveAuthorIdentityFromPDS(ctx, c, did)
+	createdAt, _ := rawVal["createdAt"].(string)
+	if createdAt == "" {
+		createdAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	pv := &bsky.FeedDefs_PostView{
+		Uri: recURI,
+		Cid: recCID,
+		Author: &bsky.ActorDefs_ProfileViewBasic{
+			Did:         did,
+			Handle:      handle,
+			DisplayName: &displayName,
+		},
+		IndexedAt: createdAt,
+	}
+	dto := parsePostViewWithRecord(pv, rawVal)
+	if dto == nil {
+		return nil
+	}
+	if dto.IsReply {
+		if strings.HasPrefix(dto.ReplyToAuthor, "did:") {
+			rHandle, rName := s.resolveAuthorIdentityFromPDS(ctx, c, dto.ReplyToAuthor)
+			dto.ReplyToAuthor = rHandle
+			if dto.ReplyToAuthorName == "" {
+				dto.ReplyToAuthorName = rName
+			}
+		}
+		if strings.HasPrefix(dto.RootAuthor, "did:") {
+			rtHandle, rtName := s.resolveAuthorIdentityFromPDS(ctx, c, dto.RootAuthor)
+			dto.RootAuthor = rtHandle
+			if dto.RootAuthorName == "" {
+				dto.RootAuthorName = rtName
+			}
+		}
+	}
+	if hydrateQuote && dto.QuotePost == nil {
+		if quoteURI := ExtractQuoteURIFromRecord(rawVal); quoteURI != "" {
+			var qDTO *PostDTO
+			if c != nil {
+				if qRes, qErr := bsky.FeedGetPosts(ctx, c, []string{quoteURI}); qErr == nil && len(qRes.Posts) > 0 {
+					qDTO = ParsePostView(qRes.Posts[0])
+				}
+			}
+			if qDTO == nil {
+				qDTO = s.fetchPostDTOFromPDS(ctx, c, quoteURI, false)
+			}
+			if qDTO != nil {
+				dto.QuotePost = qDTO
+			}
+		}
+	}
+	return dto
+}
+
+func (s *FeedService) fetchParentChainFromPDS(ctx context.Context, c *xrpc.Client, parentURI string, maxDepth int) []*PostDTO {
+	var chain []*PostDTO
+	visited := make(map[string]bool)
+	currURI := parentURI
+	for i := 0; i < maxDepth && currURI != "" && !visited[currURI]; i++ {
+		visited[currURI] = true
+		var dto *PostDTO
+		if c != nil {
+			if res, err := bsky.FeedGetPosts(ctx, c, []string{currURI}); err == nil && len(res.Posts) > 0 {
+				dto = ParsePostView(res.Posts[0])
+			}
+		}
+		if dto == nil {
+			dto = s.fetchPostDTOFromPDS(ctx, c, currURI, true)
+		}
+		if dto == nil {
+			break
+		}
+		chain = append([]*PostDTO{dto}, chain...)
+		if dto.IsReply && dto.ReplyToURI != "" {
+			currURI = dto.ReplyToURI
+		} else {
+			break
+		}
+	}
+	return chain
+}
+
 func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		res, err := bsky.FeedGetPostThread(ctx, c, depth, 10, uri)
-		if err != nil {
+		if err != nil || res == nil || res.Thread == nil || res.Thread.FeedDefs_ThreadViewPost == nil {
+			if targetDTO := s.fetchPostDTOFromPDS(ctx, c, uri, true); targetDTO != nil {
+				out = &FeedDTO{}
+				if targetDTO.IsReply && targetDTO.ReplyToURI != "" {
+					parents := s.fetchParentChainFromPDS(ctx, c, targetDTO.ReplyToURI, 10)
+					out.Posts = append(out.Posts, parents...)
+				}
+				out.Posts = append(out.Posts, targetDTO)
+				return nil
+			}
 			return err
 		}
-		
+
 		out = &FeedDTO{}
-		
+
 		var extractParents func(thread *bsky.FeedDefs_ThreadViewPost)
 		extractParents = func(thread *bsky.FeedDefs_ThreadViewPost) {
 			if thread == nil {
@@ -729,9 +993,14 @@ func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 				if postDTO != nil {
 					out.Posts = append(out.Posts, postDTO)
 				}
+			} else if thread.Post != nil && thread.Post.Record != nil {
+				if isReply, parentURI, _, _, _ := ExtractReplyMetaFromRecord(thread.Post.Record.Val); isReply && parentURI != "" {
+					parents := s.fetchParentChainFromPDS(ctx, c, parentURI, 10)
+					out.Posts = append(out.Posts, parents...)
+				}
 			}
 		}
-		
+
 		var extractReplies func(thread *bsky.FeedDefs_ThreadViewPost, rootAuthor string, rootAuthorName string, rootURI string)
 		extractReplies = func(thread *bsky.FeedDefs_ThreadViewPost, rootAuthor string, rootAuthorName string, rootURI string) {
 			if thread == nil {
@@ -760,7 +1029,7 @@ func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 				}
 			}
 		}
-		
+
 		if res.Thread != nil && res.Thread.FeedDefs_ThreadViewPost != nil {
 			extractParents(res.Thread.FeedDefs_ThreadViewPost)
 			targetDTO := ParsePostView(res.Thread.FeedDefs_ThreadViewPost.Post)
@@ -795,7 +1064,7 @@ func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*
 		if err != nil {
 			return err
 		}
-		
+
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
 		for _, item := range res.Feed {
 			if item.Post != nil {
@@ -924,7 +1193,6 @@ func (s *FeedService) GetSavedFeeds() ([]*SavedFeedDTO, error) {
 	return out, err
 }
 
-
 func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) (*FeedDTO, error) {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
@@ -934,7 +1202,7 @@ func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) 
 		if err != nil {
 			return err
 		}
-		
+
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
 		for _, item := range res.Feed {
 			if item.Post != nil {
@@ -1052,15 +1320,27 @@ func (s *FeedService) GetPosts(uris []string) (*FeedDTO, error) {
 	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.FeedGetPosts(ctx, c, uris)
-		if err != nil {
-			return err
-		}
 		out = &FeedDTO{}
-		for _, postView := range res.Posts {
-			if dto := ParsePostView(postView); dto != nil {
-				out.Posts = append(out.Posts, dto)
+		found := make(map[string]bool, len(uris))
+		res, err := bsky.FeedGetPosts(ctx, c, uris)
+		if err == nil && res != nil {
+			for _, postView := range res.Posts {
+				if dto := ParsePostView(postView); dto != nil {
+					out.Posts = append(out.Posts, dto)
+					found[dto.URI] = true
+				}
 			}
+		}
+		for _, u := range uris {
+			if !found[u] {
+				if dto := s.fetchPostDTOFromPDS(ctx, c, u, true); dto != nil {
+					out.Posts = append(out.Posts, dto)
+					found[dto.URI] = true
+				}
+			}
+		}
+		if err != nil && len(out.Posts) == 0 {
+			return err
 		}
 		return nil
 	})
@@ -1532,11 +1812,22 @@ func (s *FeedService) GetPostThreadV2(uri string) (*FeedDTO, error) {
 				out.Posts = append(out.Posts, dto)
 			}
 		}
+		if len(out.Posts) > 0 && out.Posts[0].IsReply && out.Posts[0].ReplyToURI != "" {
+			parents := s.fetchParentChainFromPDS(ctx, c, out.Posts[0].ReplyToURI, 6)
+			if len(parents) > 0 {
+				out.Posts = append(parents, out.Posts...)
+			}
+		}
 		if res.HasOtherReplies {
 			out.Cursor = "has_other_replies"
 		}
 		return nil
 	})
+	if err != nil || len(out.Posts) == 0 {
+		if fallback, fbErr := s.GetPostThread(uri, 6); fbErr == nil && fallback != nil && len(fallback.Posts) > 0 {
+			return fallback, nil
+		}
+	}
 	return out, err
 }
 
@@ -1565,5 +1856,3 @@ func (s *FeedService) GetPostThreadOtherV2(uri string) (*FeedDTO, error) {
 	})
 	return out, err
 }
-
-

@@ -48,6 +48,7 @@ export interface PostDTO {
     authorName: string;
     authorHandle: string;
     authorDid: string;
+    authorPronouns?: string;
     authorVerified?: boolean;
     text: string;
     createdAt: string;
@@ -161,6 +162,7 @@ export interface ProfileDTO {
     handle: string;
     displayName: string;
     description: string;
+    pronouns?: string;
     avatar: string;
     website?: string;
     links?: ProfileLinkDTO[];

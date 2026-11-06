@@ -288,4 +288,54 @@ func TestPutNotificationPreferences(t *testing.T) {
 	}
 }
 
+func TestGetNotificationsFilteredByReasonsAndPriority(t *testing.T) {
+	notificationsJSON := `
+		{
+			"uri":"at://did:plc:alice/app.bsky.feed.like/1",
+			"cid":"cid-1",
+			"author":{"did":"did:plc:alice","handle":"alice.test","displayName":"Alice","viewer":{"following":"at://did:plc:me/app.bsky.graph.follow/f1"}},
+			"reason":"like",
+			"isRead":false,
+			"indexedAt":"2026-08-20T10:00:00Z"
+		},
+		{
+			"uri":"at://did:plc:bob/app.bsky.feed.like/2",
+			"cid":"cid-2",
+			"author":{"did":"did:plc:bob","handle":"bob.test","displayName":"Bob","viewer":{}},
+			"reason":"like",
+			"isRead":false,
+			"indexedAt":"2026-08-20T10:01:00Z"
+		},
+		{
+			"uri":"at://did:plc:carol/app.bsky.graph.follow/3",
+			"cid":"cid-3",
+			"author":{"did":"did:plc:carol","handle":"carol.test","displayName":"Carol","viewer":{"following":"at://did:plc:me/app.bsky.graph.follow/f2"}},
+			"reason":"follow",
+			"isRead":false,
+			"indexedAt":"2026-08-20T10:02:00Z"
+		}
+	`
+
+	var gotURIs []string
+	mgr := notificationsStub(t, notificationsJSON, map[string]string{}, &gotURIs)
+	svc := NewNotificationsService(mgr)
+
+	followsOnly, err := svc.GetNotificationsFiltered("", []string{"follow"}, false)
+	if err != nil {
+		t.Fatalf("GetNotificationsFiltered(follow): %v", err)
+	}
+	if len(followsOnly.Notifications) != 1 || followsOnly.Notifications[0].AuthorHandle != "carol.test" {
+		t.Fatalf("got %+v, want 1 follow notification from carol.test", followsOnly.Notifications)
+	}
+
+	priorityLikes, err := svc.GetNotificationsFiltered("", []string{"like"}, true)
+	if err != nil {
+		t.Fatalf("GetNotificationsFiltered(like, priority): %v", err)
+	}
+	if len(priorityLikes.Notifications) != 1 || priorityLikes.Notifications[0].AuthorHandle != "alice.test" {
+		t.Fatalf("got %+v, want 1 priority like notification from alice.test", priorityLikes.Notifications)
+	}
+}
+
+
 

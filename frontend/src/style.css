@@ -130,7 +130,9 @@ button:hover {
   background-color: var(--button-hover);
 }
 
-button[aria-selected="true"] {
+button[aria-selected="true"],
+button[aria-pressed="true"],
+button.btn-notif-filter.active {
   background-color: var(--primary-bg);
   color: var(--primary-text);
   border-color: var(--primary-bg);

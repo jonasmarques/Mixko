@@ -38,8 +38,12 @@ function showProfilesModal(title: string, profiles: any[]) {
             div.style.padding = '10px';
             div.style.borderBottom = '1px solid #ccc';
             div.style.cursor = 'pointer';
-            div.innerHTML = `<strong>${esc(p.displayName || p.handle)}</strong> <small>${renderProfileLink(p.handle)}</small>`;
-            div.setAttribute('aria-label', `${i18n.t('app.profile')}: ${p.displayName || p.handle}, @${p.handle}`);
+            const pronounsHtml = p.pronouns
+                ? `<div class="profile-pronouns" style="font-size: 0.85em; color: var(--text-muted, #9ca3af); margin-top: 2px;">${esc(p.pronouns)}</div>`
+                : '';
+            const pronounsAria = p.pronouns ? `. ${i18n.t('profile.pronounsLabel')}: ${p.pronouns}` : '';
+            div.innerHTML = `<div><strong>${esc(p.displayName || p.handle)}</strong> <small>${renderProfileLink(p.handle)}</small></div>${pronounsHtml}`;
+            div.setAttribute('aria-label', `${i18n.t('app.profile')}: ${p.displayName || p.handle}, @${p.handle}${pronounsAria}`);
             
             const selectProfile = () => {
                 modal.close();
@@ -833,6 +837,8 @@ export function setupShortcuts() {
             e.preventDefault();
             if (state.currentTab === 'notifications') {
                 state.showOnlyMentions = !state.showOnlyMentions;
+                state.notifFilterReason = state.showOnlyMentions ? 'mention,reply,quote' : '';
+                state.focusedPostIndex = -1;
                 announcePolite(state.showOnlyMentions ? i18n.t('notifications.onlyMentions') : i18n.t('notifications.allNotifications'));
                 loadNotifications();
             }
@@ -1297,7 +1303,7 @@ export function setupShortcuts() {
                 if (state.focusedPostIndex >= 0) {
                     const p = state.currentPosts[state.focusedPostIndex];
                     if (p && p.dataset.uri) {
-                        openComposeModal('quote', {uri: p.dataset.uri, cid: p.dataset.cid || '', authorHandle: p.dataset.authorHandle || p.dataset.author});
+                        openComposeModal('quote', {uri: p.dataset.uri, cid: p.dataset.cid || '', authorHandle: p.dataset.authorHandle || p.dataset.author, authorPronouns: p.dataset.authorPronouns});
                     }
                 }
                 break;
@@ -1321,7 +1327,7 @@ export function setupShortcuts() {
                 if (state.focusedPostIndex >= 0) {
                     const p = state.currentPosts[state.focusedPostIndex];
                     if (p && p.dataset.uri) {
-                        openComposeModal('reply', {uri: p.dataset.uri, cid: p.dataset.cid || '', authorHandle: p.dataset.authorHandle || p.dataset.author});
+                        openComposeModal('reply', {uri: p.dataset.uri, cid: p.dataset.cid || '', authorHandle: p.dataset.authorHandle || p.dataset.author, authorPronouns: p.dataset.authorPronouns});
                     }
                 }
                 break;

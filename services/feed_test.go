@@ -244,3 +244,165 @@ func TestParsePostViewQuoteWithRecordWithMedia(t *testing.T) {
 	}
 }
 
+func TestExtractVideoCaptionsFromRecordDefaultAndExternalPDS(t *testing.T) {
+	record := map[string]interface{}{
+		"$type": "app.bsky.feed.post",
+		"text":  "Video with captions",
+		"embed": map[string]interface{}{
+			"$type": "app.bsky.embed.video",
+			"alt":   "Accessible video",
+			"video": map[string]interface{}{
+				"$type": "blob",
+				"ref": map[string]interface{}{
+					"$link": "bafkreivideocid",
+				},
+			},
+			"captions": []interface{}{
+				map[string]interface{}{
+					"lang": "pt",
+					"file": map[string]interface{}{
+						"$type": "blob",
+						"ref": map[string]interface{}{
+							"$link": "bafkreicaptionpt",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	vidDefault := ExtractVideoFromRecord(record, "did:plc:defaultuser")
+	if vidDefault == nil || len(vidDefault.Captions) != 1 {
+		t.Fatalf("expected 1 caption on default PDS, got %+v", vidDefault)
+	}
+	wantDefaultURL := "https://bsky.social/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Adefaultuser&cid=bafkreicaptionpt"
+	if vidDefault.Captions[0].Lang != "pt" || vidDefault.Captions[0].URL != wantDefaultURL {
+		t.Errorf("unexpected default caption: %+v, want URL %q", vidDefault.Captions[0], wantDefaultURL)
+	}
+
+	CachePDSHost("did:plc:custompdsuser", "https://pds.custom.example/")
+	vidCustom := ExtractVideoFromRecord(record, "did:plc:custompdsuser")
+	if vidCustom == nil || len(vidCustom.Captions) != 1 {
+		t.Fatalf("expected 1 caption on custom PDS, got %+v", vidCustom)
+	}
+	wantCustomURL := "https://pds.custom.example/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Acustompdsuser&cid=bafkreicaptionpt"
+	if vidCustom.Captions[0].URL != wantCustomURL {
+		t.Errorf("custom PDS caption URL = %q, want %q", vidCustom.Captions[0].URL, wantCustomURL)
+	}
+}
+
+func TestGetPostThreadAndGetPostsFallbackToExternalPDS(t *testing.T) {
+	extDID := "did:plc:extuser1"
+	rootURI := "at://" + extDID + "/app.bsky.feed.post/root1"
+	replyURI := "at://" + extDID + "/app.bsky.feed.post/reply1"
+
+	pdsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xrpc/com.atproto.repo.getRecord" {
+			http.NotFound(w, r)
+			return
+		}
+		collection := r.URL.Query().Get("collection")
+		rkey := r.URL.Query().Get("rkey")
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case collection == "app.bsky.actor.profile" && rkey == "self":
+			w.Write([]byte(`{
+				"uri": "at://` + extDID + `/app.bsky.actor.profile/self",
+				"cid": "cidprof",
+				"value": {
+					"$type": "app.bsky.actor.profile",
+					"displayName": "External User"
+				}
+			}`))
+		case collection == "app.bsky.feed.post" && rkey == "root1":
+			w.Write([]byte(`{
+				"uri": "` + rootURI + `",
+				"cid": "cidroot1",
+				"value": {
+					"$type": "app.bsky.feed.post",
+					"text": "Root post on custom PDS",
+					"createdAt": "2026-08-14T10:00:00Z"
+				}
+			}`))
+		case collection == "app.bsky.feed.post" && rkey == "reply1":
+			w.Write([]byte(`{
+				"uri": "` + replyURI + `",
+				"cid": "cidreply1",
+				"value": {
+					"$type": "app.bsky.feed.post",
+					"text": "Reply post with captioned video on custom PDS",
+					"createdAt": "2026-08-14T10:05:00Z",
+					"reply": {
+						"root": {"uri": "` + rootURI + `", "cid": "cidroot1"},
+						"parent": {"uri": "` + rootURI + `", "cid": "cidroot1"}
+					},
+					"embed": {
+						"$type": "app.bsky.embed.video",
+						"alt": "Custom PDS video",
+						"video": {
+							"$type": "blob",
+							"ref": {"$link": "bafkreividext"}
+						},
+						"captions": [
+							{
+								"lang": "en",
+								"file": {
+									"$type": "blob",
+									"ref": {"$link": "bafkreicapext"}
+								}
+							}
+						]
+					}
+				}
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(pdsSrv.Close)
+
+	CachePDSHost(extDID, pdsSrv.URL)
+	CacheDID(extDID, "extuser.custom.example")
+
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/app.bsky.feed.getPostThread":
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":"NotFound","message":"Post not found"}`))
+		case "/xrpc/app.bsky.feed.getPosts":
+			w.Write([]byte(`{"posts":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	svc := NewFeedService(mgr)
+	thread, err := svc.GetPostThread(replyURI, 6)
+	if err != nil {
+		t.Fatalf("GetPostThread failed: %v", err)
+	}
+	if len(thread.Posts) != 2 {
+		t.Fatalf("expected 2 posts (root + reply) from external PDS, got %d", len(thread.Posts))
+	}
+	if thread.Posts[0].URI != rootURI || thread.Posts[0].Text != "Root post on custom PDS" {
+		t.Errorf("unexpected root post: %+v", thread.Posts[0])
+	}
+	replyDTO := thread.Posts[1]
+	if replyDTO.URI != replyURI || replyDTO.AuthorHandle != "extuser.custom.example" || replyDTO.AuthorName != "External User" {
+		t.Errorf("unexpected reply post metadata: %+v", replyDTO)
+	}
+	if replyDTO.Video == nil || len(replyDTO.Video.Captions) != 1 {
+		t.Fatalf("expected video with 1 caption on external PDS reply, got %+v", replyDTO.Video)
+	}
+	wantCapURL := pdsSrv.URL + "/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Aextuser1&cid=bafkreicapext"
+	if replyDTO.Video.Captions[0].URL != wantCapURL {
+		t.Errorf("caption URL = %q, want %q", replyDTO.Video.Captions[0].URL, wantCapURL)
+	}
+
+	postsRes, err := svc.GetPosts([]string{rootURI})
+	if err != nil || len(postsRes.Posts) != 1 || postsRes.Posts[0].URI != rootURI {
+		t.Fatalf("GetPosts fallback failed: err=%v, posts=%+v", err, postsRes)
+	}
+}
+

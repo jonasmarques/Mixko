@@ -501,8 +501,14 @@ export async function loadFeedsTab() {
                     div.setAttribute('role', 'article');
                     div.setAttribute('tabindex', '0');
                     div.dataset.index = state.currentPosts.length.toString();
+                    const profNameAria = prof.pronouns
+                        ? `${prof.displayName || prof.handle}. ${i18n.t('profile.pronounsLabel')}: ${prof.pronouns}`
+                        : (prof.displayName || prof.handle);
+                    const profPronounsHtml = prof.pronouns
+                        ? `<p class="profile-pronouns" style="margin: 2px 0; font-size: 0.9em; color: var(--text-muted, #9ca3af);">${esc(prof.pronouns)}</p>`
+                        : '';
                     div.dataset.text = i18n.t('profile.profileCardAria', {
-                        name: prof.displayName || prof.handle,
+                        name: profNameAria,
                         desc: prof.description || ''
                     });
                     div.setAttribute('aria-label', div.dataset.text);
@@ -510,6 +516,7 @@ export async function loadFeedsTab() {
                     const followBtnLabel = prof.viewerFollowing ? i18n.t('profile.unfollowBtn') : i18n.t('profile.followBtn');
                     div.innerHTML = `
                         <h3>${esc(prof.displayName || prof.handle)} <small>(${renderProfileLink(prof.handle)})</small></h3>
+                        ${profPronounsHtml}
                         ${prof.description ? `<p>${linkify(prof.description)}</p>` : ''}
                         <div class="actions" style="margin-top:8px; display:flex; gap:8px;">
                             <button type="button" class="btn-open-suggested-profile">${i18n.t('lists.viewProfile')}</button>

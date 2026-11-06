@@ -217,6 +217,23 @@
         <form id="edit-profile-form">
           <label for="edit-profile-name" data-i18n="modals.editName">Nome de Exibição:</label>
           <input type="text" id="edit-profile-name" autofocus aria-required="true" tabindex="0" />
+
+          <label for="edit-profile-pronouns-preset" style="margin-top: 10px; display: block;" data-i18n="modals.editPronounsSelectLabel">Pronomes comuns (Seleção rápida):</label>
+          <select id="edit-profile-pronouns-preset" tabindex="0" style="width: 100%; margin-bottom: 6px;">
+            <option value="" data-i18n="modals.pronounsNone">Não especificar / Nenhum</option>
+            <option value="preset:he" data-i18n="modals.pronounsPresetHeHim">ele/dele</option>
+            <option value="preset:she" data-i18n="modals.pronounsPresetSheHer">ela/dela</option>
+            <option value="preset:they" data-i18n="modals.pronounsPresetTheyThem">elu/delu</option>
+            <option value="preset:he_they" data-i18n="modals.pronounsPresetHeThey">ele/elu</option>
+            <option value="preset:she_they" data-i18n="modals.pronounsPresetSheThey">ela/elu</option>
+            <option value="preset:he_she" data-i18n="modals.pronounsPresetHeShe">ele/ela</option>
+            <option value="preset:any" data-i18n="modals.pronounsPresetAny">qualquer pronome</option>
+            <option value="custom" data-i18n="modals.pronounsCustom">Personalizado...</option>
+          </select>
+
+          <label for="edit-profile-pronouns" style="margin-top: 6px; display: block;" data-i18n="modals.editPronouns">Pronomes:</label>
+          <input type="text" id="edit-profile-pronouns" maxlength="40" tabindex="0" placeholder="Ex: ele/dele, ela/dela, elu/delu (máx. 20 caracteres)" data-i18n="modals.editPronounsPlaceholder" aria-describedby="edit-profile-pronouns-counter" />
+          <small id="edit-profile-pronouns-counter" aria-live="polite" style="display: block; font-size: 0.85em; color: var(--text-muted, #888); margin-top: 2px;"></small>
           
           <label for="edit-profile-desc" style="margin-top: 10px; display: block;" data-i18n="modals.editDesc">Descrição (Bio):</label>
           <textarea id="edit-profile-desc" rows="4" tabindex="0" style="width: 100%;"></textarea>
@@ -280,11 +297,11 @@
         <section id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications" tabindex="0" class="hidden">
           <h2 data-i18n="sections.notifications">Notificações</h2>
           <div id="notif-filter-bar" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
-            <button type="button" class="btn-notif-filter active" data-filter="all" data-i18n="sec2.filterAll">Todas</button>
-            <button type="button" class="btn-notif-filter" data-filter="mentions" data-i18n="sec2.filterMentions">Menções / Respostas</button>
-            <button type="button" class="btn-notif-filter" data-filter="likes" data-i18n="sec2.filterLikes">Curtidas</button>
-            <button type="button" class="btn-notif-filter" data-filter="reposts" data-i18n="sec2.filterReposts">Reposts</button>
-            <button type="button" class="btn-notif-filter" data-filter="follows" data-i18n="sec2.filterFollows">Seguidores</button>
+            <button type="button" class="btn-notif-filter active" data-filter="all" data-reason="" aria-pressed="true" data-i18n="sec2.filterAll">Todas</button>
+            <button type="button" class="btn-notif-filter" data-filter="mentions" data-reason="mention,reply,quote" aria-pressed="false" data-i18n="sec2.filterMentions">Menções / Respostas</button>
+            <button type="button" class="btn-notif-filter" data-filter="likes" data-reason="like,like-via-repost" aria-pressed="false" data-i18n="sec2.filterLikes">Curtidas</button>
+            <button type="button" class="btn-notif-filter" data-filter="reposts" data-reason="repost,repost-via-repost" aria-pressed="false" data-i18n="sec2.filterReposts">Reposts</button>
+            <button type="button" class="btn-notif-filter" data-filter="follows" data-reason="follow" aria-pressed="false" data-i18n="sec2.filterFollows">Seguidores</button>
             <label style="margin-left: 8px; cursor: pointer;">
               <input type="checkbox" id="notif-filter-priority" />
               <span data-i18n="sec2.filterPriorityOnly">Apenas Prioritárias</span>

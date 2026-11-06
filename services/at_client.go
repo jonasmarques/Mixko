@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,10 +75,12 @@ type refreshCall struct {
 	err  error
 }
 
+var defaultDirectory = identity.DefaultDirectory()
+
 func NewATClient(db *database.DB) *ATClient {
 	return &ATClient{
 		db:        db,
-		directory: identity.DefaultDirectory(),
+		directory: defaultDirectory,
 	}
 }
 
@@ -158,21 +161,67 @@ func (c *ATClient) NewPublicClient() *xrpc.Client {
 // ResolvePDSHost finds the PDS that hosts the given handle or DID by reading
 // its DID document. Users on a self-hosted PDS need this; assuming
 // bsky.social would lock them out.
-func (c *ATClient) ResolvePDSHost(ctx context.Context, identifier string) string {
+func resolvePDSHostFromDirectory(ctx context.Context, dir identity.Directory, identifier string) string {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return DefaultPDSHost
+	}
+	if strings.HasPrefix(identifier, "did:") {
+		if host, ok := GetPDSHostForDID(identifier); ok && host != "" {
+			return host
+		}
+	}
+
 	atid, err := syntax.ParseAtIdentifier(identifier)
 	if err != nil {
 		return DefaultPDSHost
 	}
 
-	ident, err := c.directory.Lookup(ctx, atid)
+	if dir == nil {
+		dir = defaultDirectory
+	}
+	ident, err := dir.Lookup(ctx, atid)
 	if err != nil || ident == nil {
 		return DefaultPDSHost
 	}
 
-	if endpoint := ident.PDSEndpoint(); endpoint != "" {
+	didStr := ident.DID.String()
+	handleStr := ident.Handle.String()
+	if didStr != "" && handleStr != "" && handleStr != "handle.invalid" {
+		CacheDID(didStr, handleStr)
+	}
+
+	if endpoint := normalizePDSHost(ident.PDSEndpoint()); endpoint != "" {
+		if didStr != "" {
+			CachePDSHost(didStr, endpoint)
+		}
 		return endpoint
 	}
 	return DefaultPDSHost
+}
+
+func ResolveAuthorPDSHost(authorDid string) string {
+	authorDid = strings.TrimSpace(authorDid)
+	if authorDid == "" {
+		return DefaultPDSHost
+	}
+	if host, ok := GetPDSHostForDID(authorDid); ok && host != "" {
+		return host
+	}
+	if strings.HasPrefix(authorDid, "did:plc:") && len(authorDid) != 32 {
+		return DefaultPDSHost
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return resolvePDSHostFromDirectory(ctx, defaultDirectory, authorDid)
+}
+
+func (c *ATClient) ResolvePDSHost(ctx context.Context, identifier string) string {
+	var dir identity.Directory
+	if c != nil {
+		dir = c.directory
+	}
+	return resolvePDSHostFromDirectory(ctx, dir, identifier)
 }
 
 // isAuthExpired reports whether an error means the access token needs

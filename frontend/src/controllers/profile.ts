@@ -7,10 +7,42 @@ import { switchTab } from './tabs';
 import { loadTimeline } from './timeline';
 import { openChatConvo } from './chat';
 import { showMuteMenu } from './shortcuts';
-import { getFilePathOrDataUrl, esc, escUrl, linkify, renderProfileLink } from '../utils/helpers';
+import { getFilePathOrDataUrl, esc, escUrl, linkify, renderProfileLink, countGraphemes } from '../utils/helpers';
 import { i18n } from '../utils/i18n';
 import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
 import type { StarterPackDTO, ProfileDTO, ProfileLinkDTO } from '../types/dto';
+
+const MAX_PRONOUNS_GRAPHEMES = 20;
+const MAX_PRONOUNS_BYTES = 200;
+
+function updatePronounsCounter(val: string) {
+  const counterEl = document.getElementById('edit-profile-pronouns-counter');
+  if (!counterEl) return;
+  const trimmed = val.trim();
+  const graphemes = countGraphemes(trimmed);
+  const remaining = MAX_PRONOUNS_GRAPHEMES - graphemes;
+  counterEl.textContent = i18n.t('profile.pronounsCharsRemaining', { count: remaining.toString() });
+  counterEl.style.color = remaining < 0 ? '#ef4444' : 'var(--text-muted, #888)';
+}
+
+function syncPronounsPresetSelect(val: string) {
+  const selectEl = document.getElementById('edit-profile-pronouns-preset') as HTMLSelectElement | null;
+  if (!selectEl) return;
+  const trimmed = val.trim();
+  if (!trimmed) {
+    selectEl.value = '';
+    return;
+  }
+  const normalized = trimmed.toLowerCase();
+  const options = Array.from(selectEl.options);
+  for (const opt of options) {
+    if (opt.value.startsWith('preset:') && opt.textContent?.trim().toLowerCase() === normalized) {
+      selectEl.value = opt.value;
+      return;
+    }
+  }
+  selectEl.value = 'custom';
+}
 
 function createProfileLinkRowElement(link?: ProfileLinkDTO): HTMLDivElement {
   const row = document.createElement('div');
@@ -219,12 +251,20 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
             }
           }
 
+          const pronounsHtml = res.pronouns
+            ? `<p class="profile-pronouns" style="margin: 4px 0; color: var(--text-muted, #9ca3af);"><strong>${esc(i18n.t('profile.pronounsLabel'))}:</strong> ${esc(res.pronouns)}</p>`
+            : '';
+          const ariaName = res.pronouns
+            ? `${res.displayName}. ${i18n.t('profile.pronounsLabel')}: ${res.pronouns}`
+            : res.displayName;
+
           container.innerHTML = `
-            <div class="post-item profile-header" tabindex="0" data-text="${esc(i18n.t('profile.profileAriaDetails', { name: res.displayName, followsYou: res.viewerFollowedBy ? i18n.t('profile.followsYouAria') : '', isLabeler: res.isLabeler ? i18n.t('profile.isLabelerAria') : '', followers: res.followersCount.toString(), following: res.followsCount.toString(), shortcuts: res.isMe ? '' : i18n.t('profile.shortcutsAria') }))}">
+            <div class="post-item profile-header" tabindex="0" data-text="${esc(i18n.t('profile.profileAriaDetails', { name: ariaName, followsYou: res.viewerFollowedBy ? i18n.t('profile.followsYouAria') : '', isLabeler: res.isLabeler ? i18n.t('profile.isLabelerAria') : '', followers: res.followersCount.toString(), following: res.followsCount.toString(), shortcuts: res.isMe ? '' : i18n.t('profile.shortcutsAria') }))}">
               ${blockedNotice}
               ${liveStatusHtml}
               ${labelerBadge}
               <h3>${esc(res.displayName)} (${renderProfileLink(res.handle)})${verificationBadgeHtml}</h3>
+              ${pronounsHtml}
               ${res.viewerFollowedBy ? `<p><em>${i18n.t('profile.followsYouText')}</em></p>` : ''}
               <div id="known-followers-container" aria-live="polite" style="display:none; margin: 8px 0; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 6px;"></div>
               <p class="profile-bio">${linkify(res.description || '')}</p>
@@ -610,10 +650,16 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                   const dialog = document.getElementById('edit-profile-modal') as HTMLDialogElement;
                   if (dialog) {
                     const nameInput = document.getElementById('edit-profile-name') as HTMLInputElement;
+                    const pronounsInput = document.getElementById('edit-profile-pronouns') as HTMLInputElement | null;
                     const descInput = document.getElementById('edit-profile-desc') as HTMLTextAreaElement;
                     const avatarInput = document.getElementById('edit-profile-avatar') as HTMLInputElement;
                     const bannerInput = document.getElementById('edit-profile-banner') as HTMLInputElement;
                     if (nameInput) nameInput.value = res.displayName || '';
+                    if (pronounsInput) {
+                      pronounsInput.value = res.pronouns || '';
+                      syncPronounsPresetSelect(pronounsInput.value);
+                      updatePronounsCounter(pronounsInput.value);
+                    }
                     if (descInput) descInput.value = res.description || '';
                     if (avatarInput) avatarInput.value = '';
                     if (bannerInput) bannerInput.value = '';
@@ -745,8 +791,14 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 const div = document.createElement('article');
                 div.classList.add('post-item');
                 div.setAttribute('tabindex', '0');
-                div.dataset.text = i18n.t('profile.profileCardAria', { name: prof.displayName || prof.handle, desc: prof.description || '' });
-                div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3><p>${linkify(prof.description || '')}</p>`;
+                const profNameAria = prof.pronouns
+                    ? `${prof.displayName || prof.handle}. ${i18n.t('profile.pronounsLabel')}: ${prof.pronouns}`
+                    : (prof.displayName || prof.handle);
+                const profPronounsHtml = prof.pronouns
+                    ? `<p class="profile-pronouns" style="margin: 2px 0; font-size: 0.9em; color: var(--text-muted, #9ca3af);">${esc(prof.pronouns)}</p>`
+                    : '';
+                div.dataset.text = i18n.t('profile.profileCardAria', { name: profNameAria, desc: prof.description || '' });
+                div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3>${profPronounsHtml}<p>${linkify(prof.description || '')}</p>`;
                 
                 div.dataset.index = state.currentPosts.length.toString();
                 div.addEventListener('focus', () => {
@@ -937,6 +989,30 @@ export function setupProfile() {
   const saveBtn = document.getElementById('btn-save-profile') as HTMLButtonElement | null;
   const addLinkBtn = document.getElementById('btn-add-profile-link') as HTMLButtonElement | null;
   const dialog = document.getElementById('edit-profile-modal') as HTMLDialogElement;
+  const pronounsPresetSelect = document.getElementById('edit-profile-pronouns-preset') as HTMLSelectElement | null;
+  const pronounsInputEl = document.getElementById('edit-profile-pronouns') as HTMLInputElement | null;
+
+  if (pronounsPresetSelect && pronounsInputEl) {
+    pronounsPresetSelect.addEventListener('change', () => {
+      const val = pronounsPresetSelect.value;
+      if (val === '') {
+        pronounsInputEl.value = '';
+        updatePronounsCounter('');
+      } else if (val.startsWith('preset:')) {
+        const selectedOpt = pronounsPresetSelect.selectedOptions[0];
+        const presetText = selectedOpt?.textContent?.trim() ?? '';
+        pronounsInputEl.value = presetText;
+        updatePronounsCounter(presetText);
+      } else if (val === 'custom') {
+        pronounsInputEl.focus();
+      }
+    });
+
+    pronounsInputEl.addEventListener('input', () => {
+      syncPronounsPresetSelect(pronounsInputEl.value);
+      updatePronounsCounter(pronounsInputEl.value);
+    });
+  }
 
   if (addLinkBtn) {
     addLinkBtn.addEventListener('click', () => {
@@ -986,12 +1062,25 @@ export function setupProfile() {
     clearModalError();
 
     const nameInput = document.getElementById('edit-profile-name') as HTMLInputElement;
+    const pronounsInput = document.getElementById('edit-profile-pronouns') as HTMLInputElement | null;
     const descInput = document.getElementById('edit-profile-desc') as HTMLTextAreaElement;
     const avatarInput = document.getElementById('edit-profile-avatar') as HTMLInputElement;
     const bannerInput = document.getElementById('edit-profile-banner') as HTMLInputElement;
 
     const name = nameInput?.value.trim() ?? '';
+    const pronouns = (pronounsInput?.value ?? '').replace(/[\r\n]+/g, ' ').trim();
     const desc = descInput?.value.trim() ?? '';
+
+    if (
+      countGraphemes(pronouns) > MAX_PRONOUNS_GRAPHEMES ||
+      new TextEncoder().encode(pronouns).length > MAX_PRONOUNS_BYTES
+    ) {
+      const msg = i18n.t('profile.pronounsTooLong');
+      showModalError(msg);
+      announceAssertive(msg);
+      pronounsInput?.focus();
+      return;
+    }
 
     const links: ProfileLinkDTO[] = [];
     const linkRows = document.querySelectorAll<HTMLDivElement>('#edit-profile-links-list .profile-link-row');
@@ -1014,7 +1103,7 @@ export function setupProfile() {
     if (saveBtn) saveBtn.disabled = true;
 
     try {
-      await window.go.services.SocialService.UpdateProfileWithLinks(name, desc, links);
+      await window.go.services.SocialService.UpdateProfileWithLinks(name, desc, pronouns, links);
 
       if (avatarInput?.files && avatarInput.files.length > 0) {
         const pathOrData = await getFilePathOrDataUrl(avatarInput.files[0]);
@@ -1043,6 +1132,18 @@ export function setupProfile() {
       const headerTitle = document.querySelector('.profile-header h3');
       if (headerTitle) {
         headerTitle.innerHTML = `${esc(name || `@${state.currentHandle}`)} (${renderProfileLink(state.currentHandle)})`;
+        let pronounsEl = document.querySelector('.profile-header p.profile-pronouns') as HTMLParagraphElement | null;
+        if (pronouns) {
+          if (!pronounsEl) {
+            pronounsEl = document.createElement('p');
+            pronounsEl.className = 'profile-pronouns';
+            pronounsEl.style.cssText = 'margin: 4px 0; color: var(--text-muted, #9ca3af);';
+            headerTitle.insertAdjacentElement('afterend', pronounsEl);
+          }
+          pronounsEl.innerHTML = `<strong>${esc(i18n.t('profile.pronounsLabel'))}:</strong> ${esc(pronouns)}`;
+        } else if (pronounsEl) {
+          pronounsEl.remove();
+        }
       }
       const headerDesc = document.querySelector('.profile-header p.profile-bio');
       if (headerDesc) {

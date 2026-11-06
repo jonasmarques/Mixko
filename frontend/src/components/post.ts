@@ -285,6 +285,9 @@ export function createPostArticle(
   article.dataset.authorName = post.authorName || post.authorHandle;
   article.dataset.authorHandle = post.authorHandle;
   article.dataset.authorDid = post.authorDid;
+  if (post.authorPronouns) {
+    article.dataset.authorPronouns = post.authorPronouns;
+  }
   article.dataset.viewerLike = post.viewerLike || "";
   article.dataset.viewerBookmark = post.viewerBookmark || "";
   article.dataset.viewerThreadMuted = post.viewerThreadMuted ? "true" : "";
@@ -745,12 +748,12 @@ export function createPostArticle(
 
   article.querySelector('.btn-reply')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    openComposeModal('reply', {uri: post.uri, cid: post.cid, authorHandle: post.authorHandle});
+    openComposeModal('reply', {uri: post.uri, cid: post.cid, authorHandle: post.authorHandle, authorPronouns: post.authorPronouns});
   });
 
   article.querySelector('.btn-quote')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    openComposeModal('quote', {uri: post.uri, cid: post.cid, authorHandle: post.authorHandle});
+    openComposeModal('quote', {uri: post.uri, cid: post.cid, authorHandle: post.authorHandle, authorPronouns: post.authorPronouns});
   });
 
   article.querySelector('.btn-bookmark')?.addEventListener('click', async (e) => {

@@ -126,3 +126,37 @@ func TestBuildContentLabelPrefsMapsShowToIgnore(t *testing.T) {
 		t.Error("labeler DID was not carried over")
 	}
 }
+
+func TestSanitizePronouns(t *testing.T) {
+	if got := sanitizePronouns("  ele/dele\n "); got != "ele/dele" {
+		t.Errorf("sanitizePronouns trimmed = %q, want %q", got, "ele/dele")
+	}
+	if got := sanitizePronouns("   "); got != "" {
+		t.Errorf("sanitizePronouns blank = %q, want empty", got)
+	}
+	longInput := "abcdefghijklmnopqrstuvwxyz"
+	if got := sanitizePronouns(longInput); len([]rune(got)) != 20 {
+		t.Errorf("sanitizePronouns length = %d runes (%q), want 20", len([]rune(got)), got)
+	}
+}
+
+func TestParseProfileViewsCarryPronouns(t *testing.T) {
+	pronouns := " ela/dela "
+	pv := ParseProfileView(&bsky.ActorDefs_ProfileView{
+		Did:      "did:plc:test1",
+		Handle:   "alice.bsky.social",
+		Pronouns: &pronouns,
+	})
+	if pv == nil || pv.Pronouns != "ela/dela" {
+		t.Fatalf("ParseProfileView Pronouns = %v, want %q", pv, "ela/dela")
+	}
+
+	pvb := ParseProfileViewBasic(&bsky.ActorDefs_ProfileViewBasic{
+		Did:      "did:plc:test2",
+		Handle:   "bob.bsky.social",
+		Pronouns: &pronouns,
+	})
+	if pvb == nil || pvb.Pronouns != "ela/dela" {
+		t.Fatalf("ParseProfileViewBasic Pronouns = %v, want %q", pvb, "ela/dela")
+	}
+}

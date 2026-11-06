@@ -141,7 +141,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 					Image: blobRef,
 				})
 			}
-			
+
 			post.Embed = &bsky.FeedPost_Embed{
 				EmbedImages: &bsky.EmbedImages{
 					LexiconTypeID: "app.bsky.embed.images",
@@ -158,7 +158,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 				defer os.Remove(tmpPath)
 				videoPath = tmpPath
 			}
-			
+
 			if altText == "" {
 				return codedError(ErrCodeAltTextRequiredVideo)
 			}
@@ -167,7 +167,7 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 			if err != nil {
 				return fmt.Errorf("failed to upload video: %w", err)
 			}
-			
+
 			presentationStr := "gif"
 			vidEmbed := &bsky.EmbedVideo{
 				LexiconTypeID: "app.bsky.embed.video",
@@ -180,11 +180,11 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 					Height: videoHeight,
 				}
 			}
-			
+
 			if gifUrl != "" {
 				vidEmbed.Presentation = &presentationStr
 			}
-			
+
 			post.Embed = &bsky.FeedPost_Embed{
 				EmbedVideo: vidEmbed,
 			}
@@ -282,6 +282,19 @@ func (s *PostBuilderService) resolveThreadRoot(ctx context.Context, c *xrpc.Clie
 		parentPost := postRes.Posts[0]
 		if parentPost.Record != nil && parentPost.Record.Val != nil {
 			if bytes, err := json.Marshal(parentPost.Record.Val); err == nil {
+				var rec bsky.FeedPost
+				if json.Unmarshal(bytes, &rec) == nil &&
+					rec.Reply != nil && rec.Reply.Root != nil && rec.Reply.Root.Uri != "" {
+					return rec.Reply.Root.Uri, rec.Reply.Root.Cid
+				}
+			}
+		}
+		return parentUri, parentCid
+	}
+
+	if repo, collection, rkey, ok := parseATURI(parentUri); ok && collection == "app.bsky.feed.post" {
+		if _, _, rawVal, err := fetchRawRecordFromPDS(ctx, s.clientMgr, c, repo, collection, rkey); err == nil && rawVal != nil {
+			if bytes, err := json.Marshal(rawVal); err == nil {
 				var rec bsky.FeedPost
 				if json.Unmarshal(bytes, &rec) == nil &&
 					rec.Reply != nil && rec.Reply.Root != nil && rec.Reply.Root.Uri != "" {
@@ -466,7 +479,6 @@ func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Clien
 	return putThreadgateRecord(ctx, c, rkey, postUri, nowISO8601(), allow, true, nil)
 }
 
-
 func (s *PostBuilderService) uploadBlob(ctx context.Context, c *xrpc.Client, path string) (*util.LexBlob, error) {
 	localPath, cleanup, err := ResolvePathOrDataURL(path)
 	if err != nil {
@@ -485,7 +497,7 @@ func (s *PostBuilderService) uploadBlob(ctx context.Context, c *xrpc.Client, pat
 		defer file.Close()
 		buf = file
 	}
-	
+
 	res, err := atproto.RepoUploadBlob(ctx, c, buf)
 	if err != nil {
 		return nil, err
@@ -930,8 +942,6 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 	})
 	return out, err
 }
-
-
 
 // DeletePost handles deleting a post
 func (s *PostBuilderService) DeletePost(uri string) error {
@@ -1715,5 +1725,3 @@ func (s *PostBuilderService) DeleteDraft(id string) error {
 		})
 	})
 }
-
-
