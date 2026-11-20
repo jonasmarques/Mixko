@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Blocks inline handlers and foreign scripts, so text that slips past escaping cannot reach the Go bindings. -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self'; worker-src 'self' blob:" />
     <title>Mixko</title>
     <link rel="stylesheet" href="./src/style.css" />
   </head>
@@ -259,6 +261,8 @@
               <label><input type="checkbox" class="edit-self-label" value="nudity" /> <span data-i18n="modals.labelNudity">Nudez artística ou não sexual</span></label>
               <label><input type="checkbox" class="edit-self-label" value="porn" /> <span data-i18n="modals.labelPorn">Pornografia / Conteúdo adulto explícito</span></label>
               <label><input type="checkbox" class="edit-self-label" value="graphic-media" /> <span data-i18n="modals.labelGraphic">Violência ou mídia gráfica forte</span></label>
+              <label><input type="checkbox" class="edit-self-label" value="bot" /> <span data-i18n="sec2.labelBotAccount">Conta automatizada / Bot (🤖)</span></label>
+              <label><input type="checkbox" class="edit-self-label" value="!no-unauthenticated" /> <span data-i18n="sec2.labelNoUnauthenticated">Ocultar perfil e posts de usuários sem login</span></label>
             </div>
           </fieldset>
 
@@ -457,6 +461,14 @@
                     <label for="search-until" data-i18n="sec2.untilFilterLabel">Até (AAAA-MM-DD):</label>
                     <input type="date" id="search-until" style="padding:4px;" />
                   </div>
+                  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; width:100%; margin-top:4px;">
+                    <label><input type="checkbox" id="search-following" /> <span data-i18n="sec2.searchFollowingOnlyLabel">Apenas de quem eu sigo</span></label>
+                    <label><input type="checkbox" id="search-has-media" /> <span data-i18n="sec2.searchHasMediaLabel">Apenas com mídia</span></label>
+                    <label><input type="checkbox" id="search-has-video" /> <span data-i18n="sec2.searchHasVideoLabel">Apenas com vídeo</span></label>
+                    <label><input type="checkbox" id="search-exclude-replies" /> <span data-i18n="sec2.searchExcludeRepliesLabel">Excluir respostas</span></label>
+                    <label><input type="checkbox" id="search-replies-only" /> <span data-i18n="sec2.searchRepliesOnlyLabel">Apenas respostas</span></label>
+                    <label><input type="checkbox" id="search-all-time" /> <span data-i18n="sec2.searchAllTimeLabel">Todo o período</span></label>
+                  </div>
               </div>
               <button id="btn-search" style="margin-top: 10px;" data-i18n="search.button">Buscar</button>
           </div>
@@ -638,6 +650,12 @@
                   <div id="subscribed-labelers-list" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px;" data-i18n="app.loading">
                       Carregando rotuladores...
                   </div>
+
+                  <h4 style="font-size: 1rem; margin-top: 15px;" data-i18n="sec2.modInboxTitle">Caixa de Entrada de Moderação e Apelações</h4>
+                  <div style="margin-bottom: 8px;">
+                    <button type="button" id="btn-load-mod-inbox" data-i18n="sec2.loadModInboxBtn">Verificar Ações de Moderação</button>
+                  </div>
+                  <div id="mod-inbox-container" aria-live="polite" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;"></div>
                 </div>
               </details>
 
@@ -651,6 +669,29 @@
                       <option value="following" data-i18n="extended.dmAllowFollowing">Apenas pessoas que eu sigo</option>
                       <option value="none" data-i18n="extended.dmAllowNone">Ninguém</option>
                     </select>
+                  </div>
+
+                  <div style="margin-bottom: 15px;">
+                    <label for="setting-chat-allow-group-invites" data-i18n="sec2.allowGroupInvitesLabel">Quem pode me convidar para grupos de chat:</label>
+                    <select id="setting-chat-allow-group-invites">
+                      <option value="all" data-i18n="extended.dmAllowAll">Todos</option>
+                      <option value="following" data-i18n="extended.dmAllowFollowing">Apenas pessoas que eu sigo</option>
+                      <option value="none" data-i18n="extended.dmAllowNone">Ninguém</option>
+                    </select>
+                  </div>
+
+                  <div style="margin-bottom: 15px;">
+                    <label for="setting-notif-allow-subscriptions" data-i18n="sec2.allowActivitySubsLabel">Quem pode assinar notificações das minhas atividades (sino):</label>
+                    <select id="setting-notif-allow-subscriptions">
+                      <option value="followers" data-i18n="sec2.allowSubsFollowers">Meus seguidores</option>
+                      <option value="mutuals" data-i18n="sec2.allowSubsMutuals">Seguidores mútuos</option>
+                      <option value="none" data-i18n="sec2.allowSubsNone">Ninguém</option>
+                    </select>
+                  </div>
+
+                  <div style="margin-bottom: 15px;">
+                    <input type="checkbox" id="setting-hide-algo-recs" />
+                    <label for="setting-hide-algo-recs" data-i18n="sec2.hideAlgoRecsLabel">Ocultar minhas publicações de recomendações algorítmicas (Discover)</label>
                   </div>
 
                   <h4 style="margin-top: 0; font-size: 1rem;" data-i18n="settings.mutedUsers">Usuários Silenciados</h4>
@@ -688,6 +729,8 @@
                     <button type="button" class="btn-self-label" data-label="sexually-suggestive" data-i18n="settings.slSexual">Conteúdo Sexualmente Sugestivo</button>
                     <button type="button" class="btn-self-label" data-label="nudity" data-i18n="settings.slNudity">Nudez</button>
                     <button type="button" class="btn-self-label" data-label="graphic-media" data-i18n="settings.slGraphic">Mídia Chocante/Violenta</button>
+                    <button type="button" class="btn-self-label" data-label="bot" data-i18n="sec2.labelBotAccount">Conta automatizada / Bot (🤖)</button>
+                    <button type="button" class="btn-self-label" data-label="!no-unauthenticated" data-i18n="sec2.labelNoUnauthenticated">Ocultar perfil e posts de usuários sem login</button>
                   </div>
                 </div>
               </details>

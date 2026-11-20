@@ -43,13 +43,15 @@ func loadOrCreateKey(dir string) ([]byte, error) {
 	}
 
 	key, found, err := store.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read key from %s: %w", store.Name(), err)
+	if err != nil || (found && len(key) != keySize) {
+		// An unreadable key (a DPAPI blob from another Windows profile, a
+		// broken keyring) would fail every launch from now on. The tokens it
+		// protected are lost either way, so start over with a new key and let
+		// the user log in again.
+		fmt.Printf("warning: discarding unusable key from %s: %v\n", store.Name(), err)
+		found = false
 	}
 	if found {
-		if len(key) != keySize {
-			return nil, fmt.Errorf("key from %s has wrong size %d", store.Name(), len(key))
-		}
 		return key, nil
 	}
 

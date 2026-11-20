@@ -16,3 +16,7 @@ session.key.dpapi
 *.sqlite-wal
 *.sqlite-shm
 nppBackup/
+
+# Stray local build output and the checksum Wails regenerates on every build
+/jsky
+frontend/package.json.md5

@@ -3,14 +3,17 @@ import { announcePolite, announceAssertive } from '../utils/a11y';
 import { createPostArticle, cleanupContainerVideos, bindContainerVideos } from '../components/post';
 import { i18n } from '../utils/i18n';
 import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload, restoreKeyOf } from '../utils/pagination';
+import type { PostDTO } from '../types/dto';
+
+const TIMELINE_PAGE_LIMIT = 40;
 
 /** Fetches the next page of the active feed and appends it. Returns how many articles it added. */
 async function fetchTimelinePage(container: HTMLDivElement): Promise<number> {
   let res;
   if (state.currentFeedUri === "") {
-      res = await window.go.services.FeedService.GetTimeline(state.timelineCursor, 100);
+      res = await window.go.services.FeedService.GetTimeline(state.timelineCursor, TIMELINE_PAGE_LIMIT);
   } else {
-      res = await window.go.services.FeedService.GetCustomFeed(state.currentFeedUri, state.timelineCursor, 100);
+      res = await window.go.services.FeedService.GetCustomFeed(state.currentFeedUri, state.timelineCursor, TIMELINE_PAGE_LIMIT);
   }
   if (!res) return 0;
   markPageLoaded('timeline');
@@ -18,10 +21,15 @@ async function fetchTimelinePage(container: HTMLDivElement): Promise<number> {
   if (!res.posts) return 0;
 
   let addedCount = 0;
-  const groups = new Map<string, any[]>();
+  const groups = new Map<string, PostDTO[]>();
   const groupOrder: string[] = [];
+  const seenUris = new Set<string>();
+  for (const existing of state.currentPosts) {
+      const uri = existing.dataset.uri;
+      if (uri) seenUris.add(uri);
+  }
 
-  res.posts.forEach((post: any) => {
+  res.posts.forEach((post: PostDTO) => {
       if (state.feedViewHideReposts && post.repostedBy) return;
       if (state.feedViewHideQuotePosts && post.quotePost) return;
       if (state.hideReplies && post.isReply) {
@@ -39,29 +47,31 @@ async function fetchTimelinePage(container: HTMLDivElement): Promise<number> {
 
   groupOrder.forEach(root => {
       const group = groups.get(root)!;
-      group.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      group.sort((a: PostDTO, b: PostDTO) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-      group.forEach((post: any, idx: number) => {
-          if (!state.currentPosts.some(p => p.dataset.uri === post.uri)) {
+      group.forEach((post: PostDTO, idx: number) => {
+          if (!seenUris.has(post.uri)) {
               if (idx === 0 && !post.repostedBy) {
-                  if (post.rootPost && !state.currentPosts.some(p => p.dataset.uri === post.rootPost.uri)) {
+                  if (post.rootPost && !seenUris.has(post.rootPost.uri)) {
                       const rootArticle = createPostArticle(post.rootPost, state.currentPosts.length);
                       if (rootArticle) {
                           rootArticle.classList.add('thread-parent');
                           container.appendChild(rootArticle);
                           state.currentPosts.push(rootArticle);
+                          seenUris.add(post.rootPost.uri);
                           addedCount++;
                       }
                   }
 
                   if (post.parentPost &&
                       (!post.rootPost || post.parentPost.uri !== post.rootPost.uri) &&
-                      !state.currentPosts.some(p => p.dataset.uri === post.parentPost.uri)) {
+                      !seenUris.has(post.parentPost.uri)) {
                       const parentArticle = createPostArticle(post.parentPost, state.currentPosts.length);
                       if (parentArticle) {
                           parentArticle.classList.add('thread-child');
                           container.appendChild(parentArticle);
                           state.currentPosts.push(parentArticle);
+                          seenUris.add(post.parentPost.uri);
                           addedCount++;
                       }
                   }
@@ -72,6 +82,7 @@ async function fetchTimelinePage(container: HTMLDivElement): Promise<number> {
                   if (post.rootPost || post.parentPost || idx > 0) article.classList.add('thread-child');
                   container.appendChild(article);
                   state.currentPosts.push(article);
+                  seenUris.add(post.uri);
                   addedCount++;
               }
           }

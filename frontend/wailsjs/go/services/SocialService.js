@@ -82,6 +82,10 @@ export function GetContactMatches(arg1) {
   return window['go']['services']['SocialService']['GetContactMatches'](arg1);
 }
 
+export function GetContentVisibilityDeclaration() {
+  return window['go']['services']['SocialService']['GetContentVisibilityDeclaration']();
+}
+
 export function GetFollowers(arg1, arg2) {
   return window['go']['services']['SocialService']['GetFollowers'](arg1, arg2);
 }
@@ -162,6 +166,10 @@ export function MuteList(arg1) {
   return window['go']['services']['SocialService']['MuteList'](arg1);
 }
 
+export function OptOutReferenceList(arg1) {
+  return window['go']['services']['SocialService']['OptOutReferenceList'](arg1);
+}
+
 export function PinPost(arg1, arg2) {
   return window['go']['services']['SocialService']['PinPost'](arg1, arg2);
 }
@@ -202,6 +210,10 @@ export function UnblockList(arg1) {
   return window['go']['services']['SocialService']['UnblockList'](arg1);
 }
 
+export function UndoOptOutReferenceList(arg1) {
+  return window['go']['services']['SocialService']['UndoOptOutReferenceList'](arg1);
+}
+
 export function Unfollow(arg1) {
   return window['go']['services']['SocialService']['Unfollow'](arg1);
 }
@@ -236,6 +248,10 @@ export function UpdateAllPreferences(arg1, arg2, arg3, arg4) {
 
 export function UpdateContentFilters(arg1) {
   return window['go']['services']['SocialService']['UpdateContentFilters'](arg1);
+}
+
+export function UpdateContentVisibilityDeclaration(arg1) {
+  return window['go']['services']['SocialService']['UpdateContentVisibilityDeclaration'](arg1);
 }
 
 export function UpdateFeedViewPrefs(arg1, arg2, arg3, arg4) {

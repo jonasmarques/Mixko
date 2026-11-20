@@ -34,7 +34,9 @@ export function getPostAccessibleLabel(article: HTMLElement): string {
     const text = article.dataset.text || "";
     const authorName = article.dataset.authorName || article.dataset.author || "";
     const authorHandle = article.dataset.authorHandle || "";
-    const author = formatAuthor(authorName, authorHandle);
+    const botSuffix = article.dataset.authorIsBot === 'true' ? ` [${i18n.t('sec2.botBadgeAria')}]` : "";
+    const opProgressSuffix = article.dataset.opThreadProgress ? ` (${article.dataset.opThreadProgress})` : "";
+    const author = `${formatAuthor(authorName, authorHandle)}${botSuffix}${opProgressSuffix}`;
     const createdAt = article.dataset.createdAt || "";
     const dateFormatted = createdAt ? formatPostDate(createdAt) : "";
 

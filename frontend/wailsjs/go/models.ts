@@ -1,2121 +1,3 @@
-export namespace atproto {
-	
-	export class LabelDefs_Label {
-	    cid?: string;
-	    cts: string;
-	    exp?: string;
-	    neg?: boolean;
-	    sig?: number[];
-	    src: string;
-	    uri: string;
-	    val: string;
-	    ver?: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new LabelDefs_Label(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.cid = source["cid"];
-	        this.cts = source["cts"];
-	        this.exp = source["exp"];
-	        this.neg = source["neg"];
-	        this.sig = source["sig"];
-	        this.src = source["src"];
-	        this.uri = source["uri"];
-	        this.val = source["val"];
-	        this.ver = source["ver"];
-	    }
-	}
-	export class RepoStrongRef {
-	    $type?: string;
-	    cid: string;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RepoStrongRef(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.cid = source["cid"];
-	        this.uri = source["uri"];
-	    }
-	}
-
-}
-
-export namespace bsky {
-	
-	export class GraphDefs_ListViewerState {
-	    blocked?: string;
-	    muted?: boolean;
-	    referenceListOptOut?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new GraphDefs_ListViewerState(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.blocked = source["blocked"];
-	        this.muted = source["muted"];
-	        this.referenceListOptOut = source["referenceListOptOut"];
-	    }
-	}
-	export class GraphDefs_ListViewBasic {
-	    avatar?: string;
-	    cid: string;
-	    indexedAt?: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    listItemCount?: number;
-	    name: string;
-	    purpose?: string;
-	    uri: string;
-	    viewer?: GraphDefs_ListViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new GraphDefs_ListViewBasic(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.avatar = source["avatar"];
-	        this.cid = source["cid"];
-	        this.indexedAt = source["indexedAt"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.listItemCount = source["listItemCount"];
-	        this.name = source["name"];
-	        this.purpose = source["purpose"];
-	        this.uri = source["uri"];
-	        this.viewer = this.convertValues(source["viewer"], GraphDefs_ListViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class NotificationDefs_ActivitySubscription {
-	    post: boolean;
-	    reply: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new NotificationDefs_ActivitySubscription(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.post = source["post"];
-	        this.reply = source["reply"];
-	    }
-	}
-	export class ActorDefs_ViewerState {
-	    activitySubscription?: NotificationDefs_ActivitySubscription;
-	    blockedBy?: boolean;
-	    blocking?: string;
-	    blockingByList?: GraphDefs_ListViewBasic;
-	    followedBy?: string;
-	    following?: string;
-	    knownFollowers?: ActorDefs_KnownFollowers;
-	    muted?: boolean;
-	    mutedByList?: GraphDefs_ListViewBasic;
-	    mutedOnlyQuoteposts?: boolean;
-	    mutedOnlyReposts?: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_ViewerState(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.activitySubscription = this.convertValues(source["activitySubscription"], NotificationDefs_ActivitySubscription);
-	        this.blockedBy = source["blockedBy"];
-	        this.blocking = source["blocking"];
-	        this.blockingByList = this.convertValues(source["blockingByList"], GraphDefs_ListViewBasic);
-	        this.followedBy = source["followedBy"];
-	        this.following = source["following"];
-	        this.knownFollowers = this.convertValues(source["knownFollowers"], ActorDefs_KnownFollowers);
-	        this.muted = source["muted"];
-	        this.mutedByList = this.convertValues(source["mutedByList"], GraphDefs_ListViewBasic);
-	        this.mutedOnlyQuoteposts = source["mutedOnlyQuoteposts"];
-	        this.mutedOnlyReposts = source["mutedOnlyReposts"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ActorDefs_VerificationView {
-	    createdAt: string;
-	    isValid: boolean;
-	    issuer: string;
-	    issuerDisplayName?: string;
-	    issuerHandle?: string;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_VerificationView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.createdAt = source["createdAt"];
-	        this.isValid = source["isValid"];
-	        this.issuer = source["issuer"];
-	        this.issuerDisplayName = source["issuerDisplayName"];
-	        this.issuerHandle = source["issuerHandle"];
-	        this.uri = source["uri"];
-	    }
-	}
-	export class ActorDefs_VerificationState {
-	    trustedVerifierStatus: string;
-	    verifications: ActorDefs_VerificationView[];
-	    verifiedStatus: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_VerificationState(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.trustedVerifierStatus = source["trustedVerifierStatus"];
-	        this.verifications = this.convertValues(source["verifications"], ActorDefs_VerificationView);
-	        this.verifiedStatus = source["verifiedStatus"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedExternal_ColorRGB {
-	    b: number;
-	    g: number;
-	    r: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedExternal_ColorRGB(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.b = source["b"];
-	        this.g = source["g"];
-	        this.r = source["r"];
-	    }
-	}
-	export class EmbedExternal_ViewExternalSourceTheme {
-	    accentForegroundRGB?: EmbedExternal_ColorRGB;
-	    accentRGB?: EmbedExternal_ColorRGB;
-	    backgroundRGB?: EmbedExternal_ColorRGB;
-	    foregroundRGB?: EmbedExternal_ColorRGB;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedExternal_ViewExternalSourceTheme(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.accentForegroundRGB = this.convertValues(source["accentForegroundRGB"], EmbedExternal_ColorRGB);
-	        this.accentRGB = this.convertValues(source["accentRGB"], EmbedExternal_ColorRGB);
-	        this.backgroundRGB = this.convertValues(source["backgroundRGB"], EmbedExternal_ColorRGB);
-	        this.foregroundRGB = this.convertValues(source["foregroundRGB"], EmbedExternal_ColorRGB);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedExternal_ViewExternalSource {
-	    description?: string;
-	    icon?: string;
-	    theme?: EmbedExternal_ViewExternalSourceTheme;
-	    title: string;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedExternal_ViewExternalSource(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.description = source["description"];
-	        this.icon = source["icon"];
-	        this.theme = this.convertValues(source["theme"], EmbedExternal_ViewExternalSourceTheme);
-	        this.title = source["title"];
-	        this.uri = source["uri"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedExternal_ViewExternal {
-	    associatedProfiles?: ActorDefs_ProfileViewBasic[];
-	    associatedRefs?: atproto.RepoStrongRef[];
-	    createdAt?: string;
-	    description: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    readingTime?: number;
-	    source?: EmbedExternal_ViewExternalSource;
-	    thumb?: string;
-	    title: string;
-	    updatedAt?: string;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedExternal_ViewExternal(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.associatedProfiles = this.convertValues(source["associatedProfiles"], ActorDefs_ProfileViewBasic);
-	        this.associatedRefs = this.convertValues(source["associatedRefs"], atproto.RepoStrongRef);
-	        this.createdAt = source["createdAt"];
-	        this.description = source["description"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.readingTime = source["readingTime"];
-	        this.source = this.convertValues(source["source"], EmbedExternal_ViewExternalSource);
-	        this.thumb = source["thumb"];
-	        this.title = source["title"];
-	        this.updatedAt = source["updatedAt"];
-	        this.uri = source["uri"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedExternal_View {
-	    $type: string;
-	    external?: EmbedExternal_ViewExternal;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedExternal_View(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.external = this.convertValues(source["external"], EmbedExternal_ViewExternal);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ActorDefs_StatusView_Embed {
-	    EmbedExternal_View?: EmbedExternal_View;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_StatusView_Embed(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.EmbedExternal_View = this.convertValues(source["EmbedExternal_View"], EmbedExternal_View);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ActorDefs_StatusView {
-	    cid?: string;
-	    embed?: ActorDefs_StatusView_Embed;
-	    expiresAt?: string;
-	    isActive?: boolean;
-	    isDisabled?: boolean;
-	    labels?: atproto.LabelDefs_Label[];
-	    record?: util.LexiconTypeDecoder;
-	    status: string;
-	    uri?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_StatusView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.cid = source["cid"];
-	        this.embed = this.convertValues(source["embed"], ActorDefs_StatusView_Embed);
-	        this.expiresAt = source["expiresAt"];
-	        this.isActive = source["isActive"];
-	        this.isDisabled = source["isDisabled"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.record = this.convertValues(source["record"], util.LexiconTypeDecoder);
-	        this.status = source["status"];
-	        this.uri = source["uri"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ActorDefs_ProfileAssociatedGerm {
-	    messageMeUrl: string;
-	    showButtonTo: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_ProfileAssociatedGerm(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.messageMeUrl = source["messageMeUrl"];
-	        this.showButtonTo = source["showButtonTo"];
-	    }
-	}
-	export class ActorDefs_ProfileAssociatedChat {
-	    allowGroupInvites?: string;
-	    allowIncoming: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_ProfileAssociatedChat(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.allowGroupInvites = source["allowGroupInvites"];
-	        this.allowIncoming = source["allowIncoming"];
-	    }
-	}
-	export class ActorDefs_ProfileAssociatedActivitySubscription {
-	    allowSubscriptions: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_ProfileAssociatedActivitySubscription(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.allowSubscriptions = source["allowSubscriptions"];
-	    }
-	}
-	export class ActorDefs_ProfileAssociated {
-	    activitySubscription?: ActorDefs_ProfileAssociatedActivitySubscription;
-	    chat?: ActorDefs_ProfileAssociatedChat;
-	    feedgens?: number;
-	    germ?: ActorDefs_ProfileAssociatedGerm;
-	    labeler?: boolean;
-	    lists?: number;
-	    starterPacks?: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_ProfileAssociated(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.activitySubscription = this.convertValues(source["activitySubscription"], ActorDefs_ProfileAssociatedActivitySubscription);
-	        this.chat = this.convertValues(source["chat"], ActorDefs_ProfileAssociatedChat);
-	        this.feedgens = source["feedgens"];
-	        this.germ = this.convertValues(source["germ"], ActorDefs_ProfileAssociatedGerm);
-	        this.labeler = source["labeler"];
-	        this.lists = source["lists"];
-	        this.starterPacks = source["starterPacks"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ActorDefs_ProfileViewBasic {
-	    associated?: ActorDefs_ProfileAssociated;
-	    avatar?: string;
-	    createdAt?: string;
-	    debug?: any;
-	    did: string;
-	    displayName?: string;
-	    handle: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    pronouns?: string;
-	    status?: ActorDefs_StatusView;
-	    verification?: ActorDefs_VerificationState;
-	    viewer?: ActorDefs_ViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_ProfileViewBasic(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.associated = this.convertValues(source["associated"], ActorDefs_ProfileAssociated);
-	        this.avatar = source["avatar"];
-	        this.createdAt = source["createdAt"];
-	        this.debug = source["debug"];
-	        this.did = source["did"];
-	        this.displayName = source["displayName"];
-	        this.handle = source["handle"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.pronouns = source["pronouns"];
-	        this.status = this.convertValues(source["status"], ActorDefs_StatusView);
-	        this.verification = this.convertValues(source["verification"], ActorDefs_VerificationState);
-	        this.viewer = this.convertValues(source["viewer"], ActorDefs_ViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ActorDefs_KnownFollowers {
-	    count: number;
-	    followers: ActorDefs_ProfileViewBasic[];
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_KnownFollowers(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.count = source["count"];
-	        this.followers = this.convertValues(source["followers"], ActorDefs_ProfileViewBasic);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	
-	
-	
-	export class ActorDefs_ProfileView {
-	    associated?: ActorDefs_ProfileAssociated;
-	    avatar?: string;
-	    createdAt?: string;
-	    debug?: any;
-	    description?: string;
-	    did: string;
-	    displayName?: string;
-	    handle: string;
-	    indexedAt?: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    pronouns?: string;
-	    status?: ActorDefs_StatusView;
-	    verification?: ActorDefs_VerificationState;
-	    viewer?: ActorDefs_ViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new ActorDefs_ProfileView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.associated = this.convertValues(source["associated"], ActorDefs_ProfileAssociated);
-	        this.avatar = source["avatar"];
-	        this.createdAt = source["createdAt"];
-	        this.debug = source["debug"];
-	        this.description = source["description"];
-	        this.did = source["did"];
-	        this.displayName = source["displayName"];
-	        this.handle = source["handle"];
-	        this.indexedAt = source["indexedAt"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.pronouns = source["pronouns"];
-	        this.status = this.convertValues(source["status"], ActorDefs_StatusView);
-	        this.verification = this.convertValues(source["verification"], ActorDefs_VerificationState);
-	        this.viewer = this.convertValues(source["viewer"], ActorDefs_ViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	
-	
-	
-	
-	
-	export class EmbedDefs_AspectRatio {
-	    height: number;
-	    width: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedDefs_AspectRatio(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.height = source["height"];
-	        this.width = source["width"];
-	    }
-	}
-	
-	
-	
-	
-	
-	export class EmbedGallery_ViewImage {
-	    $type: string;
-	    alt: string;
-	    aspectRatio?: EmbedDefs_AspectRatio;
-	    fullsize: string;
-	    thumbnail: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedGallery_ViewImage(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.alt = source["alt"];
-	        this.aspectRatio = this.convertValues(source["aspectRatio"], EmbedDefs_AspectRatio);
-	        this.fullsize = source["fullsize"];
-	        this.thumbnail = source["thumbnail"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedGallery_View_Items_Elem {
-	    EmbedGallery_ViewImage?: EmbedGallery_ViewImage;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedGallery_View_Items_Elem(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.EmbedGallery_ViewImage = this.convertValues(source["EmbedGallery_ViewImage"], EmbedGallery_ViewImage);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedGallery_View {
-	    $type: string;
-	    items: EmbedGallery_View_Items_Elem[];
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedGallery_View(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.items = this.convertValues(source["items"], EmbedGallery_View_Items_Elem);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	
-	export class EmbedImages_ViewImage {
-	    alt: string;
-	    aspectRatio?: EmbedDefs_AspectRatio;
-	    fullsize: string;
-	    thumb: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedImages_ViewImage(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.alt = source["alt"];
-	        this.aspectRatio = this.convertValues(source["aspectRatio"], EmbedDefs_AspectRatio);
-	        this.fullsize = source["fullsize"];
-	        this.thumb = source["thumb"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedImages_View {
-	    $type: string;
-	    images: EmbedImages_ViewImage[];
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedImages_View(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.images = this.convertValues(source["images"], EmbedImages_ViewImage);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	export class GraphDefs_StarterPackViewBasic {
-	    $type: string;
-	    cid: string;
-	    creator?: ActorDefs_ProfileViewBasic;
-	    indexedAt: string;
-	    joinedAllTimeCount?: number;
-	    joinedWeekCount?: number;
-	    labels?: atproto.LabelDefs_Label[];
-	    listItemCount?: number;
-	    record?: util.LexiconTypeDecoder;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new GraphDefs_StarterPackViewBasic(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.cid = source["cid"];
-	        this.creator = this.convertValues(source["creator"], ActorDefs_ProfileViewBasic);
-	        this.indexedAt = source["indexedAt"];
-	        this.joinedAllTimeCount = source["joinedAllTimeCount"];
-	        this.joinedWeekCount = source["joinedWeekCount"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.listItemCount = source["listItemCount"];
-	        this.record = this.convertValues(source["record"], util.LexiconTypeDecoder);
-	        this.uri = source["uri"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class LabelerDefs_LabelerViewerState {
-	    like?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new LabelerDefs_LabelerViewerState(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.like = source["like"];
-	    }
-	}
-	export class LabelerDefs_LabelerView {
-	    $type: string;
-	    cid: string;
-	    creator?: ActorDefs_ProfileView;
-	    indexedAt: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    likeCount?: number;
-	    uri: string;
-	    viewer?: LabelerDefs_LabelerViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new LabelerDefs_LabelerView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.cid = source["cid"];
-	        this.creator = this.convertValues(source["creator"], ActorDefs_ProfileView);
-	        this.indexedAt = source["indexedAt"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.likeCount = source["likeCount"];
-	        this.uri = source["uri"];
-	        this.viewer = this.convertValues(source["viewer"], LabelerDefs_LabelerViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class GraphDefs_ListView {
-	    $type: string;
-	    avatar?: string;
-	    cid: string;
-	    creator?: ActorDefs_ProfileView;
-	    description?: string;
-	    descriptionFacets?: RichtextFacet[];
-	    indexedAt: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    listItemCount?: number;
-	    name: string;
-	    purpose?: string;
-	    uri: string;
-	    viewer?: GraphDefs_ListViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new GraphDefs_ListView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.avatar = source["avatar"];
-	        this.cid = source["cid"];
-	        this.creator = this.convertValues(source["creator"], ActorDefs_ProfileView);
-	        this.description = source["description"];
-	        this.descriptionFacets = this.convertValues(source["descriptionFacets"], RichtextFacet);
-	        this.indexedAt = source["indexedAt"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.listItemCount = source["listItemCount"];
-	        this.name = source["name"];
-	        this.purpose = source["purpose"];
-	        this.uri = source["uri"];
-	        this.viewer = this.convertValues(source["viewer"], GraphDefs_ListViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_GeneratorViewerState {
-	    like?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_GeneratorViewerState(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.like = source["like"];
-	    }
-	}
-	export class RichtextFacet_ByteSlice {
-	    byteEnd: number;
-	    byteStart: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new RichtextFacet_ByteSlice(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.byteEnd = source["byteEnd"];
-	        this.byteStart = source["byteStart"];
-	    }
-	}
-	export class RichtextFacet_Tag {
-	    $type: string;
-	    tag: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RichtextFacet_Tag(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.tag = source["tag"];
-	    }
-	}
-	export class RichtextFacet_Link {
-	    $type: string;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RichtextFacet_Link(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.uri = source["uri"];
-	    }
-	}
-	export class RichtextFacet_Mention {
-	    $type: string;
-	    did: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new RichtextFacet_Mention(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.did = source["did"];
-	    }
-	}
-	export class RichtextFacet_Features_Elem {
-	    RichtextFacet_Mention?: RichtextFacet_Mention;
-	    RichtextFacet_Link?: RichtextFacet_Link;
-	    RichtextFacet_Tag?: RichtextFacet_Tag;
-	
-	    static createFrom(source: any = {}) {
-	        return new RichtextFacet_Features_Elem(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.RichtextFacet_Mention = this.convertValues(source["RichtextFacet_Mention"], RichtextFacet_Mention);
-	        this.RichtextFacet_Link = this.convertValues(source["RichtextFacet_Link"], RichtextFacet_Link);
-	        this.RichtextFacet_Tag = this.convertValues(source["RichtextFacet_Tag"], RichtextFacet_Tag);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class RichtextFacet {
-	    features: RichtextFacet_Features_Elem[];
-	    index?: RichtextFacet_ByteSlice;
-	
-	    static createFrom(source: any = {}) {
-	        return new RichtextFacet(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.features = this.convertValues(source["features"], RichtextFacet_Features_Elem);
-	        this.index = this.convertValues(source["index"], RichtextFacet_ByteSlice);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_GeneratorView {
-	    $type: string;
-	    acceptsInteractions?: boolean;
-	    avatar?: string;
-	    cid: string;
-	    contentMode?: string;
-	    creator?: ActorDefs_ProfileView;
-	    description?: string;
-	    descriptionFacets?: RichtextFacet[];
-	    did: string;
-	    displayName: string;
-	    indexedAt: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    likeCount?: number;
-	    uri: string;
-	    viewer?: FeedDefs_GeneratorViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_GeneratorView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.acceptsInteractions = source["acceptsInteractions"];
-	        this.avatar = source["avatar"];
-	        this.cid = source["cid"];
-	        this.contentMode = source["contentMode"];
-	        this.creator = this.convertValues(source["creator"], ActorDefs_ProfileView);
-	        this.description = source["description"];
-	        this.descriptionFacets = this.convertValues(source["descriptionFacets"], RichtextFacet);
-	        this.did = source["did"];
-	        this.displayName = source["displayName"];
-	        this.indexedAt = source["indexedAt"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.likeCount = source["likeCount"];
-	        this.uri = source["uri"];
-	        this.viewer = this.convertValues(source["viewer"], FeedDefs_GeneratorViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecord_ViewDetached {
-	    $type: string;
-	    detached: boolean;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecord_ViewDetached(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.detached = source["detached"];
-	        this.uri = source["uri"];
-	    }
-	}
-	export class FeedDefs_BlockedAuthor {
-	    did: string;
-	    viewer?: ActorDefs_ViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_BlockedAuthor(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.did = source["did"];
-	        this.viewer = this.convertValues(source["viewer"], ActorDefs_ViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecord_ViewBlocked {
-	    $type: string;
-	    author?: FeedDefs_BlockedAuthor;
-	    blocked: boolean;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecord_ViewBlocked(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.author = this.convertValues(source["author"], FeedDefs_BlockedAuthor);
-	        this.blocked = source["blocked"];
-	        this.uri = source["uri"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecord_ViewNotFound {
-	    $type: string;
-	    notFound: boolean;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecord_ViewNotFound(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.notFound = source["notFound"];
-	        this.uri = source["uri"];
-	    }
-	}
-	export class EmbedRecord_ViewRecord_Embeds_Elem {
-	    EmbedImages_View?: EmbedImages_View;
-	    EmbedVideo_View?: EmbedVideo_View;
-	    EmbedGallery_View?: EmbedGallery_View;
-	    EmbedExternal_View?: EmbedExternal_View;
-	    EmbedRecord_View?: EmbedRecord_View;
-	    EmbedRecordWithMedia_View?: EmbedRecordWithMedia_View;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecord_ViewRecord_Embeds_Elem(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.EmbedImages_View = this.convertValues(source["EmbedImages_View"], EmbedImages_View);
-	        this.EmbedVideo_View = this.convertValues(source["EmbedVideo_View"], EmbedVideo_View);
-	        this.EmbedGallery_View = this.convertValues(source["EmbedGallery_View"], EmbedGallery_View);
-	        this.EmbedExternal_View = this.convertValues(source["EmbedExternal_View"], EmbedExternal_View);
-	        this.EmbedRecord_View = this.convertValues(source["EmbedRecord_View"], EmbedRecord_View);
-	        this.EmbedRecordWithMedia_View = this.convertValues(source["EmbedRecordWithMedia_View"], EmbedRecordWithMedia_View);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecord_ViewRecord {
-	    $type: string;
-	    author?: ActorDefs_ProfileViewBasic;
-	    cid: string;
-	    embeds?: EmbedRecord_ViewRecord_Embeds_Elem[];
-	    indexedAt: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    likeCount?: number;
-	    opThreadPostCount?: number;
-	    opThreadPostIndex?: number;
-	    quoteCount?: number;
-	    replyCount?: number;
-	    repostCount?: number;
-	    uri: string;
-	    value?: util.LexiconTypeDecoder;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecord_ViewRecord(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.author = this.convertValues(source["author"], ActorDefs_ProfileViewBasic);
-	        this.cid = source["cid"];
-	        this.embeds = this.convertValues(source["embeds"], EmbedRecord_ViewRecord_Embeds_Elem);
-	        this.indexedAt = source["indexedAt"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.likeCount = source["likeCount"];
-	        this.opThreadPostCount = source["opThreadPostCount"];
-	        this.opThreadPostIndex = source["opThreadPostIndex"];
-	        this.quoteCount = source["quoteCount"];
-	        this.replyCount = source["replyCount"];
-	        this.repostCount = source["repostCount"];
-	        this.uri = source["uri"];
-	        this.value = this.convertValues(source["value"], util.LexiconTypeDecoder);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecord_View_Record {
-	    EmbedRecord_ViewRecord?: EmbedRecord_ViewRecord;
-	    EmbedRecord_ViewNotFound?: EmbedRecord_ViewNotFound;
-	    EmbedRecord_ViewBlocked?: EmbedRecord_ViewBlocked;
-	    EmbedRecord_ViewDetached?: EmbedRecord_ViewDetached;
-	    FeedDefs_GeneratorView?: FeedDefs_GeneratorView;
-	    GraphDefs_ListView?: GraphDefs_ListView;
-	    LabelerDefs_LabelerView?: LabelerDefs_LabelerView;
-	    GraphDefs_StarterPackViewBasic?: GraphDefs_StarterPackViewBasic;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecord_View_Record(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.EmbedRecord_ViewRecord = this.convertValues(source["EmbedRecord_ViewRecord"], EmbedRecord_ViewRecord);
-	        this.EmbedRecord_ViewNotFound = this.convertValues(source["EmbedRecord_ViewNotFound"], EmbedRecord_ViewNotFound);
-	        this.EmbedRecord_ViewBlocked = this.convertValues(source["EmbedRecord_ViewBlocked"], EmbedRecord_ViewBlocked);
-	        this.EmbedRecord_ViewDetached = this.convertValues(source["EmbedRecord_ViewDetached"], EmbedRecord_ViewDetached);
-	        this.FeedDefs_GeneratorView = this.convertValues(source["FeedDefs_GeneratorView"], FeedDefs_GeneratorView);
-	        this.GraphDefs_ListView = this.convertValues(source["GraphDefs_ListView"], GraphDefs_ListView);
-	        this.LabelerDefs_LabelerView = this.convertValues(source["LabelerDefs_LabelerView"], LabelerDefs_LabelerView);
-	        this.GraphDefs_StarterPackViewBasic = this.convertValues(source["GraphDefs_StarterPackViewBasic"], GraphDefs_StarterPackViewBasic);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecord_View {
-	    $type: string;
-	    record?: EmbedRecord_View_Record;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecord_View(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.record = this.convertValues(source["record"], EmbedRecord_View_Record);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedVideo_View {
-	    $type: string;
-	    alt?: string;
-	    aspectRatio?: EmbedDefs_AspectRatio;
-	    cid: string;
-	    playlist: string;
-	    presentation?: string;
-	    thumbnail?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedVideo_View(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.alt = source["alt"];
-	        this.aspectRatio = this.convertValues(source["aspectRatio"], EmbedDefs_AspectRatio);
-	        this.cid = source["cid"];
-	        this.playlist = source["playlist"];
-	        this.presentation = source["presentation"];
-	        this.thumbnail = source["thumbnail"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecordWithMedia_View_Media {
-	    EmbedImages_View?: EmbedImages_View;
-	    EmbedVideo_View?: EmbedVideo_View;
-	    EmbedGallery_View?: EmbedGallery_View;
-	    EmbedExternal_View?: EmbedExternal_View;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecordWithMedia_View_Media(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.EmbedImages_View = this.convertValues(source["EmbedImages_View"], EmbedImages_View);
-	        this.EmbedVideo_View = this.convertValues(source["EmbedVideo_View"], EmbedVideo_View);
-	        this.EmbedGallery_View = this.convertValues(source["EmbedGallery_View"], EmbedGallery_View);
-	        this.EmbedExternal_View = this.convertValues(source["EmbedExternal_View"], EmbedExternal_View);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class EmbedRecordWithMedia_View {
-	    $type: string;
-	    media?: EmbedRecordWithMedia_View_Media;
-	    record?: EmbedRecord_View;
-	
-	    static createFrom(source: any = {}) {
-	        return new EmbedRecordWithMedia_View(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.media = this.convertValues(source["media"], EmbedRecordWithMedia_View_Media);
-	        this.record = this.convertValues(source["record"], EmbedRecord_View);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	export class FeedDefs_BlockedPost {
-	    $type: string;
-	    author?: FeedDefs_BlockedAuthor;
-	    blocked: boolean;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_BlockedPost(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.author = this.convertValues(source["author"], FeedDefs_BlockedAuthor);
-	        this.blocked = source["blocked"];
-	        this.uri = source["uri"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	
-	export class FeedDefs_KnownLikers {
-	    actors: ActorDefs_ProfileViewBasic[];
-	    count: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_KnownLikers(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.actors = this.convertValues(source["actors"], ActorDefs_ProfileViewBasic);
-	        this.count = source["count"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_NotFoundPost {
-	    $type: string;
-	    notFound: boolean;
-	    uri: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_NotFoundPost(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.notFound = source["notFound"];
-	        this.uri = source["uri"];
-	    }
-	}
-	export class FeedDefs_ViewerState {
-	    bookmarked?: boolean;
-	    embeddingDisabled?: boolean;
-	    knownLikers?: FeedDefs_KnownLikers;
-	    like?: string;
-	    pinned?: boolean;
-	    replyDisabled?: boolean;
-	    repost?: string;
-	    threadMuted?: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_ViewerState(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.bookmarked = source["bookmarked"];
-	        this.embeddingDisabled = source["embeddingDisabled"];
-	        this.knownLikers = this.convertValues(source["knownLikers"], FeedDefs_KnownLikers);
-	        this.like = source["like"];
-	        this.pinned = source["pinned"];
-	        this.replyDisabled = source["replyDisabled"];
-	        this.repost = source["repost"];
-	        this.threadMuted = source["threadMuted"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_ThreadgateView {
-	    cid?: string;
-	    lists?: GraphDefs_ListViewBasic[];
-	    record?: util.LexiconTypeDecoder;
-	    uri?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_ThreadgateView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.cid = source["cid"];
-	        this.lists = this.convertValues(source["lists"], GraphDefs_ListViewBasic);
-	        this.record = this.convertValues(source["record"], util.LexiconTypeDecoder);
-	        this.uri = source["uri"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_PostView_Embed {
-	    EmbedImages_View?: EmbedImages_View;
-	    EmbedVideo_View?: EmbedVideo_View;
-	    EmbedGallery_View?: EmbedGallery_View;
-	    EmbedExternal_View?: EmbedExternal_View;
-	    EmbedRecord_View?: EmbedRecord_View;
-	    EmbedRecordWithMedia_View?: EmbedRecordWithMedia_View;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_PostView_Embed(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.EmbedImages_View = this.convertValues(source["EmbedImages_View"], EmbedImages_View);
-	        this.EmbedVideo_View = this.convertValues(source["EmbedVideo_View"], EmbedVideo_View);
-	        this.EmbedGallery_View = this.convertValues(source["EmbedGallery_View"], EmbedGallery_View);
-	        this.EmbedExternal_View = this.convertValues(source["EmbedExternal_View"], EmbedExternal_View);
-	        this.EmbedRecord_View = this.convertValues(source["EmbedRecord_View"], EmbedRecord_View);
-	        this.EmbedRecordWithMedia_View = this.convertValues(source["EmbedRecordWithMedia_View"], EmbedRecordWithMedia_View);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_PostView {
-	    $type: string;
-	    author?: ActorDefs_ProfileViewBasic;
-	    bookmarkCount?: number;
-	    cid: string;
-	    debug?: any;
-	    embed?: FeedDefs_PostView_Embed;
-	    indexedAt: string;
-	    labels?: atproto.LabelDefs_Label[];
-	    likeCount?: number;
-	    quoteCount?: number;
-	    record?: util.LexiconTypeDecoder;
-	    replyCount?: number;
-	    repostCount?: number;
-	    threadgate?: FeedDefs_ThreadgateView;
-	    uri: string;
-	    viewer?: FeedDefs_ViewerState;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_PostView(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.author = this.convertValues(source["author"], ActorDefs_ProfileViewBasic);
-	        this.bookmarkCount = source["bookmarkCount"];
-	        this.cid = source["cid"];
-	        this.debug = source["debug"];
-	        this.embed = this.convertValues(source["embed"], FeedDefs_PostView_Embed);
-	        this.indexedAt = source["indexedAt"];
-	        this.labels = this.convertValues(source["labels"], atproto.LabelDefs_Label);
-	        this.likeCount = source["likeCount"];
-	        this.quoteCount = source["quoteCount"];
-	        this.record = this.convertValues(source["record"], util.LexiconTypeDecoder);
-	        this.replyCount = source["replyCount"];
-	        this.repostCount = source["repostCount"];
-	        this.threadgate = this.convertValues(source["threadgate"], FeedDefs_ThreadgateView);
-	        this.uri = source["uri"];
-	        this.viewer = this.convertValues(source["viewer"], FeedDefs_ViewerState);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	export class FeedDefs_ThreadContext {
-	    rootAuthorLike?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_ThreadContext(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.rootAuthorLike = source["rootAuthorLike"];
-	    }
-	}
-	export class FeedDefs_ThreadViewPost_Replies_Elem {
-	    FeedDefs_ThreadViewPost?: FeedDefs_ThreadViewPost;
-	    FeedDefs_NotFoundPost?: FeedDefs_NotFoundPost;
-	    FeedDefs_BlockedPost?: FeedDefs_BlockedPost;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_ThreadViewPost_Replies_Elem(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.FeedDefs_ThreadViewPost = this.convertValues(source["FeedDefs_ThreadViewPost"], FeedDefs_ThreadViewPost);
-	        this.FeedDefs_NotFoundPost = this.convertValues(source["FeedDefs_NotFoundPost"], FeedDefs_NotFoundPost);
-	        this.FeedDefs_BlockedPost = this.convertValues(source["FeedDefs_BlockedPost"], FeedDefs_BlockedPost);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_ThreadViewPost_Parent {
-	    FeedDefs_ThreadViewPost?: FeedDefs_ThreadViewPost;
-	    FeedDefs_NotFoundPost?: FeedDefs_NotFoundPost;
-	    FeedDefs_BlockedPost?: FeedDefs_BlockedPost;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_ThreadViewPost_Parent(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.FeedDefs_ThreadViewPost = this.convertValues(source["FeedDefs_ThreadViewPost"], FeedDefs_ThreadViewPost);
-	        this.FeedDefs_NotFoundPost = this.convertValues(source["FeedDefs_NotFoundPost"], FeedDefs_NotFoundPost);
-	        this.FeedDefs_BlockedPost = this.convertValues(source["FeedDefs_BlockedPost"], FeedDefs_BlockedPost);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedDefs_ThreadViewPost {
-	    $type: string;
-	    parent?: FeedDefs_ThreadViewPost_Parent;
-	    post?: FeedDefs_PostView;
-	    replies?: FeedDefs_ThreadViewPost_Replies_Elem[];
-	    threadContext?: FeedDefs_ThreadContext;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedDefs_ThreadViewPost(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.$type = source["$type"];
-	        this.parent = this.convertValues(source["parent"], FeedDefs_ThreadViewPost_Parent);
-	        this.post = this.convertValues(source["post"], FeedDefs_PostView);
-	        this.replies = this.convertValues(source["replies"], FeedDefs_ThreadViewPost_Replies_Elem);
-	        this.threadContext = this.convertValues(source["threadContext"], FeedDefs_ThreadContext);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	
-	
-	
-	export class FeedGetPostThread_Output_Thread {
-	    FeedDefs_ThreadViewPost?: FeedDefs_ThreadViewPost;
-	    FeedDefs_NotFoundPost?: FeedDefs_NotFoundPost;
-	    FeedDefs_BlockedPost?: FeedDefs_BlockedPost;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedGetPostThread_Output_Thread(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.FeedDefs_ThreadViewPost = this.convertValues(source["FeedDefs_ThreadViewPost"], FeedDefs_ThreadViewPost);
-	        this.FeedDefs_NotFoundPost = this.convertValues(source["FeedDefs_NotFoundPost"], FeedDefs_NotFoundPost);
-	        this.FeedDefs_BlockedPost = this.convertValues(source["FeedDefs_BlockedPost"], FeedDefs_BlockedPost);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class FeedGetPostThread_Output {
-	    thread?: FeedGetPostThread_Output_Thread;
-	    threadgate?: FeedDefs_ThreadgateView;
-	
-	    static createFrom(source: any = {}) {
-	        return new FeedGetPostThread_Output(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.thread = this.convertValues(source["thread"], FeedGetPostThread_Output_Thread);
-	        this.threadgate = this.convertValues(source["threadgate"], FeedDefs_ThreadgateView);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-
-}
-
 export namespace services {
 	
 	export class AccountStatusDTO {
@@ -2331,6 +213,20 @@ export namespace services {
 		}
 	}
 	
+	export class ChatDeclarationDTO {
+	    allowIncoming: string;
+	    allowGroupInvites: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatDeclarationDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.allowIncoming = source["allowIncoming"];
+	        this.allowGroupInvites = source["allowGroupInvites"];
+	    }
+	}
 	export class ChatGroupJoinLinkDTO {
 	    code: string;
 	    createdAt: string;
@@ -2349,6 +245,34 @@ export namespace services {
 	        this.enabledStatus = source["enabledStatus"];
 	        this.joinRule = source["joinRule"];
 	        this.requireApproval = source["requireApproval"];
+	    }
+	}
+	export class ChatGroupPreviewDTO {
+	    code: string;
+	    convoId: string;
+	    name: string;
+	    memberCount: number;
+	    memberLimit: number;
+	    ownerHandle: string;
+	    ownerDisplayName: string;
+	    requireApproval: boolean;
+	    status: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatGroupPreviewDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.convoId = source["convoId"];
+	        this.name = source["name"];
+	        this.memberCount = source["memberCount"];
+	        this.memberLimit = source["memberLimit"];
+	        this.ownerHandle = source["ownerHandle"];
+	        this.ownerDisplayName = source["ownerDisplayName"];
+	        this.requireApproval = source["requireApproval"];
+	        this.status = source["status"];
 	    }
 	}
 	export class ChatJoinRequestDTO {
@@ -2451,6 +375,8 @@ export namespace services {
 	    replyToSenderHandle?: string;
 	    replyToSenderDisplayName?: string;
 	    reactions?: ChatReactionDTO[];
+	    joinLinkCode?: string;
+	    joinLinkGroupName?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ChatMessageDTO(source);
@@ -2474,6 +400,8 @@ export namespace services {
 	        this.replyToSenderHandle = source["replyToSenderHandle"];
 	        this.replyToSenderDisplayName = source["replyToSenderDisplayName"];
 	        this.reactions = this.convertValues(source["reactions"], ChatReactionDTO);
+	        this.joinLinkCode = source["joinLinkCode"];
+	        this.joinLinkGroupName = source["joinLinkGroupName"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2526,7 +454,41 @@ export namespace services {
 		    return a;
 		}
 	}
+	export class ChatNotificationPrefsDTO {
+	    chatInclude: string;
+	    chatPush: boolean;
+	    chatRequestInclude: string;
+	    chatRequestPush: boolean;
 	
+	    static createFrom(source: any = {}) {
+	        return new ChatNotificationPrefsDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.chatInclude = source["chatInclude"];
+	        this.chatPush = source["chatPush"];
+	        this.chatRequestInclude = source["chatRequestInclude"];
+	        this.chatRequestPush = source["chatRequestPush"];
+	    }
+	}
+	
+	export class ChatStatusDTO {
+	    canCreateGroups: boolean;
+	    chatDisabled: boolean;
+	    groupMemberLimit: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatStatusDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.canCreateGroups = source["canCreateGroups"];
+	        this.chatDisabled = source["chatDisabled"];
+	        this.groupMemberLimit = source["groupMemberLimit"];
+	    }
+	}
 	export class ContentFilterDTO {
 	    labelerDid: string;
 	    label: string;
@@ -2546,6 +508,7 @@ export namespace services {
 	export class DraftDTO {
 	    id: string;
 	    text: string;
+	    posts?: string[];
 	    langs?: string[];
 	    selfLabels?: string[];
 	    threadgateAllow?: string[];
@@ -2561,6 +524,7 @@ export namespace services {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.text = source["text"];
+	        this.posts = source["posts"];
 	        this.langs = source["langs"];
 	        this.selfLabels = source["selfLabels"];
 	        this.threadgateAllow = source["threadgateAllow"];
@@ -2606,6 +570,8 @@ export namespace services {
 	    title: string;
 	    description: string;
 	    thumb: string;
+	    sourceTitle: string;
+	    sourceUri: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExternalEmbedDTO(source);
@@ -2617,6 +583,8 @@ export namespace services {
 	        this.title = source["title"];
 	        this.description = source["description"];
 	        this.thumb = source["thumb"];
+	        this.sourceTitle = source["sourceTitle"];
+	        this.sourceUri = source["sourceUri"];
 	    }
 	}
 	export class VideoCaptionDTO {
@@ -2699,11 +667,17 @@ export namespace services {
 	    authorDid: string;
 	    authorPronouns?: string;
 	    authorVerified?: boolean;
+	    authorIsBot?: boolean;
 	    text: string;
 	    createdAt: string;
 	    replyCount: number;
 	    repostCount: number;
 	    likeCount: number;
+	    quoteCount?: number;
+	    bookmarkCount?: number;
+	    knownLikers?: string[];
+	    opThreadPostCount?: number;
+	    opThreadPostIndex?: number;
 	    isReply: boolean;
 	    replyToAuthor: string;
 	    replyToAuthorName?: string;
@@ -2745,11 +719,17 @@ export namespace services {
 	        this.authorDid = source["authorDid"];
 	        this.authorPronouns = source["authorPronouns"];
 	        this.authorVerified = source["authorVerified"];
+	        this.authorIsBot = source["authorIsBot"];
 	        this.text = source["text"];
 	        this.createdAt = source["createdAt"];
 	        this.replyCount = source["replyCount"];
 	        this.repostCount = source["repostCount"];
 	        this.likeCount = source["likeCount"];
+	        this.quoteCount = source["quoteCount"];
+	        this.bookmarkCount = source["bookmarkCount"];
+	        this.knownLikers = source["knownLikers"];
+	        this.opThreadPostCount = source["opThreadPostCount"];
+	        this.opThreadPostIndex = source["opThreadPostIndex"];
 	        this.isReply = source["isReply"];
 	        this.replyToAuthor = source["replyToAuthor"];
 	        this.replyToAuthorName = source["replyToAuthorName"];
@@ -2989,6 +969,7 @@ export namespace services {
 	    viewerMuted: boolean;
 	    viewerBlock: string;
 	    viewerSubscribed: boolean;
+	    referenceListOptOutUri?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ListDTO(source);
@@ -3009,6 +990,7 @@ export namespace services {
 	        this.viewerMuted = source["viewerMuted"];
 	        this.viewerBlock = source["viewerBlock"];
 	        this.viewerSubscribed = source["viewerSubscribed"];
+	        this.referenceListOptOutUri = source["referenceListOptOutUri"];
 	    }
 	}
 	export class ListWithMembershipDTO {
@@ -3110,6 +1092,64 @@ export namespace services {
 		}
 	}
 	
+	export class ModerationInboxItemDTO {
+	    subjectUri: string;
+	    subjectCid: string;
+	    subjectDid: string;
+	    enforcementState: string;
+	    labels: string[];
+	    appealState: string;
+	    appealNote: string;
+	    updatedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModerationInboxItemDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.subjectUri = source["subjectUri"];
+	        this.subjectCid = source["subjectCid"];
+	        this.subjectDid = source["subjectDid"];
+	        this.enforcementState = source["enforcementState"];
+	        this.labels = source["labels"];
+	        this.appealState = source["appealState"];
+	        this.appealNote = source["appealNote"];
+	        this.updatedAt = source["updatedAt"];
+	    }
+	}
+	export class ModerationInboxListDTO {
+	    items: ModerationInboxItemDTO[];
+	    cursor: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModerationInboxListDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], ModerationInboxItemDTO);
+	        this.cursor = source["cursor"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class MuteScopeDTO {
 	    muted: boolean;
 	    mutedOnlyReposts: boolean;
@@ -3353,6 +1393,7 @@ export namespace services {
 	    cid: string;
 	    rootUri: string;
 	    rootCid: string;
+	    warning?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PostRefDTO(source);
@@ -3364,6 +1405,7 @@ export namespace services {
 	        this.cid = source["cid"];
 	        this.rootUri = source["rootUri"];
 	        this.rootCid = source["rootCid"];
+	        this.warning = source["warning"];
 	    }
 	}
 	export class PostSearchFilter {
@@ -3378,6 +1420,16 @@ export namespace services {
 	    Tag: string[];
 	    URL: string;
 	    Cursor: string;
+	    AllTime: boolean;
+	    Following: boolean;
+	    HasMedia: boolean;
+	    HasVideo: boolean;
+	    ExcludeReplies: boolean;
+	    RepliesOnly: boolean;
+	    ExcludeAuthors: string[];
+	    ExcludeHashtags: string[];
+	    ExcludeDomains: string[];
+	    ThreadRootURI: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PostSearchFilter(source);
@@ -3396,6 +1448,16 @@ export namespace services {
 	        this.Tag = source["Tag"];
 	        this.URL = source["URL"];
 	        this.Cursor = source["Cursor"];
+	        this.AllTime = source["AllTime"];
+	        this.Following = source["Following"];
+	        this.HasMedia = source["HasMedia"];
+	        this.HasVideo = source["HasVideo"];
+	        this.ExcludeReplies = source["ExcludeReplies"];
+	        this.RepliesOnly = source["RepliesOnly"];
+	        this.ExcludeAuthors = source["ExcludeAuthors"];
+	        this.ExcludeHashtags = source["ExcludeHashtags"];
+	        this.ExcludeDomains = source["ExcludeDomains"];
+	        this.ThreadRootURI = source["ThreadRootURI"];
 	    }
 	}
 	export class PreferencesDTO {
@@ -3502,6 +1564,12 @@ export namespace services {
 	    listItemUri?: string;
 	    verified?: boolean;
 	    trustedVerifier?: boolean;
+	    isBot?: boolean;
+	    hideFromLoggedOut?: boolean;
+	    hideFromAlgorithmicRecommendations?: boolean;
+	    verifiedBy?: string[];
+	    allowActivitySubscriptions?: string;
+	    germMessageMeUrl?: string;
 	    status?: ActorStatusDTO;
 	
 	    static createFrom(source: any = {}) {
@@ -3535,6 +1603,12 @@ export namespace services {
 	        this.listItemUri = source["listItemUri"];
 	        this.verified = source["verified"];
 	        this.trustedVerifier = source["trustedVerifier"];
+	        this.isBot = source["isBot"];
+	        this.hideFromLoggedOut = source["hideFromLoggedOut"];
+	        this.hideFromAlgorithmicRecommendations = source["hideFromAlgorithmicRecommendations"];
+	        this.verifiedBy = source["verifiedBy"];
+	        this.allowActivitySubscriptions = source["allowActivitySubscriptions"];
+	        this.germMessageMeUrl = source["germMessageMeUrl"];
 	        this.status = this.convertValues(source["status"], ActorStatusDTO);
 	    }
 	
@@ -3906,28 +1980,6 @@ export namespace services {
 	}
 	
 	
-	export class VideoJobStatusDTO {
-	    jobId: string;
-	    did: string;
-	    state: string;
-	    progress?: number;
-	    message?: string;
-	    error?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new VideoJobStatusDTO(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.jobId = source["jobId"];
-	        this.did = source["did"];
-	        this.state = source["state"];
-	        this.progress = source["progress"];
-	        this.message = source["message"];
-	        this.error = source["error"];
-	    }
-	}
 	export class VideoUploadLimitsDTO {
 	    canUpload: boolean;
 	    remainingDailyVideos: number;
@@ -3946,23 +1998,6 @@ export namespace services {
 	        this.remainingDailyBytes = source["remainingDailyBytes"];
 	        this.message = source["message"];
 	        this.error = source["error"];
-	    }
-	}
-
-}
-
-export namespace util {
-	
-	export class LexiconTypeDecoder {
-	    Val: any;
-	
-	    static createFrom(source: any = {}) {
-	        return new LexiconTypeDecoder(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Val = source["Val"];
 	    }
 	}
 

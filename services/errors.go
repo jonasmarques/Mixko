@@ -13,7 +13,6 @@ const (
 	// ErrCodeAltTextRequiredImage carries the 1-based image index.
 	ErrCodeAltTextRequiredImage = ErrCodePrefix + "altTextRequiredImage"
 	ErrCodeAltTextRequiredVideo = ErrCodePrefix + "altTextRequiredVideo"
-	ErrCodeAltTextRequired      = ErrCodePrefix + "altTextRequired"
 	ErrCodeInvalidDataURL       = ErrCodePrefix + "invalidDataUrl"
 	ErrCodeDecodeBase64         = ErrCodePrefix + "decodeBase64"
 	ErrCodeTempFileCreate       = ErrCodePrefix + "tempFileCreate"
@@ -21,6 +20,9 @@ const (
 	// ErrCodeMuteScopeUnsupported means the server ignored the mute scope and
 	// applied a full mute, which was rolled back.
 	ErrCodeMuteScopeUnsupported = ErrCodePrefix + "muteScopeUnsupported"
+	// ErrCodeReplyGateFailed means the post was published but its reply or
+	// quote restriction could not be saved.
+	ErrCodeReplyGateFailed = ErrCodePrefix + "replyGateFailed"
 )
 
 // codedError builds an error whose message is a translation code.

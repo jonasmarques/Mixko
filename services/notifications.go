@@ -1,7 +1,13 @@
 package services
 
 import (
+	"encoding/json"
+	"strings"
+	"sync"
+
+	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
 )
 
@@ -139,16 +145,38 @@ func (s *NotificationsService) GetNotificationsFiltered(cursor string, reasons [
 
 		postViews := make(map[string]*PostDTO)
 		if len(postUris) > 0 {
+			var (
+				postMu sync.Mutex
+				postWG sync.WaitGroup
+			)
 			for i := 0; i < len(postUris); i += 25 {
 				end := i + 25
-				if end > len(postUris) { end = len(postUris) }
-				postRes, err := bsky.FeedGetPosts(ctx, c, postUris[i:end])
-				if err == nil {
-					for _, p := range postRes.Posts {
-						postViews[p.Uri] = ParsePostView(p)
-					}
+				if end > len(postUris) {
+					end = len(postUris)
 				}
+				chunk := postUris[i:end]
+				postWG.Add(1)
+				go func(uris []string) {
+					defer postWG.Done()
+					postRes, err := bsky.FeedGetPosts(ctx, c, uris)
+					if err != nil || postRes == nil {
+						return
+					}
+					preResolvePostViewCaptionHosts(postRes.Posts)
+					parsed := make([]*PostDTO, 0, len(postRes.Posts))
+					for _, p := range postRes.Posts {
+						if dto := ParsePostView(p); dto != nil {
+							parsed = append(parsed, dto)
+						}
+					}
+					postMu.Lock()
+					for _, dto := range parsed {
+						postViews[dto.URI] = dto
+					}
+					postMu.Unlock()
+				}(chunk)
 			}
+			postWG.Wait()
 		}
 
 		for _, item := range matched {
@@ -483,6 +511,243 @@ func (s *NotificationsService) PutNotificationPreferences(input *NotificationPre
 		return nil, err
 	}
 	return input, nil
+}
+
+func (s *NotificationsService) GetNotificationDeclaration() (string, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	allowSubs := "followers"
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		raw, err := getOwnRecordJSON(ctx, c, "app.bsky.notification.declaration", "self")
+		if err != nil || raw == nil {
+			return err
+		}
+		var rec bsky.NotificationDeclaration
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			return err
+		}
+		if rec.AllowSubscriptions != "" {
+			allowSubs = rec.AllowSubscriptions
+		}
+		return nil
+	})
+	return allowSubs, err
+}
+
+func (s *NotificationsService) UpdateNotificationDeclaration(allowSubscriptions string) error {
+	val := strings.TrimSpace(allowSubscriptions)
+	switch val {
+	case "followers", "mutuals", "none":
+	default:
+		val = "followers"
+	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		rec := &bsky.NotificationDeclaration{
+			LexiconTypeID:      "app.bsky.notification.declaration",
+			AllowSubscriptions: val,
+		}
+		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.notification.declaration",
+			Repo:       c.Auth.Did,
+			Rkey:       "self",
+			Record:     &util.LexiconTypeDecoder{Val: rec},
+		})
+		return err
+	})
+}
+
+func (s *NotificationsService) GetGroupedNotifications(cursor string, feed string) (*NotificationListDTO, error) {
+	if feed == "" {
+		feed = "all"
+	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *NotificationListDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		res, err := bsky.NotificationGetGroupedNotifications(ctx, c, cursor, feed, 30)
+		if err != nil || res == nil {
+			return err
+		}
+		profileMap := make(map[string]*bsky.ActorDefs_ProfileViewDetailed)
+		postMap := make(map[string]*PostDTO)
+		for _, rv := range res.RelatedViews {
+			if rv == nil {
+				continue
+			}
+			if rv.ActorDefs_ProfileViewDetailed != nil {
+				p := rv.ActorDefs_ProfileViewDetailed
+				profileMap[p.Did] = p
+				CacheAuthor(p.Did, p.Handle, safeString(p.DisplayName))
+			}
+			if rv.FeedDefs_PostView != nil {
+				if dto := ParsePostView(rv.FeedDefs_PostView); dto != nil {
+					postMap[dto.URI] = dto
+				}
+			}
+		}
+
+		resolveActor := func(did string) (string, string) {
+			if p, ok := profileMap[did]; ok {
+				return p.Handle, safeString(p.DisplayName)
+			}
+			if a, ok := GetAuthorForDID(did); ok {
+				return a.Handle, a.DisplayName
+			}
+			return did, ""
+		}
+
+		out = &NotificationListDTO{
+			Cursor:        safeString(res.Cursor),
+			Notifications: []*NotificationDTO{},
+		}
+
+		for _, g := range res.Groups {
+			if g == nil || g.Kind == nil {
+				continue
+			}
+			k := g.Kind
+			switch {
+			case k.NotificationGetGroupedNotifications_LikeGroup != nil:
+				lg := k.NotificationGetGroupedNotifications_LikeGroup
+				p := postMap[lg.Post]
+				for _, item := range lg.Items {
+					if item == nil {
+						continue
+					}
+					handle, name := resolveActor(item.Actor)
+					nd := &NotificationDTO{
+						URI:           g.Id,
+						AuthorDID:     item.Actor,
+						AuthorHandle:  handle,
+						AuthorName:    name,
+						Reason:        "like",
+						ReasonSubject: lg.Post,
+						IndexedAt:     g.IndexedAt,
+						HydratedPost:  p,
+					}
+					if p != nil {
+						nd.Text = p.Text
+						nd.HasMedia = p.HasMedia
+						nd.Video = p.Video
+					}
+					out.Notifications = append(out.Notifications, nd)
+				}
+			case k.NotificationGetGroupedNotifications_RepostGroup != nil:
+				rg := k.NotificationGetGroupedNotifications_RepostGroup
+				p := postMap[rg.Post]
+				for _, item := range rg.Items {
+					if item == nil {
+						continue
+					}
+					handle, name := resolveActor(item.Actor)
+					nd := &NotificationDTO{
+						URI:           g.Id,
+						AuthorDID:     item.Actor,
+						AuthorHandle:  handle,
+						AuthorName:    name,
+						Reason:        "repost",
+						ReasonSubject: rg.Post,
+						IndexedAt:     g.IndexedAt,
+						HydratedPost:  p,
+					}
+					if p != nil {
+						nd.Text = p.Text
+						nd.HasMedia = p.HasMedia
+						nd.Video = p.Video
+					}
+					out.Notifications = append(out.Notifications, nd)
+				}
+			case k.NotificationGetGroupedNotifications_FollowGroup != nil:
+				fg := k.NotificationGetGroupedNotifications_FollowGroup
+				for _, item := range fg.Items {
+					if item == nil {
+						continue
+					}
+					handle, name := resolveActor(item.Actor)
+					out.Notifications = append(out.Notifications, &NotificationDTO{
+						URI:          g.Id,
+						AuthorDID:    item.Actor,
+						AuthorHandle: handle,
+						AuthorName:   name,
+						Reason:       "follow",
+						IndexedAt:    g.IndexedAt,
+					})
+				}
+			case k.NotificationGetGroupedNotifications_ReplyNotification != nil:
+				rn := k.NotificationGetGroupedNotifications_ReplyNotification
+				p := postMap[rn.Post]
+				nd := &NotificationDTO{
+					URI:            rn.Post,
+					Reason:         "reply",
+					ReasonSubject:  rn.Parent,
+					ReplyParentURI: rn.Parent,
+					IndexedAt:      g.IndexedAt,
+					HydratedPost:   p,
+				}
+				if p != nil {
+					nd.CID = p.CID
+					nd.AuthorDID = p.AuthorDID
+					nd.AuthorHandle = p.AuthorHandle
+					nd.AuthorName = p.AuthorName
+					nd.Text = p.Text
+					nd.HasMedia = p.HasMedia
+					nd.Video = p.Video
+				}
+				if parentPost := postMap[rn.Parent]; parentPost != nil {
+					nd.ReplyParentAuthorDID = parentPost.AuthorDID
+					nd.ReplyParentAuthorHandle = parentPost.AuthorHandle
+					nd.ReplyParentAuthorName = parentPost.AuthorName
+				}
+				out.Notifications = append(out.Notifications, nd)
+			case k.NotificationGetGroupedNotifications_MentionNotification != nil:
+				mn := k.NotificationGetGroupedNotifications_MentionNotification
+				p := postMap[mn.Post]
+				nd := &NotificationDTO{
+					URI:          mn.Post,
+					Reason:       "mention",
+					IndexedAt:    g.IndexedAt,
+					HydratedPost: p,
+				}
+				if p != nil {
+					nd.CID = p.CID
+					nd.AuthorDID = p.AuthorDID
+					nd.AuthorHandle = p.AuthorHandle
+					nd.AuthorName = p.AuthorName
+					nd.Text = p.Text
+					nd.HasMedia = p.HasMedia
+					nd.Video = p.Video
+				}
+				out.Notifications = append(out.Notifications, nd)
+			case k.NotificationGetGroupedNotifications_QuoteNotification != nil:
+				qn := k.NotificationGetGroupedNotifications_QuoteNotification
+				p := postMap[qn.Post]
+				nd := &NotificationDTO{
+					URI:           qn.Post,
+					Reason:        "quote",
+					ReasonSubject: safeString(qn.Parent),
+					IndexedAt:     g.IndexedAt,
+					HydratedPost:  p,
+				}
+				if p != nil {
+					nd.CID = p.CID
+					nd.AuthorDID = p.AuthorDID
+					nd.AuthorHandle = p.AuthorHandle
+					nd.AuthorName = p.AuthorName
+					nd.Text = p.Text
+					nd.HasMedia = p.HasMedia
+					nd.Video = p.Video
+				}
+				out.Notifications = append(out.Notifications, nd)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return s.GetNotifications(cursor)
+	}
+	return out, nil
 }
 
 

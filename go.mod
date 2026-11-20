@@ -1,10 +1,11 @@
 module mixko
 
-go 1.26.0
+go 1.27
 
 require (
-	github.com/bluesky-social/indigo v0.0.0-20261030231632-15edb2cd5ba3
+	github.com/bluesky-social/indigo v0.0.0-20261119180653-8ed9557b157a
 	github.com/gorilla/websocket v1.5.3
+	github.com/ipfs/go-cid v0.6.2
 	github.com/wailsapp/wails/v2 v2.17.0
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.62.0
@@ -33,7 +34,6 @@ require (
 	github.com/ipfs/bbloom v0.1.0 // indirect
 	github.com/ipfs/boxo v0.43.0 // indirect
 	github.com/ipfs/go-block-format v0.2.4 // indirect
-	github.com/ipfs/go-cid v0.6.2 // indirect
 	github.com/ipfs/go-datastore v0.9.2 // indirect
 	github.com/ipfs/go-ipfs-blockstore v1.3.1 // indirect
 	github.com/ipfs/go-ipfs-ds-help v1.1.1 // indirect
@@ -82,9 +82,10 @@ require (
 	gitlab.com/yawning/tuplehash v0.0.0-20230713102510-df83abbf9a02 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
-	go.opentelemetry.io/otel v1.46.0 // indirect
-	go.opentelemetry.io/otel/metric v1.46.0 // indirect
-	go.opentelemetry.io/otel/trace v1.46.0 // indirect
+	go.opentelemetry.io/otel v1.47.0 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect

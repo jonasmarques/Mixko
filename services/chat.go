@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/bluesky-social/indigo/api/atproto"
@@ -210,6 +211,8 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 				}
 
 				embedUri := ""
+				joinLinkCode := ""
+				joinLinkGroupName := ""
 				if embedMap, ok := rawMsg["embed"].(map[string]interface{}); ok {
 					if recView, ok := embedMap["record"].(map[string]interface{}); ok {
 						if uri, ok := recView["uri"].(string); ok {
@@ -222,6 +225,13 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 					} else if extView, ok := embedMap["external"].(map[string]interface{}); ok {
 						if uri, ok := extView["uri"].(string); ok {
 							embedUri = uri
+						}
+					} else if jlPreview, ok := embedMap["joinLinkPreview"].(map[string]interface{}); ok {
+						if code, ok := jlPreview["code"].(string); ok {
+							joinLinkCode = code
+						}
+						if gName, ok := jlPreview["name"].(string); ok {
+							joinLinkGroupName = gName
 						}
 					}
 				}
@@ -300,6 +310,8 @@ func (s *ChatService) GetMessages(convoId string, cursor string) (*ChatMessagesD
 					ReplyToSenderHandle:       replyToSenderHandle,
 					ReplyToSenderDisplayName:  replyToSenderDisplayName,
 					Reactions:                 reactions,
+					JoinLinkCode:              joinLinkCode,
+					JoinLinkGroupName:         joinLinkGroupName,
 				})
 			}
 		}
@@ -432,25 +444,6 @@ func (s *ChatService) UpdateAllRead() (int64, error) {
 	return updated, err
 }
 
-func (s *ChatService) GetUnreadCount() (int64, error) {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-	var count int64
-	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		cc := chatClient(c)
-
-		res, err := chat.ConvoListConvos(ctx, cc, "", "", 50, "", "", "")
-		if err != nil {
-			return err
-		}
-		for _, convo := range res.Convos {
-			count += convo.UnreadCount
-		}
-		return nil
-	})
-	return count, err
-}
-
 func (s *ChatService) MuteConvo(convoId string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
@@ -553,31 +546,49 @@ func (s *ChatService) DeleteMessage(convoId string, messageId string) error {
 }
 
 func (s *ChatService) GetChatDeclaration() (string, error) {
+	full, err := s.GetChatDeclarationFull()
+	if err != nil || full == nil {
+		return "following", err
+	}
+	return full.AllowIncoming, nil
+}
+
+func (s *ChatService) GetChatDeclarationFull() (*ChatDeclarationDTO, error) {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
-	allowIncoming := "following"
+	out := &ChatDeclarationDTO{
+		AllowIncoming:     "following",
+		AllowGroupInvites: "following",
+	}
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := atproto.RepoGetRecord(ctx, c, "", "chat.bsky.actor.declaration", c.Auth.Did, "self")
-		if err != nil {
+		raw, err := getOwnRecordJSON(ctx, c, "chat.bsky.actor.declaration", "self")
+		if err != nil || raw == nil {
 			return nil
 		}
-		if res != nil && res.Value != nil {
-			rawBytes, mErr := json.Marshal(res.Value)
-			if mErr == nil {
-				var decl struct {
-					AllowIncoming string `json:"allowIncoming"`
-				}
-				if json.Unmarshal(rawBytes, &decl) == nil && decl.AllowIncoming != "" {
-					allowIncoming = decl.AllowIncoming
-				}
+		var decl chat.ActorDeclaration
+		if json.Unmarshal(raw, &decl) == nil {
+			if decl.AllowIncoming != "" {
+				out.AllowIncoming = decl.AllowIncoming
+			}
+			if decl.AllowGroupInvites != nil && *decl.AllowGroupInvites != "" {
+				out.AllowGroupInvites = *decl.AllowGroupInvites
 			}
 		}
 		return nil
 	})
-	return allowIncoming, err
+	return out, err
 }
 
 func (s *ChatService) UpdateChatDeclaration(allowIncoming string) error {
+	full, _ := s.GetChatDeclarationFull()
+	groupInvites := ""
+	if full != nil {
+		groupInvites = full.AllowGroupInvites
+	}
+	return s.UpdateChatDeclarationFull(allowIncoming, groupInvites)
+}
+
+func (s *ChatService) UpdateChatDeclarationFull(allowIncoming string, allowGroupInvites string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 
@@ -585,11 +596,23 @@ func (s *ChatService) UpdateChatDeclaration(allowIncoming string) error {
 	if val != "all" && val != "following" && val != "none" {
 		val = "following"
 	}
+	grpVal := strings.TrimSpace(allowGroupInvites)
+	if grpVal != "all" && grpVal != "following" && grpVal != "none" {
+		grpVal = ""
+	}
 
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		decl := &chat.ActorDeclaration{
 			LexiconTypeID: "chat.bsky.actor.declaration",
 			AllowIncoming: val,
+		}
+		if grpVal != "" {
+			decl.AllowGroupInvites = &grpVal
+		} else if raw, err := getOwnRecordJSON(ctx, c, "chat.bsky.actor.declaration", "self"); err == nil && raw != nil {
+			var existing chat.ActorDeclaration
+			if json.Unmarshal(raw, &existing) == nil && existing.AllowGroupInvites != nil {
+				decl.AllowGroupInvites = existing.AllowGroupInvites
+			}
 		}
 		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
 			Collection: "chat.bsky.actor.declaration",
@@ -914,5 +937,335 @@ func (s *ChatService) GetConvoLog(cursor string) (string, bool, error) {
 		return nil
 	})
 	return nextCursor, hasNewActivity, err
+}
+
+func (s *ChatService) ListConvoRequests(cursor string) ([]*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out []*ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.ConvoListConvoRequests(ctx, cc, cursor, 50)
+		if err != nil {
+			return err
+		}
+		cur := safeString(res.Cursor)
+		for _, elem := range res.Requests {
+			if elem == nil {
+				continue
+			}
+			if elem.ConvoDefs_ConvoView != nil {
+				if dto := parseConvoView(elem.ConvoDefs_ConvoView, cur); dto != nil {
+					out = append(out, dto)
+				}
+			} else if elem.GroupDefs_JoinRequestConvoView != nil {
+				jr := elem.GroupDefs_JoinRequestConvoView
+				var members []ChatMemberDTO
+				if jr.Owner != nil {
+					members = append(members, ChatMemberDTO{
+						DID:         jr.Owner.Did,
+						Handle:      jr.Owner.Handle,
+						DisplayName: safeString(jr.Owner.DisplayName),
+						Avatar:      safeString(jr.Owner.Avatar),
+					})
+				}
+				out = append(out, &ChatConvoDTO{
+					ID:          jr.ConvoId,
+					IsGroup:     true,
+					GroupName:   jr.Name,
+					MemberCount: jr.MemberCount,
+					MemberLimit: jr.MemberLimit,
+					Members:     members,
+					Cursor:      cur,
+				})
+			}
+		}
+		return nil
+	})
+	if out == nil {
+		out = []*ChatConvoDTO{}
+	}
+	return out, err
+}
+
+func (s *ChatService) AcceptConvo(convoId string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		_, err := chat.ConvoAcceptConvo(ctx, cc, &chat.ConvoAcceptConvo_Input{
+			ConvoId: convoId,
+		})
+		return err
+	})
+}
+
+func (s *ChatService) GetUnreadCounts() (int64, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var total int64
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.ConvoGetUnreadCounts(ctx, cc, true)
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			total = res.UnreadAcceptedConvos + res.UnreadRequestConvos
+		}
+		return nil
+	})
+	return total, err
+}
+
+func (s *ChatService) GetChatStatus() (*ChatStatusDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	out := &ChatStatusDTO{CanCreateGroups: true, GroupMemberLimit: 50}
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.ActorGetStatus(ctx, cc)
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			out.CanCreateGroups = res.CanCreateGroups
+			out.ChatDisabled = res.ChatDisabled
+			out.GroupMemberLimit = res.GroupMemberLimit
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) ExportChatAccountData() (string, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var exported string
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		data, err := chat.ActorExportAccountData(ctx, cc)
+		if err != nil {
+			return err
+		}
+		exported = string(data)
+		return nil
+	})
+	return exported, err
+}
+
+func (s *ChatService) GetChatNotificationPreferences() (*ChatNotificationPrefsDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	out := &ChatNotificationPrefsDTO{
+		ChatInclude:        "all",
+		ChatPush:           true,
+		ChatRequestInclude: "all",
+		ChatRequestPush:    true,
+	}
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.NotificationGetPreferences(ctx, cc)
+		if err != nil {
+			return err
+		}
+		if res != nil && res.Preferences != nil {
+			if res.Preferences.Chat != nil {
+				out.ChatInclude = res.Preferences.Chat.Include
+				out.ChatPush = res.Preferences.Chat.Push
+			}
+			if res.Preferences.ChatRequest != nil {
+				out.ChatRequestInclude = res.Preferences.ChatRequest.Include
+				out.ChatRequestPush = res.Preferences.ChatRequest.Push
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) PutChatNotificationPreferences(input *ChatNotificationPrefsDTO) error {
+	if input == nil {
+		return nil
+	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		chatInc := input.ChatInclude
+		if chatInc == "" {
+			chatInc = "all"
+		}
+		reqInc := input.ChatRequestInclude
+		if reqInc == "" {
+			reqInc = "all"
+		}
+		_, err := chat.NotificationPutPreferences(ctx, cc, &chat.NotificationPutPreferences_Input{
+			Chat: &chat.NotificationDefs_ChatPreference{
+				Include: chatInc,
+				Push:    input.ChatPush,
+			},
+			ChatRequest: &chat.NotificationDefs_ChatPreference{
+				Include: reqInc,
+				Push:    input.ChatRequestPush,
+			},
+		})
+		return err
+	})
+}
+
+func extractGroupInviteCode(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if idx := strings.LastIndex(trimmed, "/"); idx != -1 && idx+1 < len(trimmed) {
+		trimmed = trimmed[idx+1:]
+	}
+	if qIdx := strings.Index(trimmed, "?"); qIdx != -1 {
+		trimmed = trimmed[:qIdx]
+	}
+	return strings.TrimSpace(trimmed)
+}
+
+func (s *ChatService) PreviewGroupJoinLink(codeOrUrl string) (*ChatGroupPreviewDTO, error) {
+	code := extractGroupInviteCode(codeOrUrl)
+	if code == "" {
+		return nil, fmt.Errorf("invite code is required")
+	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatGroupPreviewDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.GroupGetJoinLinkPreviews(ctx, cc, []string{code})
+		if err != nil {
+			return err
+		}
+		if res == nil || len(res.JoinLinkPreviews) == 0 || res.JoinLinkPreviews[0] == nil {
+			return fmt.Errorf("invite link not found")
+		}
+		elem := res.JoinLinkPreviews[0]
+		switch {
+		case elem.GroupDefs_JoinLinkPreviewView != nil:
+			v := elem.GroupDefs_JoinLinkPreviewView
+			ownerHandle := ""
+			ownerName := ""
+			if v.Owner != nil {
+				ownerHandle = v.Owner.Handle
+				ownerName = safeString(v.Owner.DisplayName)
+			}
+			out = &ChatGroupPreviewDTO{
+				Code:             v.Code,
+				ConvoID:          v.ConvoId,
+				Name:             v.Name,
+				MemberCount:      v.MemberCount,
+				MemberLimit:      v.MemberLimit,
+				OwnerHandle:      ownerHandle,
+				OwnerDisplayName: ownerName,
+				RequireApproval:  v.RequireApproval,
+				Status:           "active",
+			}
+		case elem.GroupDefs_DisabledJoinLinkPreviewView != nil:
+			out = &ChatGroupPreviewDTO{
+				Code:   elem.GroupDefs_DisabledJoinLinkPreviewView.Code,
+				Status: "disabled",
+			}
+		case elem.GroupDefs_InvalidJoinLinkPreviewView != nil:
+			out = &ChatGroupPreviewDTO{
+				Code:   elem.GroupDefs_InvalidJoinLinkPreviewView.Code,
+				Status: "invalid",
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) RequestJoinGroup(codeOrUrl string) (*ChatConvoDTO, error) {
+	code := extractGroupInviteCode(codeOrUrl)
+	if code == "" {
+		return nil, fmt.Errorf("invite code is required")
+	}
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		res, err := chat.GroupRequestJoin(ctx, cc, &chat.GroupRequestJoin_Input{
+			Code: code,
+		})
+		if err != nil {
+			return err
+		}
+		if res != nil && res.Convo != nil {
+			out = parseConvoView(res.Convo, "")
+		} else {
+			out = &ChatConvoDTO{
+				IsGroup:   true,
+				GroupName: res.Status,
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) WithdrawGroupJoinRequest(convoId string) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		_, err := chat.GroupWithdrawJoinRequest(ctx, cc, &chat.GroupWithdrawJoinRequest_Input{
+			ConvoId: convoId,
+		})
+		return err
+	})
+}
+
+func (s *ChatService) EditGroupJoinLink(convoId string, requireApproval bool) (*ChatGroupJoinLinkDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ChatGroupJoinLinkDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		joinRule := "anyone"
+		res, err := chat.GroupEditJoinLink(ctx, cc, &chat.GroupEditJoinLink_Input{
+			ConvoId:         convoId,
+			JoinRule:        &joinRule,
+			RequireApproval: &requireApproval,
+		})
+		if err != nil {
+			return err
+		}
+		out = parseJoinLinkView(res.JoinLink)
+		return nil
+	})
+	return out, err
+}
+
+func (s *ChatService) ListMutualGroups(actor string, cursor string) ([]*ChatConvoDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out []*ChatConvoDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		cc := chatClient(c)
+		resolved, err := s.resolveActorsWithClient(ctx, c, []string{actor})
+		if err != nil || len(resolved) == 0 {
+			return err
+		}
+		res, err := chat.GroupListMutualGroups(ctx, cc, cursor, 50, resolved[0])
+		if err != nil {
+			return err
+		}
+		cur := safeString(res.Cursor)
+		for _, cv := range res.Convos {
+			if dto := parseConvoView(cv, cur); dto != nil {
+				out = append(out, dto)
+			}
+		}
+		return nil
+	})
+	if out == nil {
+		out = []*ChatConvoDTO{}
+	}
+	return out, err
 }
 

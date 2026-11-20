@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/bluesky-social/indigo/api/bsky"
 )
 
 var globalDIDCache sync.Map
@@ -113,11 +115,17 @@ type PostDTO struct {
 	AuthorDID         string            `json:"authorDid"`
 	AuthorPronouns    string            `json:"authorPronouns,omitempty"`
 	AuthorVerified    bool              `json:"authorVerified,omitempty"`
+	AuthorIsBot       bool              `json:"authorIsBot,omitempty"`
 	Text              string            `json:"text"`
 	CreatedAt         string            `json:"createdAt"`
 	ReplyCount        int64             `json:"replyCount"`
 	RepostCount       int64             `json:"repostCount"`
 	LikeCount         int64             `json:"likeCount"`
+	QuoteCount        int64             `json:"quoteCount,omitempty"`
+	BookmarkCount     int64             `json:"bookmarkCount,omitempty"`
+	KnownLikers       []string          `json:"knownLikers,omitempty"`
+	OpThreadPostCount int64             `json:"opThreadPostCount,omitempty"`
+	OpThreadPostIndex int64             `json:"opThreadPostIndex,omitempty"`
 	IsReply           bool              `json:"isReply"`
 	ReplyToAuthor     string            `json:"replyToAuthor"`
 	ReplyToAuthorName string            `json:"replyToAuthorName,omitempty"`
@@ -156,6 +164,9 @@ type PostRefDTO struct {
 	Cid     string `json:"cid"`
 	RootUri string `json:"rootUri"`
 	RootCid string `json:"rootCid"`
+	// Warning is an error code for something that failed after the post was
+	// already published, such as its reply restriction.
+	Warning string `json:"warning,omitempty"`
 }
 
 type ImageDTO struct {
@@ -171,15 +182,8 @@ type ExternalEmbedDTO struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Thumb       string `json:"thumb"`
-}
-
-type VideoJobStatusDTO struct {
-	JobId    string `json:"jobId"`
-	Did      string `json:"did"`
-	State    string `json:"state"`
-	Progress int64  `json:"progress,omitempty"`
-	Message  string `json:"message,omitempty"`
-	Error    string `json:"error,omitempty"`
+	SourceTitle string `json:"sourceTitle"`
+	SourceURI   string `json:"sourceUri"`
 }
 
 type VideoCaptionDTO struct {
@@ -350,10 +354,16 @@ type ProfileDTO struct {
 	ViewerSubscribedLabeler    bool                     `json:"viewerSubscribedLabeler"`
 	ViewerActivitySubscription *ActivitySubscriptionDTO `json:"viewerActivitySubscription,omitempty"`
 	LabelerInfo                *LabelerDTO              `json:"labelerInfo,omitempty"`
-	ListItemURI                string                   `json:"listItemUri,omitempty"`
-	Verified                   bool                     `json:"verified,omitempty"`
-	TrustedVerifier            bool                     `json:"trustedVerifier,omitempty"`
-	Status                     *ActorStatusDTO          `json:"status,omitempty"`
+	ListItemURI                        string                   `json:"listItemUri,omitempty"`
+	Verified                           bool                     `json:"verified,omitempty"`
+	TrustedVerifier                    bool                     `json:"trustedVerifier,omitempty"`
+	IsBot                              bool                     `json:"isBot,omitempty"`
+	HideFromLoggedOut                  bool                     `json:"hideFromLoggedOut,omitempty"`
+	HideFromAlgorithmicRecommendations bool                     `json:"hideFromAlgorithmicRecommendations,omitempty"`
+	VerifiedBy                         []string                 `json:"verifiedBy,omitempty"`
+	AllowActivitySubscriptions         string                   `json:"allowActivitySubscriptions,omitempty"`
+	GermMessageMeURL                   string                   `json:"germMessageMeUrl,omitempty"`
+	Status                             *ActorStatusDTO          `json:"status,omitempty"`
 }
 
 type ProfileListDTO struct {
@@ -362,19 +372,20 @@ type ProfileListDTO struct {
 }
 
 type ListDTO struct {
-	URI              string `json:"uri"`
-	CID              string `json:"cid"`
-	Name             string `json:"name"`
-	Purpose          string `json:"purpose"`
-	Description      string `json:"description"`
-	Creator          string `json:"creator"`
-	CreatorDID       string `json:"creatorDid"`
-	CreatorHandle    string `json:"creatorHandle"`
-	Avatar           string `json:"avatar"`
-	ListItemCount    int64  `json:"listItemCount"`
-	ViewerMuted      bool   `json:"viewerMuted"`
-	ViewerBlock      string `json:"viewerBlock"`
-	ViewerSubscribed bool   `json:"viewerSubscribed"`
+	URI                    string `json:"uri"`
+	CID                    string `json:"cid"`
+	Name                   string `json:"name"`
+	Purpose                string `json:"purpose"`
+	Description            string `json:"description"`
+	Creator                string `json:"creator"`
+	CreatorDID             string `json:"creatorDid"`
+	CreatorHandle          string `json:"creatorHandle"`
+	Avatar                 string `json:"avatar"`
+	ListItemCount          int64  `json:"listItemCount"`
+	ViewerMuted            bool   `json:"viewerMuted"`
+	ViewerBlock            string `json:"viewerBlock"`
+	ViewerSubscribed       bool   `json:"viewerSubscribed"`
+	ReferenceListOptOutURI string `json:"referenceListOptOutUri,omitempty"`
 }
 
 type ListWithMembershipDTO struct {
@@ -468,6 +479,8 @@ type ChatMessageDTO struct {
 	ReplyToSenderHandle      string            `json:"replyToSenderHandle,omitempty"`
 	ReplyToSenderDisplayName string            `json:"replyToSenderDisplayName,omitempty"`
 	Reactions                []ChatReactionDTO `json:"reactions,omitempty"`
+	JoinLinkCode             string            `json:"joinLinkCode,omitempty"`
+	JoinLinkGroupName        string            `json:"joinLinkGroupName,omitempty"`
 }
 
 type ChatMessagesDTO struct {
@@ -508,13 +521,17 @@ type PreferencesDTO struct {
 	HideVerificationBadges   bool               `json:"hideVerificationBadges"`
 }
 
-// Helper para parsear de forma segura o texto do Record
 func ParseFeedPost(record interface{}) string {
 	if record == nil {
 		return ""
 	}
+	if fp, ok := record.(*bsky.FeedPost); ok && fp != nil {
+		return fp.Text
+	}
+	if fp, ok := record.(bsky.FeedPost); ok {
+		return fp.Text
+	}
 
-	// Convert to map or struct to extract Text reliably since it's inside LexiconTypeDecoder Val
 	bytes, err := json.Marshal(record)
 	if err != nil {
 		return ""
@@ -532,6 +549,9 @@ func ParseRepostSubjectURI(record interface{}) string {
 	if record == nil {
 		return ""
 	}
+	if rp, ok := record.(*bsky.FeedRepost); ok && rp != nil && rp.Subject != nil {
+		return rp.Subject.Uri
+	}
 	bytes, err := json.Marshal(record)
 	if err != nil {
 		return ""
@@ -547,6 +567,25 @@ func ParseRepostSubjectURI(record interface{}) string {
 
 func ExtractExternalFromRecord(record interface{}) *ExternalEmbedDTO {
 	if record == nil {
+		return nil
+	}
+	if fp, ok := record.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Embed == nil {
+			return nil
+		}
+		var ext *bsky.EmbedExternal_External
+		if fp.Embed.EmbedExternal != nil && fp.Embed.EmbedExternal.External != nil {
+			ext = fp.Embed.EmbedExternal.External
+		} else if fp.Embed.EmbedRecordWithMedia != nil && fp.Embed.EmbedRecordWithMedia.Media != nil && fp.Embed.EmbedRecordWithMedia.Media.EmbedExternal != nil && fp.Embed.EmbedRecordWithMedia.Media.EmbedExternal.External != nil {
+			ext = fp.Embed.EmbedRecordWithMedia.Media.EmbedExternal.External
+		}
+		if ext != nil && ext.Uri != "" {
+			return &ExternalEmbedDTO{
+				URI:         ext.Uri,
+				Title:       ext.Title,
+				Description: ext.Description,
+			}
+		}
 		return nil
 	}
 	bytes, err := json.Marshal(record)
@@ -593,39 +632,68 @@ func ExtractImagesFromRecord(record interface{}, authorDID string) ([]string, []
 	if record == nil {
 		return nil, nil
 	}
+	if fp, ok := record.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Embed == nil {
+			return nil, nil
+		}
+		var imgList []*bsky.EmbedImages_Image
+		if fp.Embed.EmbedImages != nil {
+			imgList = fp.Embed.EmbedImages.Images
+		} else if fp.Embed.EmbedRecordWithMedia != nil && fp.Embed.EmbedRecordWithMedia.Media != nil && fp.Embed.EmbedRecordWithMedia.Media.EmbedImages != nil {
+			imgList = fp.Embed.EmbedRecordWithMedia.Media.EmbedImages.Images
+		}
+		if len(imgList) == 0 && fp.Embed.EmbedGallery == nil && (fp.Embed.EmbedRecordWithMedia == nil || fp.Embed.EmbedRecordWithMedia.Media == nil || fp.Embed.EmbedRecordWithMedia.Media.EmbedGallery == nil) {
+			return nil, nil
+		}
+		if len(imgList) > 0 {
+			alts := make([]string, 0, len(imgList))
+			images := make([]*ImageDTO, 0, len(imgList))
+			for _, img := range imgList {
+				if img == nil {
+					continue
+				}
+				alts = append(alts, img.Alt)
+				dto := &ImageDTO{Alt: img.Alt}
+				if img.Image != nil && authorDID != "" {
+					if cid := img.Image.Ref.String(); cid != "" && cid != "undefined" {
+						dto.Thumb = fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", authorDID, cid)
+						dto.Fullsize = fmt.Sprintf("https://cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", authorDID, cid)
+					}
+				}
+				if img.AspectRatio != nil {
+					dto.Width = img.AspectRatio.Width
+					dto.Height = img.AspectRatio.Height
+				}
+				images = append(images, dto)
+			}
+			return alts, images
+		}
+	}
 	bytes, err := json.Marshal(record)
 	if err != nil {
 		return nil, nil
 	}
+	type rawImageItem struct {
+		Alt   string `json:"alt"`
+		Image struct {
+			Ref struct {
+				Link string `json:"$link"`
+			} `json:"ref"`
+		} `json:"image"`
+		AspectRatio *struct {
+			Width  int64 `json:"width"`
+			Height int64 `json:"height"`
+		} `json:"aspectRatio"`
+	}
 	var rec struct {
 		Embed *struct {
-			Type   string `json:"$type"`
-			Images []struct {
-				Alt   string `json:"alt"`
-				Image struct {
-					Ref struct {
-						Link string `json:"$link"`
-					} `json:"ref"`
-				} `json:"image"`
-				AspectRatio *struct {
-					Width  int64 `json:"width"`
-					Height int64 `json:"height"`
-				} `json:"aspectRatio"`
-			} `json:"images"`
-			Media *struct {
-				Type   string `json:"$type"`
-				Images []struct {
-					Alt   string `json:"alt"`
-					Image struct {
-						Ref struct {
-							Link string `json:"$link"`
-						} `json:"ref"`
-					} `json:"image"`
-					AspectRatio *struct {
-						Width  int64 `json:"width"`
-						Height int64 `json:"height"`
-					} `json:"aspectRatio"`
-				} `json:"images"`
+			Type   string         `json:"$type"`
+			Images []rawImageItem `json:"images"`
+			Items  []rawImageItem `json:"items"`
+			Media  *struct {
+				Type   string         `json:"$type"`
+				Images []rawImageItem `json:"images"`
+				Items  []rawImageItem `json:"items"`
 			} `json:"media"`
 		} `json:"embed"`
 	}
@@ -634,8 +702,14 @@ func ExtractImagesFromRecord(record interface{}, authorDID string) ([]string, []
 	}
 
 	imagesList := rec.Embed.Images
+	if len(imagesList) == 0 {
+		imagesList = rec.Embed.Items
+	}
 	if len(imagesList) == 0 && rec.Embed.Media != nil {
 		imagesList = rec.Embed.Media.Images
+		if len(imagesList) == 0 {
+			imagesList = rec.Embed.Media.Items
+		}
 	}
 	if len(imagesList) == 0 {
 		return nil, nil
@@ -661,10 +735,34 @@ func ExtractImagesFromRecord(record interface{}, authorDID string) ([]string, []
 	return alts, images
 }
 
-// Helper para extrair metadados de resposta do Record em CBOR/JSON
+func extractDIDFromATURI(uri string) string {
+	if !strings.HasPrefix(uri, "at://") {
+		return ""
+	}
+	parts := strings.SplitN(uri[5:], "/", 2)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return ""
+}
+
 func ExtractReplyMetaFromRecord(record interface{}) (bool, string, string, string, string) {
 	if record == nil {
 		return false, "", "", "", ""
+	}
+	if fp, ok := record.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Reply == nil || fp.Reply.Parent == nil || fp.Reply.Parent.Uri == "" {
+			return false, "", "", "", ""
+		}
+		parentURI := fp.Reply.Parent.Uri
+		parentDID := extractDIDFromATURI(parentURI)
+		rootURI := ""
+		rootDID := ""
+		if fp.Reply.Root != nil && fp.Reply.Root.Uri != "" {
+			rootURI = fp.Reply.Root.Uri
+			rootDID = extractDIDFromATURI(rootURI)
+		}
+		return true, parentURI, parentDID, rootURI, rootDID
 	}
 	bytes, err := json.Marshal(record)
 	if err != nil {
@@ -684,30 +782,30 @@ func ExtractReplyMetaFromRecord(record interface{}) (bool, string, string, strin
 		return false, "", "", "", ""
 	}
 	parentURI := meta.Reply.Parent.URI
-	parentDID := ""
-	if strings.HasPrefix(parentURI, "at://") {
-		parts := strings.SplitN(parentURI[5:], "/", 2)
-		if len(parts) > 0 {
-			parentDID = parts[0]
-		}
-	}
+	parentDID := extractDIDFromATURI(parentURI)
 	rootURI := ""
 	rootDID := ""
 	if meta.Reply.Root.URI != "" {
 		rootURI = meta.Reply.Root.URI
-		if strings.HasPrefix(rootURI, "at://") {
-			parts := strings.SplitN(rootURI[5:], "/", 2)
-			if len(parts) > 0 {
-				rootDID = parts[0]
-			}
-		}
+		rootDID = extractDIDFromATURI(rootURI)
 	}
 	return true, parentURI, parentDID, rootURI, rootDID
 }
 
-// Helper para extrair o alt do vídeo a partir do Record CBOR/JSON
 func ExtractQuoteURIFromRecord(record interface{}) string {
 	if record == nil {
+		return ""
+	}
+	if fp, ok := record.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Embed == nil {
+			return ""
+		}
+		if fp.Embed.EmbedRecord != nil && fp.Embed.EmbedRecord.Record != nil {
+			return fp.Embed.EmbedRecord.Record.Uri
+		}
+		if fp.Embed.EmbedRecordWithMedia != nil && fp.Embed.EmbedRecordWithMedia.Record != nil && fp.Embed.EmbedRecordWithMedia.Record.Record != nil {
+			return fp.Embed.EmbedRecordWithMedia.Record.Record.Uri
+		}
 		return ""
 	}
 	bytes, err := json.Marshal(record)
@@ -738,6 +836,18 @@ func ExtractQuoteURIFromRecord(record interface{}) string {
 
 func ExtractVideoAltFromRecord(record interface{}) string {
 	if record == nil {
+		return ""
+	}
+	if fp, ok := record.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Embed == nil {
+			return ""
+		}
+		if fp.Embed.EmbedVideo != nil {
+			return safeString(fp.Embed.EmbedVideo.Alt)
+		}
+		if fp.Embed.EmbedRecordWithMedia != nil && fp.Embed.EmbedRecordWithMedia.Media != nil && fp.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
+			return safeString(fp.Embed.EmbedRecordWithMedia.Media.EmbedVideo.Alt)
+		}
 		return ""
 	}
 	bytes, err := json.Marshal(record)
@@ -868,6 +978,7 @@ type AccountStatusDTO struct {
 type DraftDTO struct {
 	ID              string   `json:"id"`
 	Text            string   `json:"text"`
+	Posts           []string `json:"posts,omitempty"`
 	Langs           []string `json:"langs,omitempty"`
 	SelfLabels      []string `json:"selfLabels,omitempty"`
 	ThreadgateAllow []string `json:"threadgateAllow,omitempty"`
@@ -879,6 +990,52 @@ type DraftDTO struct {
 type DraftListDTO struct {
 	Cursor string      `json:"cursor"`
 	Drafts []*DraftDTO `json:"drafts"`
+}
+
+type ChatDeclarationDTO struct {
+	AllowIncoming     string `json:"allowIncoming"`
+	AllowGroupInvites string `json:"allowGroupInvites"`
+}
+
+type ChatStatusDTO struct {
+	CanCreateGroups  bool  `json:"canCreateGroups"`
+	ChatDisabled     bool  `json:"chatDisabled"`
+	GroupMemberLimit int64 `json:"groupMemberLimit"`
+}
+
+type ChatNotificationPrefsDTO struct {
+	ChatInclude        string `json:"chatInclude"`
+	ChatPush           bool   `json:"chatPush"`
+	ChatRequestInclude string `json:"chatRequestInclude"`
+	ChatRequestPush    bool   `json:"chatRequestPush"`
+}
+
+type ChatGroupPreviewDTO struct {
+	Code             string `json:"code"`
+	ConvoID          string `json:"convoId"`
+	Name             string `json:"name"`
+	MemberCount      int64  `json:"memberCount"`
+	MemberLimit      int64  `json:"memberLimit"`
+	OwnerHandle      string `json:"ownerHandle"`
+	OwnerDisplayName string `json:"ownerDisplayName"`
+	RequireApproval  bool   `json:"requireApproval"`
+	Status           string `json:"status"`
+}
+
+type ModerationInboxItemDTO struct {
+	SubjectURI       string   `json:"subjectUri"`
+	SubjectCID       string   `json:"subjectCid"`
+	SubjectDID       string   `json:"subjectDid"`
+	EnforcementState string   `json:"enforcementState"`
+	Labels           []string `json:"labels"`
+	AppealState      string   `json:"appealState"`
+	AppealNote       string   `json:"appealNote"`
+	UpdatedAt        string   `json:"updatedAt"`
+}
+
+type ModerationInboxListDTO struct {
+	Items  []*ModerationInboxItemDTO `json:"items"`
+	Cursor string                    `json:"cursor"`
 }
 
 type StarterPackWithMembershipDTO struct {

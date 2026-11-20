@@ -15,8 +15,6 @@ export function ListAccounts():Promise<Array<services.SavedAccountDTO>>;
 
 export function ListAppPasswords():Promise<Array<services.AppPasswordDTO>>;
 
-export function Login(arg1:string,arg2:string,arg3:boolean):Promise<void>;
-
 export function LoginWithFactor(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<void>;
 
 export function Logout():Promise<void>;

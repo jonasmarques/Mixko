@@ -2,6 +2,7 @@ export interface TabState {
     posts: HTMLElement[];
     focusedIndex: number;
     loaded: boolean;
+    loadedAt?: number;
     lastHandle?: string;
     /**
      * How many pages the tab has fetched. A full reload starts over at page one,

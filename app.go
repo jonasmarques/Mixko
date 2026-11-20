@@ -94,9 +94,6 @@ func (a *App) startup(ctx context.Context) {
 	// Force window to foreground
 	runtime.WindowShow(ctx)
 
-	// Attempt to restore session
-	_, _ = a.Auth.CheckSession(ctx)
-
 	// Start background sync
 	a.Sync.Start(ctx)
 }

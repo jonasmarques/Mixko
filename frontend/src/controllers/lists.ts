@@ -141,7 +141,7 @@ export async function viewListMembers(listUri: string, listName: string, isOwner
 
         dialog.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;">
-                <h3 id="list-members-title" style="margin:0;">${i18n.t('lists.listMembersTitle', { name: listName })}</h3>
+                <h3 id="list-members-title" style="margin:0;">${esc(i18n.t('lists.listMembersTitle', { name: listName }))}</h3>
                 <span id="list-members-desc-sr" class="sr-only"></span>
                 <button type="button" id="btn-close-members-modal" autofocus style="padding:4px 10px;">${i18n.t('lists.close')}</button>
             </div>
@@ -212,7 +212,7 @@ export async function viewListFeed(listUri: string, listName: string, targetCont
     container.innerHTML = `
         <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
             <button id="btn-back-lists" type="button" style="padding:6px 14px; font-weight:bold;">${i18n.t('lists.back')}</button>
-            <h3 style="margin:0;">${i18n.t('lists.listFeedTitle', { name: listName })}</h3>
+            <h3 style="margin:0;">${esc(i18n.t('lists.listFeedTitle', { name: listName }))}</h3>
         </div>
         <div id="list-feed-container" aria-busy="true">${i18n.t('lists.loadingListFeed')}</div>
     `;

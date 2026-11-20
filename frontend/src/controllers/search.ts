@@ -6,6 +6,15 @@ import { switchTab } from './tabs';
 import { i18n } from '../utils/i18n';
 import type { PostView, ProfileDTO, StarterPackDTO } from '../types/dto';
 
+let lastSearchV2Flags = {
+    Following: false,
+    HasMedia: false,
+    HasVideo: false,
+    ExcludeReplies: false,
+    RepliesOnly: false,
+    AllTime: false,
+};
+
 function createSearchProfileArticle(prof: ProfileDTO): HTMLElement {
     const div = document.createElement('article');
     div.classList.add('post-item');
@@ -16,8 +25,9 @@ function createSearchProfileArticle(prof: ProfileDTO): HTMLElement {
     const pronounsHtml = prof.pronouns
         ? `<p class="profile-pronouns" style="margin: 2px 0; font-size: 0.9em; color: var(--text-muted, #9ca3af);">${esc(prof.pronouns)}</p>`
         : '';
+    const botBadge = prof.isBot ? ` <span class="bot-badge" style="font-size:0.8em; padding:1px 5px; border-radius:4px; background:rgba(100,116,139,0.2);">${esc(i18n.t('sec2.botBadge'))}</span>` : '';
     div.dataset.text = i18n.t('search.profileAria', { name: nameWithPronouns, desc: prof.description || "" });
-    div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3>${pronounsHtml}<p>${linkify(prof.description || '')}</p>`;
+    div.innerHTML = `<h3>${esc(prof.displayName)}${botBadge} <small>(${renderProfileLink(prof.handle)})</small></h3>${pronounsHtml}<p>${linkify(prof.description || '')}</p>`;
     
     div.dataset.index = state.currentPosts.length.toString();
     div.addEventListener('focus', () => {
@@ -114,7 +124,8 @@ export async function loadMoreSearch() {
                 Mentions: state.searchLastMentions,
                 Tag: state.searchLastTag ? state.searchLastTag.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : [],
                 URL: state.searchLastUrl,
-                Cursor: state.searchCursor
+                Cursor: state.searchCursor,
+                ...lastSearchV2Flags,
             };
             const res = await window.go.services.SearchService.SearchPosts(filter);
             state.searchCursor = res?.cursor || "";
@@ -213,6 +224,15 @@ export function setupSearch() {
                     const sinceDate = sinceInput && sinceInput.value ? `${sinceInput.value}T00:00:00Z` : "";
                     const untilDate = untilInput && untilInput.value ? `${untilInput.value}T23:59:59Z` : "";
 
+                    lastSearchV2Flags = {
+                        Following: (document.getElementById('search-following') as HTMLInputElement | null)?.checked === true,
+                        HasMedia: (document.getElementById('search-has-media') as HTMLInputElement | null)?.checked === true,
+                        HasVideo: (document.getElementById('search-has-video') as HTMLInputElement | null)?.checked === true,
+                        ExcludeReplies: (document.getElementById('search-exclude-replies') as HTMLInputElement | null)?.checked === true,
+                        RepliesOnly: (document.getElementById('search-replies-only') as HTMLInputElement | null)?.checked === true,
+                        AllTime: (document.getElementById('search-all-time') as HTMLInputElement | null)?.checked === true,
+                    };
+
                     state.searchLastLang = lang;
                     state.searchLastSort = sort;
                     state.searchLastAuthor = author;
@@ -234,7 +254,8 @@ export function setupSearch() {
                         Mentions: mentions,
                         Tag: tagRaw ? tagRaw.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) : [],
                         URL: urlVal,
-                        Cursor: ""
+                        Cursor: "",
+                        ...lastSearchV2Flags,
                     };
                     const res = await window.go.services.SearchService.SearchPosts(filter);
                     state.searchCursor = res?.cursor || "";

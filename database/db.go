@@ -99,11 +99,19 @@ func (db *DB) SaveSession(did, handle, accessJwt, refreshJwt, pdsHost string) er
 			refresh_jwt=excluded.refresh_jwt,
 			pds_host=excluded.pds_host;
 	`
-	if _, err = db.conn.Exec(query, did, handle, encAccess, encRefresh, pdsHost); err != nil {
+	// One transaction: a failure half way would leave saved_accounts holding
+	// a refresh token that has already been spent.
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.Exec(query, did, handle, encAccess, encRefresh, pdsHost); err != nil {
 		return err
 	}
 
-	if _, err = db.conn.Exec(`UPDATE saved_accounts SET is_active = 0 WHERE did != ?`, did); err != nil {
+	if _, err = tx.Exec(`UPDATE saved_accounts SET is_active = 0 WHERE did != ?`, did); err != nil {
 		return err
 	}
 	accQuery := `
@@ -116,8 +124,10 @@ func (db *DB) SaveSession(did, handle, accessJwt, refreshJwt, pdsHost string) er
 			pds_host=excluded.pds_host,
 			is_active=1;
 	`
-	_, err = db.conn.Exec(accQuery, did, handle, encAccess, encRefresh, pdsHost)
-	return err
+	if _, err = tx.Exec(accQuery, did, handle, encAccess, encRefresh, pdsHost); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Session is a stored login, as returned by GetSession.

@@ -46,10 +46,6 @@ export function GetPostThreadOtherV2(arg1) {
   return window['go']['services']['FeedService']['GetPostThreadOtherV2'](arg1);
 }
 
-export function GetPostThreadV2(arg1) {
-  return window['go']['services']['FeedService']['GetPostThreadV2'](arg1);
-}
-
 export function GetPosts(arg1) {
   return window['go']['services']['FeedService']['GetPosts'](arg1);
 }
@@ -68,10 +64,6 @@ export function GetSavedFeeds() {
 
 export function GetSuggestedFeeds(arg1) {
   return window['go']['services']['FeedService']['GetSuggestedFeeds'](arg1);
-}
-
-export function GetThread(arg1, arg2) {
-  return window['go']['services']['FeedService']['GetThread'](arg1, arg2);
 }
 
 export function GetTimeline(arg1, arg2) {

@@ -11,7 +11,25 @@ import { loadListsTab } from './lists';
 import { loadSettings } from './settings';
 import { i18n } from '../utils/i18n';
 
+const TAB_CACHE_TTL_MS: Partial<Record<keyof typeof DOM.panels, number>> = {
+  notifications: 60_000,
+  profile: 60_000,
+  chat: 60_000,
+  feeds: 120_000,
+  saved: 120_000,
+  lists: 120_000,
+  settings: 300_000,
+};
+
+function isTabStale(tabId: keyof typeof DOM.panels, loadedAt?: number): boolean {
+  const ttl = TAB_CACHE_TTL_MS[tabId];
+  if (!ttl) return false;
+  if (!loadedAt) return true;
+  return Date.now() - loadedAt >= ttl;
+}
+
 export async function updateCurrentTab() {
+  state.tabStates[state.currentTab].loadedAt = Date.now();
   if (state.currentTab === 'timeline') await loadTimeline(false, true);
   else if (state.currentTab === 'profile') await loadProfile(false, true);
   else if (state.currentTab === 'notifications') await loadNotifications(false, true);
@@ -30,12 +48,6 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
 
   if (state.currentTab === tabId && tabId === 'timeline') {
       state.currentFeedUri = "";
-      // Removed: state.tabStates['timeline'].loaded = false; to prevent annoying reloads
-  }
-
-  // Force automatic update for all tabs EXCEPT timeline
-  if (tabId !== 'timeline' && state.currentTab !== tabId) {
-      state.tabStates[tabId].loaded = false;
   }
 
   if (state.currentTab) {
@@ -58,7 +70,13 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
   state.focusedPostIndex = state.tabStates[tabId].focusedIndex;
 
   const ts = state.tabStates[tabId];
-  if (!ts.loaded || (tabId === 'profile' && ts.lastHandle !== state.currentHandle)) {
+  const needsLoad =
+      !ts.loaded ||
+      (tabId === 'profile' && ts.lastHandle !== state.currentHandle) ||
+      isTabStale(tabId, ts.loadedAt);
+
+  if (needsLoad) {
+      ts.loadedAt = Date.now();
       if (tabId === 'timeline') loadTimeline();
       else if (tabId === 'notifications') loadNotifications();
       else if (tabId === 'profile') loadProfile();
@@ -83,6 +101,7 @@ export function switchTab(tabId: keyof typeof DOM.panels) {
 
 export function reloadCurrentTab(keepFocus = true) {
   announcePolite(i18n.t('tabs.reloadingTab', { tab: state.currentTab }));
+  state.tabStates[state.currentTab].loadedAt = Date.now();
   if (state.currentTab === 'timeline') loadTimeline(false, keepFocus);
   else if (state.currentTab === 'notifications') loadNotifications(false, keepFocus);
   else if (state.currentTab === 'profile') loadProfile(false, keepFocus);

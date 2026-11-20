@@ -19,6 +19,8 @@ export interface ExternalEmbedDTO {
     title: string;
     description: string;
     thumb: string;
+    sourceTitle?: string;
+    sourceUri?: string;
 }
 
 export interface VideoCaptionDTO {
@@ -50,11 +52,17 @@ export interface PostDTO {
     authorDid: string;
     authorPronouns?: string;
     authorVerified?: boolean;
+    authorIsBot?: boolean;
     text: string;
     createdAt: string;
     replyCount: number;
     repostCount: number;
     likeCount: number;
+    quoteCount?: number;
+    bookmarkCount?: number;
+    knownLikers?: string[];
+    opThreadPostCount?: number;
+    opThreadPostIndex?: number;
     isReply: boolean;
     replyToAuthor: string;
     replyToAuthorName?: string;
@@ -102,6 +110,8 @@ export interface PostRefDTO {
   cid: string;
   rootUri: string;
   rootCid: string;
+  /** Error code for something that failed after the post was published. */
+  warning?: string;
 }
 
 export type PostView = Partial<PostDTO> & Pick<PostDTO, 'uri' | 'cid' | 'authorHandle'>;
@@ -110,6 +120,7 @@ export interface FeedDTO {
     cursor: string;
     posts: PostDTO[] | null;
     debugMessage?: string;
+    hasOtherReplies?: boolean;
 }
 
 export interface LabelerPolicyDTO {
@@ -183,6 +194,12 @@ export interface ProfileDTO {
     listItemUri?: string;
     verified?: boolean;
     trustedVerifier?: boolean;
+    isBot?: boolean;
+    hideFromLoggedOut?: boolean;
+    hideFromAlgorithmicRecommendations?: boolean;
+    verifiedBy?: string[];
+    allowActivitySubscriptions?: string;
+    germMessageMeUrl?: string;
     status?: ActorStatusDTO | null;
 }
 
@@ -360,6 +377,8 @@ export interface ChatMessageDTO {
     replyToSenderHandle?: string;
     replyToSenderDisplayName?: string;
     reactions?: ChatReactionDTO[];
+    joinLinkCode?: string;
+    joinLinkGroupName?: string;
 }
 
 export interface ChatConvoDTO {
@@ -440,6 +459,7 @@ export interface AccountStatusDTO {
 export interface DraftDTO {
     id: string;
     text: string;
+    posts?: string[];
     langs?: string[];
     selfLabels?: string[];
     threadgateAllow?: string[];
@@ -467,6 +487,7 @@ export interface ListDTO {
     viewerMuted?: boolean;
     viewerBlock?: string;
     viewerSubscribed?: boolean;
+    referenceListOptOutUri?: string;
 }
 
 export interface ListResponseDTO {
@@ -541,6 +562,52 @@ export interface PreferencesDTO {
     defaultThreadgateRules?: string[];
     interests?: string[];
     hideVerificationBadges?: boolean;
+}
+
+export interface ChatDeclarationDTO {
+    allowIncoming: string;
+    allowGroupInvites: string;
+}
+
+export interface ChatStatusDTO {
+    canCreateGroups: boolean;
+    chatDisabled: boolean;
+    groupMemberLimit: number;
+}
+
+export interface ChatNotificationPrefsDTO {
+    chatInclude: string;
+    chatPush: boolean;
+    chatRequestInclude: string;
+    chatRequestPush: boolean;
+}
+
+export interface ChatGroupPreviewDTO {
+    code: string;
+    convoId: string;
+    name: string;
+    memberCount: number;
+    memberLimit: number;
+    ownerHandle: string;
+    ownerDisplayName: string;
+    requireApproval: boolean;
+    status: string;
+}
+
+export interface ModerationInboxItemDTO {
+    subjectUri: string;
+    subjectCid: string;
+    subjectDid: string;
+    enforcementState: string;
+    labels: string[] | null;
+    appealState: string;
+    appealNote: string;
+    updatedAt: string;
+}
+
+export interface ModerationInboxListDTO {
+    items: ModerationInboxItemDTO[] | null;
+    cursor: string;
 }
 
 

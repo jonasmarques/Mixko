@@ -118,7 +118,7 @@ function renderGifs(items: any[]) {
 
         if (item.file) {
             // Klipy Native Format
-            mp4Url = item.file.hd?.mp4?.url || item.file.md?.mp4?.url || item.file.hd?.gif?.url || '';
+            mp4Url = item.file.hd?.mp4?.url || item.file.md?.mp4?.url || item.file.sm?.mp4?.url || item.file.hd?.gif?.url || '';
             thumbUrl = item.file.sm?.webp?.url || item.file.xs?.gif?.url || item.file.sm?.gif?.url || mp4Url;
         } else if (item.media && item.media.length > 0) {
             // Tenor compatibility format

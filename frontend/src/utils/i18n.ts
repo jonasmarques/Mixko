@@ -1,6 +1,5 @@
-const localeFiles = import.meta.glob<{ default: Record<string, TranslationValue> }>(
-    '../locales/*.json',
-    { eager: true }
+const localeLoadersRaw = import.meta.glob<{ default: Record<string, TranslationValue> }>(
+    '../locales/*.json'
 );
 
 export type TranslationValue = string | TranslationMap;
@@ -11,30 +10,31 @@ export class I18n {
     private currentLang: string = 'pt_br';
     private fallbackLang: string = 'en_us';
     private locales: Record<string, Translations> = {};
+    private loaders: Record<string, () => Promise<{ default: Translations }>> = {};
 
     constructor() {
-        this.loadLocales();
+        this.registerLoaders();
         this.detectLanguage();
     }
 
-    private loadLocales() {
-        for (const path in localeFiles) {
+    private registerLoaders() {
+        for (const path in localeLoadersRaw) {
             const langCode = path.match(/\/([^/]+)\.json$/)?.[1];
             if (langCode) {
-                this.locales[langCode] = localeFiles[path].default;
+                this.loaders[langCode] = localeLoadersRaw[path];
             }
         }
     }
 
     private resolveLocale(lang: string): string {
-        if (this.locales[lang]) return lang;
+        if (this.loaders[lang]) return lang;
         const prefix = lang.split('_')[0];
-        return Object.keys(this.locales).find(k => k.startsWith(prefix)) ?? this.fallbackLang;
+        return Object.keys(this.loaders).find(k => k.startsWith(prefix)) ?? this.fallbackLang;
     }
 
     private detectLanguage() {
         const saved = localStorage.getItem('app-language');
-        if (saved && this.locales[saved]) {
+        if (saved && this.loaders[saved]) {
             this.currentLang = saved;
             return;
         }
@@ -43,10 +43,27 @@ export class I18n {
         this.currentLang = this.resolveLocale(browserLang);
     }
 
-    public setLanguage(lang: string) {
+    private async ensureLocale(lang: string): Promise<void> {
+        if (this.locales[lang]) return;
+        const loader = this.loaders[lang];
+        if (!loader) return;
+        const mod = await loader();
+        this.locales[lang] = mod.default;
+    }
+
+    public async init(): Promise<void> {
+        const toLoad = [this.ensureLocale(this.currentLang)];
+        if (this.currentLang !== this.fallbackLang) {
+            toLoad.push(this.ensureLocale(this.fallbackLang));
+        }
+        await Promise.all(toLoad);
+    }
+
+    public async setLanguage(lang: string): Promise<void> {
         const finalLang = this.resolveLocale(lang);
 
-        if (this.locales[finalLang]) {
+        if (this.loaders[finalLang]) {
+            await this.ensureLocale(finalLang);
             this.currentLang = finalLang;
             localStorage.setItem('app-language', finalLang);
             this.translateDOM();
@@ -61,7 +78,7 @@ export class I18n {
     }
 
     public getAvailableLanguages(): string[] {
-        return Object.keys(this.locales);
+        return Object.keys(this.loaders);
     }
 
     // Get a nested string by dot notation (e.g., 'nav.timeline')

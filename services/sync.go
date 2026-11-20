@@ -118,20 +118,37 @@ func (s *SyncService) checkForUpdates(ctx context.Context) {
 			}
 		}
 
-		if convos, err := s.chatSvc.ListConvos(""); err == nil {
-			var unreadChat int64
-			var maxRev string
-			for _, c := range convos {
-				unreadChat += c.UnreadCount
-				if c.Rev > maxRev {
-					maxRev = c.Rev
-				}
-			}
+		s.mu.Lock()
+		hasRev := s.lastChatLogRev != ""
+		s.mu.Unlock()
 
-			s.mu.Lock()
-			if s.lastChatLogRev == "" && maxRev != "" {
-				s.lastChatLogRev = maxRev
+		var unreadChat int64
+		var gotUnread bool
+		if hasRev {
+			if totalUnread, uErr := s.chatSvc.GetUnreadCounts(); uErr == nil {
+				unreadChat = totalUnread
+				gotUnread = true
 			}
+		}
+		if !gotUnread {
+			if convos, err := s.chatSvc.ListConvos(""); err == nil {
+				var maxRev string
+				for _, c := range convos {
+					unreadChat += c.UnreadCount
+					if c.Rev > maxRev {
+						maxRev = c.Rev
+					}
+				}
+				gotUnread = true
+				s.mu.Lock()
+				if s.lastChatLogRev == "" && maxRev != "" {
+					s.lastChatLogRev = maxRev
+				}
+				s.mu.Unlock()
+			}
+		}
+		if gotUnread {
+			s.mu.Lock()
 			changed := unreadChat > s.lastUnreadChatCount || (logTriggered && unreadChat > 0)
 			s.lastUnreadChatCount = unreadChat
 			s.mu.Unlock()
@@ -142,9 +159,9 @@ func (s *SyncService) checkForUpdates(ctx context.Context) {
 		}
 	}
 
-	// Only hand the timeline to the UI when the newest post actually changed;
-	// otherwise every tick would re-render the same posts.
-	timeline, err := s.feedSvc.GetTimeline("", 30)
+	// Only wake the UI when the newest post actually changed. The UI reloads
+	// the timeline itself, so one post is enough to tell.
+	timeline, err := s.feedSvc.GetTimeline("", 1)
 	if err != nil || timeline == nil || len(timeline.Posts) == 0 {
 		return
 	}
@@ -159,7 +176,7 @@ func (s *SyncService) checkForUpdates(ctx context.Context) {
 	s.mu.Unlock()
 
 	if changed {
-		runtime.EventsEmit(ctx, "new_timeline_posts", timeline.Posts)
+		runtime.EventsEmit(ctx, "new_timeline_posts")
 	}
 }
 
@@ -335,6 +352,13 @@ func (s *SyncService) consumeJetstream(ctx context.Context, host, did string, tr
 			case <-stop:
 				return
 			case <-ticker.C:
+				// The stream is filtered to one account. After a switch or a
+				// logout it would keep watching the old one for as long as
+				// the connection stayed healthy.
+				if cur, err := s.clientMgr.GetClient(); err != nil || cur.Auth == nil || cur.Auth.Did != did {
+					_ = conn.Close()
+					return
+				}
 				// WriteControl is the concurrency-safe path for control
 				// frames, which matters because gorilla answers server pings
 				// on its own.

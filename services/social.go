@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bluesky-social/indigo/api/atproto"
@@ -37,15 +37,55 @@ func (s *SocialService) mutatePrefs(transform func([]bsky.ActorDefs_Preferences_
 	defer cancel()
 
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
+		current, unknown, err := loadPrefs(ctx, c)
 		if err != nil {
 			return err
 		}
 
-		return bsky.ActorPutPreferences(ctx, c, &bsky.ActorPutPreferences_Input{
-			Preferences: transform(res.Preferences),
-		})
+		if err := storePrefs(ctx, c, transform(current), unknown); err != nil {
+			return err
+		}
+		s.clientMgr.InvalidatePreferencesCache()
+		return nil
 	})
+}
+
+// loadPrefs fetches the account preferences. Entries of a type this indigo
+// build cannot decode come back as raw JSON in unknown and must be handed to
+// storePrefs untouched: putPreferences replaces the whole array, so leaving
+// them out would delete them, and a typed entry with no known type cannot be
+// marshalled at all.
+func loadPrefs(ctx context.Context, c *xrpc.Client) (prefs []bsky.ActorDefs_Preferences_Elem, unknown []json.RawMessage, err error) {
+	var out struct {
+		Preferences []json.RawMessage `json:"preferences"`
+	}
+	if err := c.Do(ctx, xrpc.Query, "", "app.bsky.actor.getPreferences", nil, nil, &out); err != nil {
+		return nil, nil, err
+	}
+	for _, raw := range out.Preferences {
+		var pref bsky.ActorDefs_Preferences_Elem
+		if json.Unmarshal(raw, &pref) != nil {
+			unknown = append(unknown, raw)
+			continue
+		}
+		if _, err := json.Marshal(&pref); err != nil {
+			unknown = append(unknown, raw)
+			continue
+		}
+		prefs = append(prefs, pref)
+	}
+	return prefs, unknown, nil
+}
+
+func storePrefs(ctx context.Context, c *xrpc.Client, prefs []bsky.ActorDefs_Preferences_Elem, unknown []json.RawMessage) error {
+	all := make([]any, 0, len(prefs)+len(unknown))
+	for i := range prefs {
+		all = append(all, &prefs[i])
+	}
+	for _, raw := range unknown {
+		all = append(all, raw)
+	}
+	return c.Do(ctx, xrpc.Procedure, "application/json", "app.bsky.actor.putPreferences", nil, map[string]any{"preferences": all}, nil)
 }
 
 // replacePref swaps the single preference entry matched by match for the one
@@ -123,7 +163,7 @@ func (s *SocialService) GetPreferences() (*PreferencesDTO, error) {
 	defer cancel()
 	var out *PreferencesDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
+		res, err := s.clientMgr.GetCachedPreferences(ctx, c)
 		if err != nil {
 			return err
 		}
@@ -317,7 +357,7 @@ func (s *SocialService) GetSubscribedLabelerDIDs() ([]string, error) {
 	defer cancel()
 	var dids []string
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
+		res, err := s.clientMgr.GetCachedPreferences(ctx, c)
 		if err != nil {
 			return err
 		}
@@ -339,14 +379,14 @@ func (s *SocialService) SubscribeLabeler(labelerDid string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
+		current, unknown, err := loadPrefs(ctx, c)
 		if err != nil {
 			return err
 		}
 
 		var newPrefs []bsky.ActorDefs_Preferences_Elem
 		var labelersPref *bsky.ActorDefs_LabelersPref
-		for _, pref := range res.Preferences {
+		for _, pref := range current {
 			if pref.ActorDefs_LabelersPref != nil {
 				labelersPref = pref.ActorDefs_LabelersPref
 			} else {
@@ -378,9 +418,11 @@ func (s *SocialService) SubscribeLabeler(labelerDid string) error {
 			ActorDefs_LabelersPref: labelersPref,
 		})
 
-		return bsky.ActorPutPreferences(ctx, c, &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
-		})
+		if err := storePrefs(ctx, c, newPrefs, unknown); err != nil {
+			return err
+		}
+		s.clientMgr.InvalidatePreferencesCache()
+		return nil
 	})
 }
 
@@ -388,13 +430,13 @@ func (s *SocialService) UnsubscribeLabeler(labelerDid string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
+		current, unknown, err := loadPrefs(ctx, c)
 		if err != nil {
 			return err
 		}
 
 		var newPrefs []bsky.ActorDefs_Preferences_Elem
-		for _, pref := range res.Preferences {
+		for _, pref := range current {
 			if pref.ActorDefs_LabelersPref != nil {
 				var updatedList []*bsky.ActorDefs_LabelerPrefItem
 				for _, item := range pref.ActorDefs_LabelersPref.Labelers {
@@ -407,9 +449,11 @@ func (s *SocialService) UnsubscribeLabeler(labelerDid string) error {
 			newPrefs = append(newPrefs, pref)
 		}
 
-		return bsky.ActorPutPreferences(ctx, c, &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
-		})
+		if err := storePrefs(ctx, c, newPrefs, unknown); err != nil {
+			return err
+		}
+		s.clientMgr.InvalidatePreferencesCache()
+		return nil
 	})
 }
 
@@ -593,13 +637,64 @@ func parseActorStatusView(sv *bsky.ActorDefs_StatusView) *ActorStatusDTO {
 	return dto
 }
 
-func parseVerificationState(v *bsky.ActorDefs_VerificationState) (bool, bool) {
+func parseVerificationState(v *bsky.ActorDefs_VerificationState) (bool, bool, []string) {
 	if v == nil {
-		return false, false
+		return false, false, nil
 	}
 	verified := v.VerifiedStatus == "valid"
 	trusted := v.TrustedVerifierStatus == "valid"
-	return verified, trusted
+	var verifiedBy []string
+	for _, ver := range v.Verifications {
+		if ver == nil || !ver.IsValid {
+			continue
+		}
+		name := strings.TrimSpace(safeString(ver.IssuerDisplayName))
+		handle := strings.TrimSpace(safeString(ver.IssuerHandle))
+		label := name
+		if label == "" && handle != "" {
+			label = "@" + handle
+		} else if label != "" && handle != "" {
+			label = fmt.Sprintf("%s (@%s)", label, handle)
+		} else if label == "" {
+			label = ver.Issuer
+		}
+		if label != "" && !containsString(verifiedBy, label) {
+			verifiedBy = append(verifiedBy, label)
+		}
+	}
+	return verified, trusted, verifiedBy
+}
+
+func parseProfileIdentityLabels(labels []*atproto.LabelDefs_Label) (bool, bool) {
+	isBot := false
+	hideFromLoggedOut := false
+	for _, l := range labels {
+		if l == nil || (l.Neg != nil && *l.Neg) {
+			continue
+		}
+		val := strings.TrimSpace(l.Val)
+		if strings.EqualFold(val, "bot") {
+			isBot = true
+		} else if val == "!no-unauthenticated" {
+			hideFromLoggedOut = true
+		}
+	}
+	return isBot, hideFromLoggedOut
+}
+
+func parseProfileAssociatedExtra(assoc *bsky.ActorDefs_ProfileAssociated) (string, string) {
+	if assoc == nil {
+		return "", ""
+	}
+	allowSubs := ""
+	if assoc.ActivitySubscription != nil {
+		allowSubs = assoc.ActivitySubscription.AllowSubscriptions
+	}
+	germURL := ""
+	if assoc.Germ != nil {
+		germURL = assoc.Germ.MessageMeUrl
+	}
+	return allowSubs, germURL
 }
 
 type profileLinkViewRaw struct {
@@ -675,29 +770,68 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 
 		var labelerInfo *LabelerDTO
 		viewerSubscribedLabeler := false
+		isMe := res.Did == c.Auth.Did
+		hideFromAlgoRecs := false
+		website := safeString(res.Website)
+		pronouns := strings.TrimSpace(safeString(res.Pronouns))
 
-		if isLabeler {
-			lbs, err := s.GetLabelerServices([]string{res.Did})
-			if err == nil && len(lbs) > 0 {
-				labelerInfo = lbs[0]
-				viewerSubscribedLabeler = labelerInfo.IsSubscribed
+		var (
+			links          []ProfileLinkDTO
+			resolvedWebsite string
+			repoPronouns   string
+			hasRepoProfile bool
+		)
+
+		var secondaryWG sync.WaitGroup
+
+		secondaryWG.Add(1)
+		go func() {
+			defer secondaryWG.Done()
+			if isLabeler {
+				lbs, lbErr := s.GetLabelerServices([]string{res.Did})
+				if lbErr == nil && len(lbs) > 0 {
+					labelerInfo = lbs[0]
+					viewerSubscribedLabeler = labelerInfo.IsSubscribed
+				}
+				return
 			}
-		} else {
-			subDids, err := s.GetSubscribedLabelerDIDs()
-			if err == nil {
-				for _, d := range subDids {
-					if d == res.Did {
-						viewerSubscribedLabeler = true
-						lbs, err := s.GetLabelerServices([]string{res.Did})
-						if err == nil && len(lbs) > 0 {
-							isLabeler = true
-							labelerInfo = lbs[0]
-						}
-						break
+			subDids, subErr := s.GetSubscribedLabelerDIDs()
+			if subErr != nil {
+				return
+			}
+			for _, d := range subDids {
+				if d == res.Did {
+					viewerSubscribedLabeler = true
+					lbs, lbErr := s.GetLabelerServices([]string{res.Did})
+					if lbErr == nil && len(lbs) > 0 {
+						isLabeler = true
+						labelerInfo = lbs[0]
 					}
+					break
 				}
 			}
+		}()
+
+		if isMe {
+			secondaryWG.Add(1)
+			go func() {
+				defer secondaryWG.Done()
+				if rawVis, visErr := getOwnRecordJSON(ctx, c, "app.bsky.actor.contentVisibilityDeclaration", "self"); visErr == nil && rawVis != nil {
+					var visRec bsky.ActorContentVisibilityDeclaration
+					if json.Unmarshal(rawVis, &visRec) == nil {
+						hideFromAlgoRecs = visRec.HideFromAlgorithmicRecommendations
+					}
+				}
+			}()
 		}
+
+		secondaryWG.Add(1)
+		go func() {
+			defer secondaryWG.Done()
+			links, resolvedWebsite, repoPronouns, hasRepoProfile = s.fetchProfileLinks(ctx, c, res.Did, website, res.Links)
+		}()
+
+		secondaryWG.Wait()
 
 		var viewerActivitySubscription *ActivitySubscriptionDTO
 		if res.Viewer != nil && res.Viewer.ActivitySubscription != nil {
@@ -707,10 +841,9 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 			}
 		}
 
-		verified, trustedVerifier := parseVerificationState(res.Verification)
-		website := safeString(res.Website)
-		pronouns := strings.TrimSpace(safeString(res.Pronouns))
-		links, resolvedWebsite, repoPronouns, hasRepoProfile := s.fetchProfileLinks(ctx, c, res.Did, website, res.Links)
+		verified, trustedVerifier, verifiedBy := parseVerificationState(res.Verification)
+		isBot, hideFromLoggedOut := parseProfileIdentityLabels(res.Labels)
+		allowActivitySubs, germMessageMeURL := parseProfileAssociatedExtra(res.Associated)
 		if resolvedWebsite != "" {
 			website = resolvedWebsite
 		}
@@ -719,31 +852,37 @@ func (s *SocialService) GetProfile(actor string) (*ProfileDTO, error) {
 		}
 
 		out = &ProfileDTO{
-			DID:                        res.Did,
-			Handle:                     res.Handle,
-			DisplayName:                name,
-			Description:                desc,
-			Pronouns:                   pronouns,
-			Avatar:                     safeString(res.Avatar),
-			Website:                    website,
-			Links:                      links,
-			Followers:                  followers,
-			Follows:                    follows,
-			Posts:                      posts,
-			ViewerFollowing:            viewerFollowing,
-			ViewerFollowedBy:           viewerFollowedBy,
-			ViewerMuted:                viewerMuted,
-			ViewerBlocking:             viewerBlocking,
-			ViewerBlockedBy:            viewerBlockedBy,
-			PinnedPostUri:              pinnedPostUri,
-			IsMe:                       res.Did == c.Auth.Did,
-			IsLabeler:                  isLabeler,
-			ViewerSubscribedLabeler:    viewerSubscribedLabeler,
-			ViewerActivitySubscription: viewerActivitySubscription,
-			LabelerInfo:                labelerInfo,
-			Verified:                   verified,
-			TrustedVerifier:            trustedVerifier,
-			Status:                     parseActorStatusView(res.Status),
+			DID:                                res.Did,
+			Handle:                             res.Handle,
+			DisplayName:                        name,
+			Description:                        desc,
+			Pronouns:                           pronouns,
+			Avatar:                             safeString(res.Avatar),
+			Website:                            website,
+			Links:                              links,
+			Followers:                          followers,
+			Follows:                            follows,
+			Posts:                              posts,
+			ViewerFollowing:                    viewerFollowing,
+			ViewerFollowedBy:                   viewerFollowedBy,
+			ViewerMuted:                        viewerMuted,
+			ViewerBlocking:                     viewerBlocking,
+			ViewerBlockedBy:                    viewerBlockedBy,
+			PinnedPostUri:                      pinnedPostUri,
+			IsMe:                               isMe,
+			IsLabeler:                          isLabeler,
+			ViewerSubscribedLabeler:            viewerSubscribedLabeler,
+			ViewerActivitySubscription:         viewerActivitySubscription,
+			LabelerInfo:                        labelerInfo,
+			Verified:                           verified,
+			TrustedVerifier:                    trustedVerifier,
+			IsBot:                              isBot,
+			HideFromLoggedOut:                  hideFromLoggedOut,
+			HideFromAlgorithmicRecommendations: hideFromAlgoRecs,
+			VerifiedBy:                         verifiedBy,
+			AllowActivitySubscriptions:         allowActivitySubs,
+			GermMessageMeURL:                   germMessageMeURL,
+			Status:                             parseActorStatusView(res.Status),
 		}
 		return nil
 	})
@@ -762,19 +901,26 @@ func ParseProfileView(view *bsky.ActorDefs_ProfileView) *ProfileDTO {
 		viewerFollowing = *view.Viewer.Following
 	}
 
-	verified, trustedVerifier := parseVerificationState(view.Verification)
+	verified, trustedVerifier, verifiedBy := parseVerificationState(view.Verification)
+	isBot, hideFromLoggedOut := parseProfileIdentityLabels(view.Labels)
+	allowActivitySubs, germMessageMeURL := parseProfileAssociatedExtra(view.Associated)
 
 	return &ProfileDTO{
-		DID:             view.Did,
-		Handle:          view.Handle,
-		DisplayName:     safeString(view.DisplayName),
-		Description:     safeString(view.Description),
-		Pronouns:        strings.TrimSpace(safeString(view.Pronouns)),
-		Avatar:          safeString(view.Avatar),
-		ViewerFollowing: viewerFollowing,
-		Verified:        verified,
-		TrustedVerifier: trustedVerifier,
-		Status:          parseActorStatusView(view.Status),
+		DID:                        view.Did,
+		Handle:                     view.Handle,
+		DisplayName:                safeString(view.DisplayName),
+		Description:                safeString(view.Description),
+		Pronouns:                   strings.TrimSpace(safeString(view.Pronouns)),
+		Avatar:                     safeString(view.Avatar),
+		ViewerFollowing:            viewerFollowing,
+		Verified:                   verified,
+		TrustedVerifier:            trustedVerifier,
+		IsBot:                      isBot,
+		HideFromLoggedOut:          hideFromLoggedOut,
+		VerifiedBy:                 verifiedBy,
+		AllowActivitySubscriptions: allowActivitySubs,
+		GermMessageMeURL:           germMessageMeURL,
+		Status:                     parseActorStatusView(view.Status),
 	}
 }
 
@@ -791,18 +937,25 @@ func ParseProfileViewBasic(view *bsky.ActorDefs_ProfileViewBasic) *ProfileDTO {
 		viewerFollowing = *view.Viewer.Following
 	}
 
-	verified, trustedVerifier := parseVerificationState(view.Verification)
+	verified, trustedVerifier, verifiedBy := parseVerificationState(view.Verification)
+	isBot, hideFromLoggedOut := parseProfileIdentityLabels(view.Labels)
+	allowActivitySubs, germMessageMeURL := parseProfileAssociatedExtra(view.Associated)
 
 	return &ProfileDTO{
-		DID:             view.Did,
-		Handle:          view.Handle,
-		DisplayName:     safeString(view.DisplayName),
-		Pronouns:        strings.TrimSpace(safeString(view.Pronouns)),
-		Avatar:          safeString(view.Avatar),
-		ViewerFollowing: viewerFollowing,
-		Verified:        verified,
-		TrustedVerifier: trustedVerifier,
-		Status:          parseActorStatusView(view.Status),
+		DID:                        view.Did,
+		Handle:                     view.Handle,
+		DisplayName:                safeString(view.DisplayName),
+		Pronouns:                   strings.TrimSpace(safeString(view.Pronouns)),
+		Avatar:                     safeString(view.Avatar),
+		ViewerFollowing:            viewerFollowing,
+		Verified:                   verified,
+		TrustedVerifier:            trustedVerifier,
+		IsBot:                      isBot,
+		HideFromLoggedOut:          hideFromLoggedOut,
+		VerifiedBy:                 verifiedBy,
+		AllowActivitySubscriptions: allowActivitySubs,
+		GermMessageMeURL:           germMessageMeURL,
+		Status:                     parseActorStatusView(view.Status),
 	}
 }
 
@@ -967,6 +1120,7 @@ func (s *SocialService) GetActorLists(actorDID string, cursor string) (*ListResp
 
 			viewerMuted := false
 			viewerBlock := ""
+			refOptOutURI := ""
 			if list.Viewer != nil {
 				if list.Viewer.Muted != nil {
 					viewerMuted = *list.Viewer.Muted
@@ -974,22 +1128,26 @@ func (s *SocialService) GetActorLists(actorDID string, cursor string) (*ListResp
 				if list.Viewer.Blocked != nil {
 					viewerBlock = *list.Viewer.Blocked
 				}
+				if list.Viewer.ReferenceListOptOut != nil {
+					refOptOutURI = *list.Viewer.ReferenceListOptOut
+				}
 			}
 
 			out.Lists = append(out.Lists, &ListDTO{
-				URI:              list.Uri,
-				CID:              list.Cid,
-				Name:             list.Name,
-				Purpose:          purpose,
-				Description:      desc,
-				Creator:          creatorHandle,
-				CreatorDID:       creatorDid,
-				CreatorHandle:    creatorHandle,
-				Avatar:           avatar,
-				ListItemCount:    itemCount,
-				ViewerMuted:      viewerMuted,
-				ViewerBlock:      viewerBlock,
-				ViewerSubscribed: subscribedMap[list.Uri],
+				URI:                    list.Uri,
+				CID:                    list.Cid,
+				Name:                   list.Name,
+				Purpose:                purpose,
+				Description:            desc,
+				Creator:                creatorHandle,
+				CreatorDID:             creatorDid,
+				CreatorHandle:          creatorHandle,
+				Avatar:                 avatar,
+				ListItemCount:          itemCount,
+				ViewerMuted:            viewerMuted,
+				ViewerBlock:            viewerBlock,
+				ViewerSubscribed:       subscribedMap[list.Uri],
+				ReferenceListOptOutURI: refOptOutURI,
 			})
 		}
 		return nil
@@ -1070,19 +1228,22 @@ type rawRepoMutationOutput struct {
 }
 
 func (s *SocialService) rawRepoGetRecord(ctx context.Context, c *xrpc.Client, repo, collection, rkey string) (*rawRepoGetRecordOutput, error) {
-	params := map[string]interface{}{
-		"repo":       repo,
-		"collection": collection,
-		"rkey":       rkey,
-	}
 	var out rawRepoGetRecordOutput
-	err := c.Do(ctx, xrpc.Query, "", "com.atproto.repo.getRecord", params, nil, &out)
-	if err == nil && out.Value != nil {
-		return &out, nil
+	if c != nil && c.Auth != nil && repo == c.Auth.Did {
+		params := map[string]interface{}{
+			"repo":       repo,
+			"collection": collection,
+			"rkey":       rkey,
+		}
+		err := c.Do(ctx, xrpc.Query, "", "com.atproto.repo.getRecord", params, nil, &out)
+		if err == nil && out.Value != nil {
+			return &out, nil
+		}
+		return nil, err
 	}
 	pdsHost := s.clientMgr.ResolvePDSHost(ctx, repo)
 	if pdsHost == "" {
-		return nil, err
+		return nil, fmt.Errorf("could not resolve PDS host for %s", repo)
 	}
 	if !strings.HasPrefix(pdsHost, "http://") && !strings.HasPrefix(pdsHost, "https://") {
 		pdsHost = "https://" + pdsHost
@@ -1094,8 +1255,7 @@ func (s *SocialService) rawRepoGetRecord(ctx context.Context, c *xrpc.Client, re
 	if rErr != nil {
 		return nil, rErr
 	}
-	httpClient := &http.Client{Timeout: 8 * time.Second}
-	resp, hErr := httpClient.Do(req)
+	resp, hErr := s.clientMgr.ShortTimeoutHTTPClient().Do(req)
 	if hErr != nil {
 		return nil, hErr
 	}
@@ -1110,19 +1270,22 @@ func (s *SocialService) rawRepoGetRecord(ctx context.Context, c *xrpc.Client, re
 }
 
 func (s *SocialService) rawRepoListRecords(ctx context.Context, c *xrpc.Client, repo, collection string, limit int) (*rawRepoListRecordsOutput, error) {
-	params := map[string]interface{}{
-		"repo":       repo,
-		"collection": collection,
-		"limit":      limit,
-	}
 	var out rawRepoListRecordsOutput
-	err := c.Do(ctx, xrpc.Query, "", "com.atproto.repo.listRecords", params, nil, &out)
-	if err == nil {
-		return &out, nil
+	if c != nil && c.Auth != nil && repo == c.Auth.Did {
+		params := map[string]interface{}{
+			"repo":       repo,
+			"collection": collection,
+			"limit":      limit,
+		}
+		err := c.Do(ctx, xrpc.Query, "", "com.atproto.repo.listRecords", params, nil, &out)
+		if err == nil {
+			return &out, nil
+		}
+		return nil, err
 	}
 	pdsHost := s.clientMgr.ResolvePDSHost(ctx, repo)
 	if pdsHost == "" {
-		return nil, err
+		return nil, fmt.Errorf("could not resolve PDS host for %s", repo)
 	}
 	if !strings.HasPrefix(pdsHost, "http://") && !strings.HasPrefix(pdsHost, "https://") {
 		pdsHost = "https://" + pdsHost
@@ -1134,8 +1297,7 @@ func (s *SocialService) rawRepoListRecords(ctx context.Context, c *xrpc.Client, 
 	if rErr != nil {
 		return nil, rErr
 	}
-	httpClient := &http.Client{Timeout: 8 * time.Second}
-	resp, hErr := httpClient.Do(req)
+	resp, hErr := s.clientMgr.ShortTimeoutHTTPClient().Do(req)
 	if hErr != nil {
 		return nil, hErr
 	}
@@ -1193,9 +1355,32 @@ func (s *SocialService) fetchProfileLinks(ctx context.Context, c *xrpc.Client, a
 	}
 
 	if isSelf || len(links) == 0 {
+		repoCtx, repoCancel := context.WithTimeout(ctx, 3*time.Second)
+		defer repoCancel()
+
+		var (
+			listRes *rawRepoListRecordsOutput
+			profRes *rawRepoGetRecordOutput
+			repoWG  sync.WaitGroup
+		)
+		repoWG.Add(2)
+		go func() {
+			defer repoWG.Done()
+			if res, err := s.rawRepoListRecords(repoCtx, c, actorDid, "app.bsky.actor.link", 50); err == nil {
+				listRes = res
+			}
+		}()
+		go func() {
+			defer repoWG.Done()
+			if res, err := s.rawRepoGetRecord(repoCtx, c, actorDid, "app.bsky.actor.profile", "self"); err == nil {
+				profRes = res
+			}
+		}()
+		repoWG.Wait()
+
 		linkByURI := make(map[string]ProfileLinkDTO)
 		var repoLinksOrder []ProfileLinkDTO
-		if listRes, err := s.rawRepoListRecords(ctx, c, actorDid, "app.bsky.actor.link", 50); err == nil && listRes != nil {
+		if listRes != nil {
 			for _, rec := range listRes.Records {
 				if rec.Value == nil {
 					continue
@@ -1221,7 +1406,7 @@ func (s *SocialService) fetchProfileLinks(ctx context.Context, c *xrpc.Client, a
 			}
 		}
 
-		if profRes, err := s.rawRepoGetRecord(ctx, c, actorDid, "app.bsky.actor.profile", "self"); err == nil && profRes != nil && profRes.Value != nil {
+		if profRes != nil && profRes.Value != nil {
 			hasRepoProfile = true
 			raw := profRes.Value
 			if p, ok := raw["pronouns"].(string); ok {
@@ -1607,48 +1792,11 @@ func (s *SocialService) CreateStarterPack(name, description, listUri string) err
 	})
 }
 
-func (s *SocialService) uploadBlob(ctx context.Context, c *xrpc.Client, path string) (*util.LexBlob, error) {
-	localPath, cleanup, err := ResolvePathOrDataURL(path)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	file, err := os.Open(localPath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	
-	res, err := atproto.RepoUploadBlob(ctx, c, file)
-	if err != nil {
-		return nil, err
-	}
-
-	mimeType := "image/jpeg"
-	ext := strings.ToLower(filepath.Ext(localPath))
-	if m := mime.TypeByExtension(ext); m != "" {
-		mimeType = m
-	} else {
-		switch ext {
-		case ".png":
-			mimeType = "image/png"
-		case ".gif":
-			mimeType = "image/gif"
-		case ".webp":
-			mimeType = "image/webp"
-		}
-	}
-	res.Blob.MimeType = mimeType
-
-	return res.Blob, nil
-}
-
 func (s *SocialService) UploadProfileAvatar(imagePath string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		blobRef, err := s.uploadBlob(ctx, c, imagePath)
+		blobRef, err := uploadBlob(ctx, c, imagePath)
 		if err != nil {
 			return err
 		}
@@ -1663,7 +1811,7 @@ func (s *SocialService) UploadProfileBanner(imagePath string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		blobRef, err := s.uploadBlob(ctx, c, imagePath)
+		blobRef, err := uploadBlob(ctx, c, imagePath)
 		if err != nil {
 			return err
 		}
@@ -1863,7 +2011,7 @@ func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
+		current, unknown, err := loadPrefs(ctx, c)
 		if err != nil {
 			return err
 		}
@@ -1886,7 +2034,7 @@ func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string
 		}
 
 		existingIds := make(map[string]string)
-		for _, pref := range res.Preferences {
+		for _, pref := range current {
 			if pref.ActorDefs_SavedFeedsPrefV2 != nil {
 				for _, item := range pref.ActorDefs_SavedFeedsPrefV2.Items {
 					if item != nil && item.Value != "" && item.Id != "" {
@@ -1914,7 +2062,7 @@ func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string
 		var newPrefs []bsky.ActorDefs_Preferences_Elem
 		foundV2 := false
 		foundV1 := false
-		for _, pref := range res.Preferences {
+		for _, pref := range current {
 			if pref.ActorDefs_SavedFeedsPrefV2 != nil {
 				pref.ActorDefs_SavedFeedsPrefV2.Items = items
 				foundV2 = true
@@ -1943,10 +2091,11 @@ func (s *SocialService) UpdateSavedFeeds(pinnedUris []string, savedUris []string
 			})
 		}
 
-		input := &bsky.ActorPutPreferences_Input{
-			Preferences: newPrefs,
+		if err := storePrefs(ctx, c, newPrefs, unknown); err != nil {
+			return err
 		}
-		return bsky.ActorPutPreferences(ctx, c, input)
+		s.clientMgr.InvalidatePreferencesCache()
+		return nil
 	})
 }
 
@@ -2167,31 +2316,38 @@ func (s *SocialService) FollowAllInList(listUri string) (int, error) {
 	defer cancel()
 	count := 0
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.GraphGetList(ctx, c, "", 100, listUri)
-		if err != nil {
-			return err
-		}
 		var writes []*atproto.RepoApplyWrites_Input_Writes_Elem
 		createdAt := nowISO8601()
-		for _, item := range res.Items {
-			if item.Subject != nil && item.Subject.Did != c.Auth.Did {
-				alreadyFollowing := item.Subject.Viewer != nil && item.Subject.Viewer.Following != nil && *item.Subject.Viewer.Following != ""
-				if !alreadyFollowing {
-					writes = append(writes, &atproto.RepoApplyWrites_Input_Writes_Elem{
-						RepoApplyWrites_Create: &atproto.RepoApplyWrites_Create{
-							LexiconTypeID: "com.atproto.repo.applyWrites#create",
-							Collection:    "app.bsky.graph.follow",
-							Value: &util.LexiconTypeDecoder{
-								Val: &bsky.GraphFollow{
-									LexiconTypeID: "app.bsky.graph.follow",
-									Subject:       item.Subject.Did,
-									CreatedAt:     createdAt,
+		// A page holds at most 100 members and a starter pack can have 150.
+		for cursor := ""; ; {
+			res, err := bsky.GraphGetList(ctx, c, cursor, 100, listUri)
+			if err != nil {
+				return err
+			}
+			for _, item := range res.Items {
+				if item.Subject != nil && item.Subject.Did != c.Auth.Did {
+					alreadyFollowing := item.Subject.Viewer != nil && item.Subject.Viewer.Following != nil && *item.Subject.Viewer.Following != ""
+					if !alreadyFollowing {
+						writes = append(writes, &atproto.RepoApplyWrites_Input_Writes_Elem{
+							RepoApplyWrites_Create: &atproto.RepoApplyWrites_Create{
+								LexiconTypeID: "com.atproto.repo.applyWrites#create",
+								Collection:    "app.bsky.graph.follow",
+								Value: &util.LexiconTypeDecoder{
+									Val: &bsky.GraphFollow{
+										LexiconTypeID: "app.bsky.graph.follow",
+										Subject:       item.Subject.Did,
+										CreatedAt:     createdAt,
+									},
 								},
 							},
-						},
-					})
+						})
+					}
 				}
 			}
+			if res.Cursor == nil || *res.Cursor == "" {
+				break
+			}
+			cursor = *res.Cursor
 		}
 
 		const batchSize = 50
@@ -2244,25 +2400,12 @@ func (s *SocialService) UpdateHandle(newHandle string) error {
 }
 
 func (s *SocialService) ExportRepoCAR() (string, error) {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-
-	var carBytes []byte
-	var handle string
-	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		handle = c.Auth.Handle
-		data, err := atproto.SyncGetRepo(ctx, c, c.Auth.Did, "")
-		if err != nil {
-			return err
-		}
-		carBytes = data
-		return nil
-	})
+	client, err := s.clientMgr.GetClient()
 	if err != nil {
 		return "", err
 	}
 
-	safeHandle := strings.ReplaceAll(handle, ".", "_")
+	safeHandle := strings.ReplaceAll(client.Auth.Handle, ".", "_")
 	if safeHandle == "" {
 		safeHandle = "repo"
 	}
@@ -2291,6 +2434,25 @@ func (s *SocialService) ExportRepoCAR() (string, error) {
 		savePath = filepath.Join(homeDir, defaultFilename)
 	}
 
+	// A whole repo is far too big for the default per-call timeout. The
+	// download starts only after the save dialog, so the dialog cannot eat
+	// into it.
+	ctx, cancel := s.clientMgr.NewContextTimeout(10 * time.Minute)
+	defer cancel()
+
+	var carBytes []byte
+	err = s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		data, err := atproto.SyncGetRepo(ctx, c, c.Auth.Did, "")
+		if err != nil {
+			return err
+		}
+		carBytes = data
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+
 	if err := os.WriteFile(savePath, carBytes, 0600); err != nil {
 		return "", err
 	}
@@ -2316,6 +2478,7 @@ func parseListView(list *bsky.GraphDefs_ListView) *ListDTO {
 	}
 	viewerMuted := false
 	viewerBlock := ""
+	refOptOutURI := ""
 	if list.Viewer != nil {
 		if list.Viewer.Muted != nil {
 			viewerMuted = *list.Viewer.Muted
@@ -2323,20 +2486,24 @@ func parseListView(list *bsky.GraphDefs_ListView) *ListDTO {
 		if list.Viewer.Blocked != nil {
 			viewerBlock = *list.Viewer.Blocked
 		}
+		if list.Viewer.ReferenceListOptOut != nil {
+			refOptOutURI = *list.Viewer.ReferenceListOptOut
+		}
 	}
 	return &ListDTO{
-		URI:           list.Uri,
-		CID:           list.Cid,
-		Name:          list.Name,
-		Purpose:       purpose,
-		Description:   desc,
-		Creator:       creatorHandle,
-		CreatorDID:    creatorDid,
-		CreatorHandle: creatorHandle,
-		Avatar:        avatar,
-		ListItemCount: itemCount,
-		ViewerMuted:   viewerMuted,
-		ViewerBlock:   viewerBlock,
+		URI:                    list.Uri,
+		CID:                    list.Cid,
+		Name:                   list.Name,
+		Purpose:                purpose,
+		Description:            desc,
+		Creator:                creatorHandle,
+		CreatorDID:             creatorDid,
+		CreatorHandle:          creatorHandle,
+		Avatar:                 avatar,
+		ListItemCount:          itemCount,
+		ViewerMuted:            viewerMuted,
+		ViewerBlock:            viewerBlock,
+		ReferenceListOptOutURI: refOptOutURI,
 	}
 }
 
@@ -2556,6 +2723,15 @@ func (s *SocialService) SearchStarterPacks(query string, cursor string) (*Starte
 	defer cancel()
 	out := &StarterPackResponseDTO{StarterPacks: []*StarterPackDTO{}}
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		if resV2, errV2 := bsky.GraphSearchStarterPacksV2(ctx, c, cursor, 50, query); errV2 == nil && resV2 != nil {
+			out.Cursor = safeString(resV2.Cursor)
+			for _, pack := range resV2.StarterPacks {
+				if dto := parseStarterPackViewDetailed(pack); dto != nil {
+					out.StarterPacks = append(out.StarterPacks, dto)
+				}
+			}
+			return nil
+		}
 		res, err := bsky.GraphSearchStarterPacks(ctx, c, cursor, 50, query)
 		if err != nil {
 			return err
@@ -3071,6 +3247,87 @@ func (s *SocialService) RemoveContactData() error {
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		_, err := bsky.ContactRemoveData(ctx, c, &bsky.ContactRemoveData_Input{})
+		return err
+	})
+}
+
+func (s *SocialService) GetContentVisibilityDeclaration() (bool, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var hideFromRecommendations bool
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		raw, err := getOwnRecordJSON(ctx, c, "app.bsky.actor.contentVisibilityDeclaration", "self")
+		if err != nil || raw == nil {
+			return err
+		}
+		var rec bsky.ActorContentVisibilityDeclaration
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			return err
+		}
+		hideFromRecommendations = rec.HideFromAlgorithmicRecommendations
+		return nil
+	})
+	return hideFromRecommendations, err
+}
+
+func (s *SocialService) UpdateContentVisibilityDeclaration(hideFromRecommendations bool) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		rec := &bsky.ActorContentVisibilityDeclaration{
+			LexiconTypeID:                      "app.bsky.actor.contentVisibilityDeclaration",
+			HideFromAlgorithmicRecommendations: hideFromRecommendations,
+		}
+		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+			Collection: "app.bsky.actor.contentVisibilityDeclaration",
+			Repo:       c.Auth.Did,
+			Rkey:       "self",
+			Record:     &util.LexiconTypeDecoder{Val: rec},
+		})
+		return err
+	})
+}
+
+func (s *SocialService) OptOutReferenceList(listUri string) (string, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var optOutURI string
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		rec := &bsky.GraphReferencelistoptout{
+			LexiconTypeID: "app.bsky.graph.referencelistoptout",
+			CreatedAt:     nowISO8601(),
+			Subject:       listUri,
+		}
+		res, err := atproto.RepoCreateRecord(ctx, c, &atproto.RepoCreateRecord_Input{
+			Collection: "app.bsky.graph.referencelistoptout",
+			Repo:       c.Auth.Did,
+			Record:     &util.LexiconTypeDecoder{Val: rec},
+		})
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			optOutURI = res.Uri
+		}
+		return nil
+	})
+	return optOutURI, err
+}
+
+func (s *SocialService) UndoOptOutReferenceList(optOutUri string) error {
+	parts := strings.Split(optOutUri, "/")
+	if len(parts) < 3 {
+		return fmt.Errorf("invalid opt-out uri")
+	}
+	rkey := parts[len(parts)-1]
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		_, err := atproto.RepoDeleteRecord(ctx, c, &atproto.RepoDeleteRecord_Input{
+			Collection: "app.bsky.graph.referencelistoptout",
+			Repo:       c.Auth.Did,
+			Rkey:       rkey,
+		})
 		return err
 	})
 }

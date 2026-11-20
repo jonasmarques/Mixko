@@ -41,6 +41,8 @@ export async function loadChat(loadMore = false) {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:8px;">
           <h3 style="margin:0;">${i18n.t('chat.yourMessages')}</h3>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button id="btn-convo-requests" type="button" style="padding:6px 12px;">${esc(i18n.t('sec2.convoRequestsBtn'))}</button>
+            <button id="btn-join-group-link" type="button" style="padding:6px 12px;">${esc(i18n.t('sec2.joinGroupByLinkBtn'))}</button>
             <button id="btn-mark-all-chats-read" type="button" style="padding:6px 12px;">${i18n.t('extended.markAllReadBtn')}</button>
             <button id="btn-new-group-chat" type="button" style="padding:6px 12px;">${i18n.t('extended.newGroupBtn')}</button>
             <button id="btn-new-chat" type="button" style="padding:6px 12px;">${i18n.t('chat.newChatBtn')}</button>
@@ -48,6 +50,98 @@ export async function loadChat(loadMore = false) {
         </div>
         <div id="chat-list-items"></div>
       `;
+
+      document.getElementById('btn-convo-requests')?.addEventListener('click', async () => {
+        const itemsContainer = document.getElementById('chat-list-items') as HTMLDivElement | null;
+        if (!itemsContainer) return;
+        itemsContainer.innerHTML = `<p>${esc(i18n.t('modals.loading'))}</p>`;
+        try {
+          const reqs = await window.go.services.ChatService.ListConvoRequests("");
+          if (!reqs || reqs.length === 0) {
+            itemsContainer.innerHTML = `<p>${esc(i18n.t('sec2.noConvoRequestsMsg'))}</p>`;
+            announcePolite(i18n.t('sec2.noConvoRequestsMsg'));
+            return;
+          }
+          itemsContainer.innerHTML = `<div style="margin-bottom:10px;"><button type="button" id="btn-back-to-convos" style="padding:4px 10px;">${esc(i18n.t('sec2.backToConvosBtn'))}</button></div>`;
+          document.getElementById('btn-back-to-convos')?.addEventListener('click', () => { loadChat(false); });
+          state.currentPosts = [];
+          reqs.forEach((convo: ChatConvoDTO) => {
+            const idx = state.currentPosts.length;
+            const div = document.createElement('div');
+            div.classList.add('post-item');
+            div.setAttribute('tabindex', '0');
+            div.dataset.index = idx.toString();
+            const formattedMembers = convo.isGroup && convo.groupName
+              ? `${convo.groupName} (${formatConvoMembers(convo.members)})`
+              : formatConvoMembers(convo.members);
+            div.innerHTML = `
+              <div>
+                <header><strong>${i18n.t('chat.convoWith')}</strong> ${esc(formattedMembers)}</header>
+                ${convo.lastMessage ? `<div class="post-content"><p>${esc(convo.lastMessage)}</p></div>` : ''}
+                <footer style="display:flex; gap:8px; margin-top:8px;">
+                  <button type="button" class="btn-accept-convo" style="padding:4px 10px;">${esc(i18n.t('sec2.acceptConvoBtn'))}</button>
+                  <button type="button" class="btn-decline-convo" style="padding:4px 10px; background:#d32f2f; color:#fff;">${esc(i18n.t('sec2.declineConvoBtn'))}</button>
+                </footer>
+              </div>
+            `;
+            div.querySelector('.btn-accept-convo')?.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              try {
+                await window.go.services.ChatService.AcceptConvo(convo.id);
+                announceAssertive(i18n.t('sec2.convoAcceptedMsg'));
+                openChatConvo(convo.id, formattedMembers, false, Boolean(convo.muted), convo);
+              } catch (err: unknown) {
+                announceAssertive(String(err));
+              }
+            });
+            div.querySelector('.btn-decline-convo')?.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              try {
+                await window.go.services.ChatService.LeaveConvo(convo.id);
+                div.remove();
+                announceAssertive(i18n.t('sec2.convoDeclinedMsg'));
+              } catch (err: unknown) {
+                announceAssertive(String(err));
+              }
+            });
+            itemsContainer.appendChild(div);
+            state.currentPosts.push(div);
+          });
+        } catch (err: unknown) {
+          itemsContainer.innerHTML = `<p>${esc(String(err))}</p>`;
+        }
+      });
+
+      document.getElementById('btn-join-group-link')?.addEventListener('click', async () => {
+        const rawCode = await promptDialog(i18n.t('sec2.joinGroupPrompt'), '', i18n.t('sec2.joinGroupByLinkBtn'));
+        if (!rawCode || !rawCode.trim()) return;
+        try {
+          const preview = await window.go.services.ChatService.PreviewGroupJoinLink(rawCode.trim());
+          if (!preview || preview.status === 'disabled' || preview.status === 'invalid') {
+            announceAssertive(i18n.t('sec2.joinGroupInvalidMsg'));
+            return;
+          }
+          const confirmed = await confirmDialog(
+            i18n.t('sec2.joinGroupPreviewConfirm', {
+              name: preview.name || preview.code,
+              count: String(preview.memberCount || 0),
+              limit: String(preview.memberLimit || 50),
+              owner: preview.ownerHandle || preview.ownerDisplayName || ''
+            }),
+            i18n.t('sec2.joinGroupByLinkBtn')
+          );
+          if (!confirmed) return;
+          const joined = await window.go.services.ChatService.RequestJoinGroup(preview.code || rawCode.trim());
+          if (joined && joined.id) {
+            announceAssertive(i18n.t('sec2.joinGroupSuccessMsg'));
+            openChatConvo(joined.id, joined.groupName || preview.name, false, Boolean(joined.muted), joined);
+          } else {
+            announceAssertive(i18n.t('sec2.joinGroupPendingMsg'));
+          }
+        } catch (err: unknown) {
+          announceAssertive(String(err));
+        }
+      });
 
       document.getElementById('btn-mark-all-chats-read')?.addEventListener('click', async () => {
         try {
@@ -536,6 +630,12 @@ function buildChatMessageElement(convoId: string, msg: ChatMessageDTO): HTMLElem
   }
   let embedContainerId = `chat-embed-${esc(msg.id)}`;
   let embedInfo = targetEmbedUri ? `<div id="${esc(embedContainerId)}" style="border: 1px solid var(--border-color, #38444d); padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9em;">${i18n.t('chat.loadingAttachedPost')}</div>` : "";
+  if (msg.joinLinkCode) {
+    embedInfo += `<div style="border: 1px solid var(--border-color, #38444d); padding: 10px; border-radius: 5px; margin-top: 8px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <span>👥 <strong>${esc(msg.joinLinkGroupName || msg.joinLinkCode)}</strong></span>
+      <button type="button" class="btn-inline-join-group" data-code="${esc(msg.joinLinkCode)}" style="padding:4px 10px;">${esc(i18n.t('sec2.joinGroupByLinkBtn'))}</button>
+    </div>`;
+  }
   let replyInfo = "";
   const msgDateFormatted = msg.sentAt ? formatPostDate(msg.sentAt, undefined, true) : "";
 
@@ -623,6 +723,23 @@ function buildChatMessageElement(convoId: string, msg: ChatMessageDTO): HTMLElem
   div.querySelectorAll<HTMLVideoElement>('video.chat-inline-gif').forEach((video) => {
     const src = video.dataset.inlineSrc;
     if (src) registerInlineVideo(video, src);
+  });
+
+  div.querySelector('.btn-inline-join-group')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const code = (e.currentTarget as HTMLButtonElement).dataset.code;
+    if (!code) return;
+    try {
+      const joined = await window.go.services.ChatService.RequestJoinGroup(code);
+      if (joined && joined.id) {
+        announceAssertive(i18n.t('sec2.joinGroupSuccessMsg'));
+        openChatConvo(joined.id, joined.groupName || code, false, Boolean(joined.muted), joined);
+      } else {
+        announceAssertive(i18n.t('sec2.joinGroupPendingMsg'));
+      }
+    } catch (err: unknown) {
+      announceAssertive(String(err));
+    }
   });
 
   const pickerEl = div.querySelector(`#emoji-picker-${msg.id}`) as HTMLDivElement;

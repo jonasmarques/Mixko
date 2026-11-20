@@ -17,13 +17,19 @@ import (
 // Keyring, KWallet and friends), reached through the `secret-tool` binary from
 // libsecret. Desktop sessions normally have it; headless or minimal setups may
 // not, so we degrade to a file-backed store rather than refusing to start.
-type secretToolStore struct{}
+//
+// secret-tool being installed does not mean a keyring daemon is running, so
+// the file store also backs up every keyring call that comes back empty.
+type secretToolStore struct {
+	file *fileKeyStore
+}
 
 func newKeyStore(dir string) (keyStore, error) {
+	file := &fileKeyStore{path: filepath.Join(dir, "session.key")}
 	if _, err := exec.LookPath("secret-tool"); err != nil {
-		return &fileKeyStore{path: filepath.Join(dir, "session.key")}, nil
+		return file, nil
 	}
-	return &secretToolStore{}, nil
+	return &secretToolStore{file: file}, nil
 }
 
 func (s *secretToolStore) Name() string { return "Secret Service (libsecret)" }
@@ -42,14 +48,14 @@ func (s *secretToolStore) Load() ([]byte, bool, error) {
 		// for our purposes.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && stdout.Len() == 0 {
-			return nil, false, nil
+			return s.file.Load()
 		}
 		return nil, false, fmt.Errorf("secret-tool lookup: %w: %s", err, stderr.String())
 	}
 
 	out := strings.TrimSpace(stdout.String())
 	if out == "" {
-		return nil, false, nil
+		return s.file.Load()
 	}
 
 	key, err := hex.DecodeString(out)
@@ -71,7 +77,9 @@ func (s *secretToolStore) Save(key []byte) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("secret-tool store: %w: %s", err, stderr.String())
+		if fileErr := s.file.Save(key); fileErr != nil {
+			return fmt.Errorf("secret-tool store: %w: %s (file fallback: %v)", err, stderr.String(), fileErr)
+		}
 	}
 	return nil
 }

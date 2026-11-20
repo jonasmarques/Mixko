@@ -48,6 +48,7 @@ func (s *AuthService) CheckSession(ctx context.Context) (bool, error) {
 	}
 
 	s.clientMgr.SetClient(client)
+	s.clientMgr.SetPersist(true)
 
 	err = s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		_, err := atproto.ServerGetSession(ctx, c)
@@ -75,10 +76,6 @@ func (s *AuthService) RestoreSession() (string, error) {
 
 	session, err := s.clientMgr.db.GetSession()
 	return session.Handle, err
-}
-
-func (s *AuthService) Login(identifier, appPassword string, remember bool) error {
-	return s.LoginWithFactor(identifier, appPassword, "", remember)
 }
 
 func (s *AuthService) LoginWithFactor(identifier, password, authFactorToken string, remember bool) error {
@@ -113,6 +110,7 @@ func (s *AuthService) LoginWithFactor(identifier, password, authFactorToken stri
 	}
 
 	s.clientMgr.SetClient(client)
+	s.clientMgr.SetPersist(remember)
 
 	if remember {
 		err = s.clientMgr.db.SaveSession(output.Did, output.Handle, output.AccessJwt, output.RefreshJwt, host)

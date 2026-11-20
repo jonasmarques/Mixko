@@ -4,9 +4,17 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/lex/util"
+	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/ipfs/go-cid"
 )
 
 func TestParseATURI(t *testing.T) {
@@ -229,7 +237,7 @@ func TestCreatePostWritesTheSuppliedRootWithoutLookups(t *testing.T) {
 		"post 4 of the thread",
 		"at://did:plc:me/app.bsky.feed.post/ccc", "cid-ccc", // parent: the post before
 		"at://did:plc:me/app.bsky.feed.post/aaa", "cid-aaa", // root: the post that opened it
-		nil, nil, "", "", "", "", "", "", 0, 0, nil)
+		nil, nil, "", "", "", "", "", "", 0, 0, nil, nil, "", "")
 	if err != nil {
 		t.Fatalf("CreatePost: %v", err)
 	}
@@ -271,7 +279,7 @@ func TestCreatePostReportsAStandalonePostAsItsOwnRoot(t *testing.T) {
 
 	svc := NewPostBuilderService(mgr)
 	got, err := svc.CreatePost("post 1 of the thread", "", "", "", "",
-		nil, nil, "", "", "", "", "", "", 0, 0, nil)
+		nil, nil, "", "", "", "", "", "", 0, 0, nil, nil, "", "")
 	if err != nil {
 		t.Fatalf("CreatePost: %v", err)
 	}
@@ -279,5 +287,426 @@ func TestCreatePostReportsAStandalonePostAsItsOwnRoot(t *testing.T) {
 	if got.RootUri != got.Uri || got.RootCid != got.Cid {
 		t.Errorf("root = (%q, %q), want the post itself (%q, %q)",
 			got.RootUri, got.RootCid, got.Uri, got.Cid)
+	}
+}
+
+var sampleMP4Bytes = []byte{
+	0x00, 0x00, 0x00, 0x20, 'f', 't', 'y', 'p',
+	'i', 's', 'o', 'm', 0x00, 0x00, 0x02, 0x00,
+	'i', 's', 'o', 'm', 'i', 's', 'o', '2',
+	'a', 'v', 'c', '1', 'm', 'p', '4', '1',
+}
+
+func startSampleGifServer(t *testing.T, payload []byte, contentType string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		w.Write(payload)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/reaction.mp4"
+}
+
+func TestCreatePostWithGifRecoversFromBlobNotFoundAfter409AlreadyExists(t *testing.T) {
+	const staleCID = "bafkreibnp4mb24hfsxxw3o5whyhscapwq53idmyttku54muspyov35gb2a"
+	const freshCID = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
+
+	gifURL := startSampleGifServer(t, sampleMP4Bytes, "video/mp4")
+
+	videoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xrpc/app.bsky.video.uploadVideo" {
+			t.Errorf("unexpected video service path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{
+			"did":"did:plc:me",
+			"error":"already_exists",
+			"jobId":"job-stale",
+			"message":"Video already processed",
+			"state":"JOB_STATE_COMPLETED",
+			"blob":{"$type":"blob","ref":{"$link":"` + staleCID + `"},"mimeType":"video/mp4","size":32}
+		}`))
+	}))
+	t.Cleanup(videoSrv.Close)
+
+	var createCalls int
+	var uploadBlobCalls int
+	var uploadBlobContentType string
+	var finalEmbed struct {
+		Presentation string `json:"presentation"`
+		Alt          string `json:"alt"`
+		Video        struct {
+			Ref struct {
+				Link string `json:"$link"`
+			} `json:"ref"`
+			MimeType string `json:"mimeType"`
+		} `json:"video"`
+	}
+
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/com.atproto.server.getServiceAuth":
+			w.Write([]byte(`{"token":"service-jwt"}`))
+		case "/xrpc/com.atproto.repo.uploadBlob":
+			uploadBlobCalls++
+			uploadBlobContentType = r.Header.Get("Content-Type")
+			body, _ := io.ReadAll(r.Body)
+			if len(body) != len(sampleMP4Bytes) {
+				t.Errorf("uploadBlob size = %d, want %d", len(body), len(sampleMP4Bytes))
+			}
+			w.Write([]byte(`{"blob":{"$type":"blob","ref":{"$link":"` + freshCID + `"},"mimeType":"video/mp4","size":32}}`))
+		case "/xrpc/com.atproto.repo.createRecord":
+			createCalls++
+			var req struct {
+				Record struct {
+					Embed json.RawMessage `json:"embed"`
+				} `json:"record"`
+			}
+			body, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Fatalf("unmarshal createRecord: %v", err)
+			}
+			if err := json.Unmarshal(req.Record.Embed, &finalEmbed); err != nil {
+				t.Fatalf("unmarshal embed: %v", err)
+			}
+			if createCalls == 1 {
+				if finalEmbed.Video.Ref.Link != staleCID {
+					t.Errorf("first createRecord cid = %q, want %q", finalEmbed.Video.Ref.Link, staleCID)
+				}
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"BlobNotFound","message":"Could not find blob: ` + staleCID + `"}`))
+				return
+			}
+			w.Write([]byte(`{"uri":"at://did:plc:me/app.bsky.feed.post/gif1","cid":"cid-gif1"}`))
+		case "/xrpc/app.bsky.feed.getPosts":
+			w.Write([]byte(`{"posts":[{"uri":"at://did:plc:me/app.bsky.feed.post/gif1","cid":"cid-gif1","author":{"did":"did:plc:me","handle":"me.test"},"indexedAt":"2026-11-20T10:00:00.000Z","record":{"$type":"app.bsky.feed.post","text":"hi","createdAt":"2026-11-20T10:00:00.000Z"},"embed":{"$type":"app.bsky.embed.video#view","cid":"` + freshCID + `","playlist":"https://video.bsky.app/watch/did:plc:me/` + freshCID + `/playlist.m3u8"}}]}`))
+		default:
+			t.Errorf("unexpected PDS call %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	svc := NewPostBuilderService(mgr)
+	svc.videoServiceHost = videoSrv.URL
+	svc.pollInterval = time.Millisecond
+	svc.retryDelay = time.Millisecond
+
+	got, err := svc.CreatePost("friday!", "", "", "", "",
+		nil, nil, "", "Joey celebrating Friday", "", "pt", "everyone", gifURL, 640, 320, nil, nil, "", "")
+	if err != nil {
+		t.Fatalf("CreatePost with GIF failed: %v", err)
+	}
+	if got.Uri != "at://did:plc:me/app.bsky.feed.post/gif1" {
+		t.Errorf("uri = %q, want published gif post", got.Uri)
+	}
+	if uploadBlobCalls != 1 {
+		t.Errorf("uploadBlobCalls = %d, want 1", uploadBlobCalls)
+	}
+	if uploadBlobContentType != "video/mp4" {
+		t.Errorf("uploadBlob Content-Type = %q, want video/mp4", uploadBlobContentType)
+	}
+	if createCalls != 2 {
+		t.Errorf("createCalls = %d, want 2", createCalls)
+	}
+	if finalEmbed.Video.Ref.Link != freshCID {
+		t.Errorf("final blob cid = %q, want %q", finalEmbed.Video.Ref.Link, freshCID)
+	}
+	if finalEmbed.Presentation != "gif" {
+		t.Errorf("presentation = %q, want gif", finalEmbed.Presentation)
+	}
+	if finalEmbed.Alt != "Joey celebrating Friday" {
+		t.Errorf("alt = %q, want preserved alt text", finalEmbed.Alt)
+	}
+}
+
+func TestQuotePostWithGifRecoversFromBlobNotFound(t *testing.T) {
+	const staleCID = "bafkreibnp4mb24hfsxxw3o5whyhscapwq53idmyttku54muspyov35gb2a"
+	const freshCID = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
+
+	gifURL := startSampleGifServer(t, sampleMP4Bytes, "video/mp4")
+
+	videoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{
+			"did":"did:plc:me",
+			"error":"already_exists",
+			"jobId":"job-stale",
+			"state":"JOB_STATE_COMPLETED",
+			"blob":{"$type":"blob","ref":{"$link":"` + staleCID + `"},"mimeType":"video/mp4","size":32}
+		}`))
+	}))
+	t.Cleanup(videoSrv.Close)
+
+	var createCalls int
+	var finalCID string
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/com.atproto.server.getServiceAuth":
+			w.Write([]byte(`{"token":"service-jwt"}`))
+		case "/xrpc/com.atproto.repo.uploadBlob":
+			w.Write([]byte(`{"blob":{"$type":"blob","ref":{"$link":"` + freshCID + `"},"mimeType":"video/mp4","size":32}}`))
+		case "/xrpc/com.atproto.repo.createRecord":
+			createCalls++
+			var req struct {
+				Record struct {
+					Embed struct {
+						Media struct {
+							Video struct {
+								Ref struct {
+									Link string `json:"$link"`
+								} `json:"ref"`
+							} `json:"video"`
+						} `json:"media"`
+					} `json:"embed"`
+				} `json:"record"`
+			}
+			body, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Fatalf("unmarshal quote createRecord: %v", err)
+			}
+			finalCID = req.Record.Embed.Media.Video.Ref.Link
+			if createCalls == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"BlobNotFound","message":"Could not find blob: ` + staleCID + `"}`))
+				return
+			}
+			w.Write([]byte(`{"uri":"at://did:plc:me/app.bsky.feed.post/qgif","cid":"cid-qgif"}`))
+		case "/xrpc/app.bsky.feed.getPosts":
+			w.Write([]byte(`{"posts":[{"uri":"at://did:plc:me/app.bsky.feed.post/qgif","cid":"cid-qgif","author":{"did":"did:plc:me","handle":"me.test"},"indexedAt":"2026-11-20T10:00:00.000Z","record":{"$type":"app.bsky.feed.post","text":"quote","createdAt":"2026-11-20T10:00:00.000Z"},"embed":{"$type":"app.bsky.embed.video#view","cid":"` + freshCID + `","playlist":"https://video.bsky.app/watch/did:plc:me/` + freshCID + `/playlist.m3u8"}}]}`))
+		default:
+			t.Errorf("unexpected PDS call %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	svc := NewPostBuilderService(mgr)
+	svc.videoServiceHost = videoSrv.URL
+	svc.pollInterval = time.Millisecond
+	svc.retryDelay = time.Millisecond
+
+	got, err := svc.QuotePost("quoting with gif", "at://did:plc:other/app.bsky.feed.post/orig", "cid-orig",
+		nil, nil, "", "Reaction GIF", "pt", "everyone", gifURL, 320, 320, nil, nil, "", "")
+	if err != nil {
+		t.Fatalf("QuotePost with GIF failed: %v", err)
+	}
+	if got.Uri != "at://did:plc:me/app.bsky.feed.post/qgif" {
+		t.Errorf("uri = %q, want quote post uri", got.Uri)
+	}
+	if finalCID != freshCID {
+		t.Errorf("final quote video cid = %q, want %q", finalCID, freshCID)
+	}
+}
+
+func TestCreatePostWithGifRetriesTransientBlobNotFoundBeforeFallback(t *testing.T) {
+	const videoCID = "bafkreibnp4mb24hfsxxw3o5whyhscapwq53idmyttku54muspyov35gb2a"
+	gifURL := startSampleGifServer(t, sampleMP4Bytes, "video/mp4")
+
+	var statusAuthHeader string
+	videoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/app.bsky.video.uploadVideo":
+			w.Write([]byte(`{"did":"did:plc:me","jobId":"job-new","state":"JOB_STATE_CREATED"}`))
+		case "/xrpc/app.bsky.video.getJobStatus":
+			statusAuthHeader = r.Header.Get("Authorization")
+			w.Write([]byte(`{"jobStatus":{"did":"did:plc:me","jobId":"job-new","state":"JOB_STATE_COMPLETED","blob":{"$type":"blob","ref":{"$link":"` + videoCID + `"},"mimeType":"video/mp4","size":32}}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(videoSrv.Close)
+
+	var createCalls int
+	var uploadBlobCalls int
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/com.atproto.server.getServiceAuth":
+			w.Write([]byte(`{"token":"service-jwt"}`))
+		case "/xrpc/com.atproto.repo.uploadBlob":
+			uploadBlobCalls++
+			w.WriteHeader(http.StatusInternalServerError)
+		case "/xrpc/com.atproto.repo.createRecord":
+			createCalls++
+			if createCalls == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"BlobNotFound","message":"Could not find blob: ` + videoCID + `"}`))
+				return
+			}
+			w.Write([]byte(`{"uri":"at://did:plc:me/app.bsky.feed.post/ok","cid":"cid-ok"}`))
+		case "/xrpc/app.bsky.feed.getPosts":
+			w.Write([]byte(`{"posts":[{"uri":"at://did:plc:me/app.bsky.feed.post/ok","cid":"cid-ok","author":{"did":"did:plc:me","handle":"me.test"},"indexedAt":"2026-11-20T10:00:00.000Z","record":{"$type":"app.bsky.feed.post","text":"hi","createdAt":"2026-11-20T10:00:00.000Z"},"embed":{"$type":"app.bsky.embed.video#view","cid":"` + videoCID + `","playlist":"https://video.bsky.app/watch/did:plc:me/` + videoCID + `/playlist.m3u8"}}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	svc := NewPostBuilderService(mgr)
+	svc.videoServiceHost = videoSrv.URL
+	svc.pollInterval = time.Millisecond
+	svc.retryDelay = time.Millisecond
+
+	if _, err := svc.CreatePost("hi", "", "", "", "",
+		nil, nil, "", "Animated GIF", "", "en", "everyone", gifURL, 320, 320, nil, nil, "", ""); err != nil {
+		t.Fatalf("CreatePost failed on transient BlobNotFound: %v", err)
+	}
+	if statusAuthHeader != "" {
+		t.Errorf("getJobStatus Authorization = %q, want empty (tokenless)", statusAuthHeader)
+	}
+	if createCalls != 2 {
+		t.Errorf("createCalls = %d, want 2", createCalls)
+	}
+	if uploadBlobCalls != 0 {
+		t.Errorf("uploadBlobCalls = %d, want 0 when transient retry succeeds", uploadBlobCalls)
+	}
+}
+
+func TestCreatePostWithGifFallsBackAfterPersistentBlobNotFoundOn200(t *testing.T) {
+	const staleCID = "bafkreibnp4mb24hfsxxw3o5whyhscapwq53idmyttku54muspyov35gb2a"
+	const freshCID = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
+	gifURL := startSampleGifServer(t, sampleMP4Bytes, "video/mp4")
+
+	videoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/app.bsky.video.uploadVideo":
+			w.Write([]byte(`{"did":"did:plc:me","jobId":"job-200","state":"JOB_STATE_CREATED"}`))
+		case "/xrpc/app.bsky.video.getJobStatus":
+			w.Write([]byte(`{"jobStatus":{"did":"did:plc:me","jobId":"job-200","state":"JOB_STATE_COMPLETED","blob":{"$type":"blob","ref":{"$link":"` + staleCID + `"},"mimeType":"video/mp4","size":32}}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(videoSrv.Close)
+
+	var createCalls int
+	var uploadBlobCalls int
+	mgr := stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/xrpc/com.atproto.server.getServiceAuth":
+			w.Write([]byte(`{"token":"service-jwt"}`))
+		case "/xrpc/com.atproto.repo.uploadBlob":
+			uploadBlobCalls++
+			w.Write([]byte(`{"blob":{"$type":"blob","ref":{"$link":"` + freshCID + `"},"mimeType":"video/mp4","size":32}}`))
+		case "/xrpc/com.atproto.repo.createRecord":
+			createCalls++
+			if createCalls <= 2 {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"BlobNotFound","message":"Could not find blob: ` + staleCID + `"}`))
+				return
+			}
+			w.Write([]byte(`{"uri":"at://did:plc:me/app.bsky.feed.post/ok2","cid":"cid-ok2"}`))
+		case "/xrpc/app.bsky.feed.getPosts":
+			w.Write([]byte(`{"posts":[{"uri":"at://did:plc:me/app.bsky.feed.post/ok2","cid":"cid-ok2","author":{"did":"did:plc:me","handle":"me.test"},"indexedAt":"2026-11-20T10:00:00.000Z","record":{"$type":"app.bsky.feed.post","text":"hi","createdAt":"2026-11-20T10:00:00.000Z"},"embed":{"$type":"app.bsky.embed.video#view","cid":"` + freshCID + `","playlist":"https://video.bsky.app/watch/did:plc:me/` + freshCID + `/playlist.m3u8"}}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	svc := NewPostBuilderService(mgr)
+	svc.videoServiceHost = videoSrv.URL
+	svc.pollInterval = time.Millisecond
+	svc.retryDelay = time.Millisecond
+
+	if _, err := svc.CreatePost("hi", "", "", "", "",
+		nil, nil, "", "Animated GIF", "", "en", "everyone", gifURL, 320, 320, nil, nil, "", ""); err != nil {
+		t.Fatalf("CreatePost failed: %v", err)
+	}
+	if createCalls != 3 {
+		t.Errorf("createCalls = %d, want 3", createCalls)
+	}
+	if uploadBlobCalls != 1 {
+		t.Errorf("uploadBlobCalls = %d, want 1", uploadBlobCalls)
+	}
+}
+
+func TestDetectVideoMimeTypeAndIsMP4File(t *testing.T) {
+	if got := detectVideoMimeType("clip.gif"); got != "image/gif" {
+		t.Errorf("detectVideoMimeType(clip.gif) = %q, want image/gif", got)
+	}
+	if got := detectVideoMimeType("clip.mp4"); got != "video/mp4" {
+		t.Errorf("detectVideoMimeType(clip.mp4) = %q, want video/mp4", got)
+	}
+
+	dir := t.TempDir()
+	mp4Path := filepath.Join(dir, "sample.mp4")
+	gifPath := filepath.Join(dir, "sample.gif")
+	movPath := filepath.Join(dir, "sample.mov")
+
+	if err := os.WriteFile(mp4Path, sampleMP4Bytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gifPath, []byte("GIF89a\x01\x00\x01\x00\x00\x00"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(movPath, []byte{0x00, 0x00, 0x00, 0x14, 'f', 't', 'y', 'p', 'q', 't', ' ', ' '}, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if !isMP4File(mp4Path) {
+		t.Error("isMP4File returned false for valid MP4")
+	}
+	if isMP4File(gifPath) {
+		t.Error("isMP4File returned true for GIF")
+	}
+	if isMP4File(movPath) {
+		t.Error("isMP4File returned true for QuickTime MOV")
+	}
+}
+
+func TestIsVideoBlobNotFoundIgnoresCaptionBlobErrors(t *testing.T) {
+	videoCID, err := cid.Decode("bafkreibnp4mb24hfsxxw3o5whyhscapwq53idmyttku54muspyov35gb2a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	captionCID, err := cid.Decode("bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	embed := &bsky.EmbedVideo{
+		Video: &util.LexBlob{Ref: util.LexLink(videoCID), MimeType: "video/mp4", Size: 32},
+		Captions: []*bsky.EmbedVideo_Caption{
+			{File: &util.LexBlob{Ref: util.LexLink(captionCID), MimeType: "text/vtt", Size: 16}, Lang: "pt"},
+		},
+	}
+
+	videoErr := &xrpc.Error{
+		StatusCode: http.StatusBadRequest,
+		Wrapped:    &xrpc.XRPCError{ErrStr: "BlobNotFound", Message: "Could not find blob: " + videoCID.String()},
+	}
+	captionErr := &xrpc.Error{
+		StatusCode: http.StatusBadRequest,
+		Wrapped:    &xrpc.XRPCError{ErrStr: "BlobNotFound", Message: "Could not find blob: " + captionCID.String()},
+	}
+
+	if !isVideoBlobNotFound(videoErr, embed) {
+		t.Error("expected true for video blob not found error")
+	}
+	if isVideoBlobNotFound(captionErr, embed) {
+		t.Error("expected false when error names a caption blob CID")
+	}
+}
+
+func TestBuildDraftRecordSupportsMultiPostThreads(t *testing.T) {
+	draft := buildDraftRecordFromPosts([]string{"Post 1", "Post 2", "Post 3"}, []string{"pt"}, []string{"nudity"}, []string{"followers", "list:at://did:plc:me/app.bsky.graph.list/l1"}, true)
+	if len(draft.Posts) != 3 {
+		t.Fatalf("len(draft.Posts) = %d, want 3", len(draft.Posts))
+	}
+	if draft.Posts[0].Text != "Post 1" || draft.Posts[1].Text != "Post 2" || draft.Posts[2].Text != "Post 3" {
+		t.Errorf("unexpected draft post texts: %+v", draft.Posts)
+	}
+	if len(draft.ThreadgateAllow) != 2 {
+		t.Errorf("len(draft.ThreadgateAllow) = %d, want 2", len(draft.ThreadgateAllow))
+	}
+	if len(draft.PostgateEmbeddingRules) != 1 {
+		t.Errorf("len(draft.PostgateEmbeddingRules) = %d, want 1", len(draft.PostgateEmbeddingRules))
 	}
 }

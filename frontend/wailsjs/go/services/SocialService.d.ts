@@ -42,6 +42,8 @@ export function GetBlockedLists(arg1:string):Promise<services.ListResponseDTO>;
 
 export function GetContactMatches(arg1:string):Promise<services.ProfileListDTO>;
 
+export function GetContentVisibilityDeclaration():Promise<boolean>;
+
 export function GetFollowers(arg1:string,arg2:string):Promise<services.ProfileListDTO>;
 
 export function GetFollows(arg1:string,arg2:string):Promise<services.ProfileListDTO>;
@@ -82,6 +84,8 @@ export function ImportContacts(arg1:string,arg2:Array<string>):Promise<number>;
 
 export function MuteList(arg1:string):Promise<void>;
 
+export function OptOutReferenceList(arg1:string):Promise<string>;
+
 export function PinPost(arg1:string,arg2:string):Promise<void>;
 
 export function RemoveContactData():Promise<void>;
@@ -102,6 +106,8 @@ export function SubscribeList(arg1:string):Promise<void>;
 
 export function UnblockList(arg1:string):Promise<void>;
 
+export function UndoOptOutReferenceList(arg1:string):Promise<void>;
+
 export function Unfollow(arg1:string):Promise<void>;
 
 export function UnhidePostForMe(arg1:string):Promise<void>;
@@ -119,6 +125,8 @@ export function UpdateAdultContentEnabled(arg1:boolean):Promise<void>;
 export function UpdateAllPreferences(arg1:string,arg2:boolean,arg3:Array<string>,arg4:Array<services.ContentFilterDTO>):Promise<void>;
 
 export function UpdateContentFilters(arg1:Array<services.ContentFilterDTO>):Promise<void>;
+
+export function UpdateContentVisibilityDeclaration(arg1:boolean):Promise<void>;
 
 export function UpdateFeedViewPrefs(arg1:boolean,arg2:boolean,arg3:boolean,arg4:boolean):Promise<void>;
 

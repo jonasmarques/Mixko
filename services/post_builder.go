@@ -1,8 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -11,13 +14,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
-	"golang.org/x/net/html"
 )
 
 // postWithMediaTimeout bounds a post that may carry a video: upload plus up to
@@ -27,43 +30,102 @@ const postWithMediaTimeout = 15 * time.Minute
 // maxVideoUploadBytes is Bluesky's maximum video file size (300 MB).
 const maxVideoUploadBytes = 300 * 1024 * 1024
 
+const defaultVideoServiceHost = "https://video.bsky.app"
+
 type PostBuilderService struct {
 	clientMgr *ATClient
+
+	// uploadMu guards uploadPath, the temp file AppendVideoChunk is filling.
+	uploadMu   sync.Mutex
+	uploadPath string
+
+	videoServiceHost string
+	pollInterval     time.Duration
+	retryDelay       time.Duration
 }
 
-func downloadTempFile(ctx context.Context, url string) (string, error) {
-	resp, err := fetchRemote(ctx, url)
+type uploadedVideo struct {
+	embed     *bsky.EmbedVideo
+	localPath string
+	reused    bool
+	cleanup   func()
+}
+
+func (s *PostBuilderService) videoHost() string {
+	if s.videoServiceHost != "" {
+		return strings.TrimRight(s.videoServiceHost, "/")
+	}
+	return defaultVideoServiceHost
+}
+
+func (s *PostBuilderService) videoPollInterval() time.Duration {
+	if s.pollInterval > 0 {
+		return s.pollInterval
+	}
+	return 2 * time.Second
+}
+
+func (s *PostBuilderService) blobRetryDelay() time.Duration {
+	if s.retryDelay > 0 {
+		return s.retryDelay
+	}
+	return 1 * time.Second
+}
+
+func detectDownloadExt(rawURL, contentType string) string {
+	if contentType != "" {
+		if mediaType, _, err := mime.ParseMediaType(contentType); err == nil {
+			switch strings.ToLower(mediaType) {
+			case "video/mp4":
+				return ".mp4"
+			case "image/gif":
+				return ".gif"
+			case "video/webm":
+				return ".webm"
+			case "video/quicktime":
+				return ".mov"
+			case "video/mpeg":
+				return ".mpeg"
+			}
+		}
+	}
+	if parsed, err := url.Parse(rawURL); err == nil {
+		ext := strings.ToLower(filepath.Ext(parsed.Path))
+		switch ext {
+		case ".mp4", ".gif", ".webm", ".mov", ".mpeg", ".mpg":
+			return ext
+		}
+	}
+	return ".mp4"
+}
+
+func downloadTempFile(ctx context.Context, rawURL string) (string, error) {
+	resp, err := fetchRemote(ctx, rawURL)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	ext := ".mp4"
-	if strings.Contains(url, ".gif") {
-		ext = ".gif"
-	}
+	ext := detectDownloadExt(rawURL, resp.Header.Get("Content-Type"))
 	tmpFile, err := os.CreateTemp("", "mixko_gif_*"+ext)
 	if err != nil {
 		return "", err
 	}
-	defer tmpFile.Close()
 
-	// Cap the copy: the URL comes from a third-party GIF provider and an
-	// unbounded body would fill the disk.
-	if _, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxRemoteBodyBytes)); err != nil {
+	// The URL comes from a third-party GIF provider, so the copy is capped.
+	// Reading one byte past the cap tells a file that fits from one that
+	// would have been cut short.
+	n, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxRemoteBodyBytes+1))
+	tmpFile.Close()
+	if err == nil && n > maxRemoteBodyBytes {
+		err = fmt.Errorf("GIF is larger than %d MiB", maxRemoteBodyBytes>>20)
+	}
+	if err != nil {
 		os.Remove(tmpFile.Name())
 		return "", err
 	}
 
 	return tmpFile.Name(), nil
-}
-
-func truncatePath(p string) string {
-	if strings.HasPrefix(p, "data:") {
-		parts := strings.SplitN(p, ",", 2)
-		return parts[0] + ",<base64...>"
-	}
-	return p
 }
 
 func NewPostBuilderService(clientMgr *ATClient) *PostBuilderService {
@@ -78,7 +140,7 @@ func NewPostBuilderService(clientMgr *ATClient) *PostBuilderService {
 // multi-post thread should pass the root returned for the first post back in
 // for every following one: it is authoritative and costs no round-trip. When
 // they are empty the root is resolved from the parent instead.
-func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, rootUri, rootCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*PostRefDTO, error) {
+func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid string, rootUri, rootCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, linkUrl string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string, selfLabels []string, captionPath string, captionLang string) (*PostRefDTO, error) {
 	// Posting can include a video upload plus transcode polling, which runs far
 	// longer than a plain API call.
 	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
@@ -90,20 +152,8 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 	var out *PostRefDTO
 
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		var langs []string
-		if language != "" {
-			langs = append(langs, language)
-		}
+		post := newFeedPost(ctx, c, text, language, selfLabels)
 
-		post := &bsky.FeedPost{
-			LexiconTypeID: "app.bsky.feed.post",
-			Text:          text,
-			CreatedAt:     nowISO8601(),
-			Facets:        ParseFacets(ctx, c, text),
-			Langs:         langs,
-		}
-
-		// 2. Handle Replies
 		if replyToUri != "" && replyToCid != "" {
 			rUri, rCid := rootUri, rootCid
 			if rUri == "" || rCid == "" {
@@ -122,89 +172,32 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 			}
 		}
 
-		// 3. Handle Images, Video, and Link Previews
-		if len(imagePaths) > 0 {
-			var images []*bsky.EmbedImages_Image
-			for i, path := range imagePaths {
-				altText := altTexts[i]
-				if altText == "" {
-					return codedErrorArg(ErrCodeAltTextRequiredImage, i+1)
-				}
+		images, gallery, videoInfo, err := s.uploadMedia(ctx, c, imagePaths, altTexts, videoPath, videoAlt, gifUrl, videoWidth, videoHeight, captionPath, captionLang)
+		if err != nil {
+			return err
+		}
+		if videoInfo != nil && videoInfo.cleanup != nil {
+			defer videoInfo.cleanup()
+		}
 
-				blobRef, err := s.uploadBlob(ctx, c, path)
-				if err != nil {
-					return fmt.Errorf("failed to upload image %d: %w", i+1, err)
-				}
-
-				images = append(images, &bsky.EmbedImages_Image{
-					Alt:   altText,
-					Image: blobRef,
-				})
+		switch {
+		case images != nil:
+			post.Embed = &bsky.FeedPost_Embed{EmbedImages: images}
+		case gallery != nil:
+			post.Embed = &bsky.FeedPost_Embed{EmbedGallery: gallery}
+		case videoInfo != nil:
+			post.Embed = &bsky.FeedPost_Embed{EmbedVideo: videoInfo.embed}
+		case linkUrl != "":
+			if preview, err := GenerateLinkPreview(ctx, c, linkUrl); err == nil {
+				post.Embed = &bsky.FeedPost_Embed{EmbedExternal: preview}
 			}
-
-			post.Embed = &bsky.FeedPost_Embed{
-				EmbedImages: &bsky.EmbedImages{
-					LexiconTypeID: "app.bsky.embed.images",
-					Images:        images,
-				},
-			}
-		} else if videoPath != "" || gifUrl != "" {
-			altText := videoAlt
-			if gifUrl != "" {
-				tmpPath, err := downloadTempFile(ctx, gifUrl)
-				if err != nil {
-					return fmt.Errorf("failed to download GIF: %w", err)
-				}
-				defer os.Remove(tmpPath)
-				videoPath = tmpPath
-			}
-
-			if altText == "" {
-				return codedError(ErrCodeAltTextRequiredVideo)
-			}
-			// Use native video API
-			blobRef, err := s.uploadVideo(ctx, c, videoPath)
-			if err != nil {
-				return fmt.Errorf("failed to upload video: %w", err)
-			}
-
-			presentationStr := "gif"
-			vidEmbed := &bsky.EmbedVideo{
-				LexiconTypeID: "app.bsky.embed.video",
-				Video:         blobRef,
-				Alt:           &altText,
-			}
-			if videoWidth > 0 && videoHeight > 0 {
-				vidEmbed.AspectRatio = &bsky.EmbedDefs_AspectRatio{
-					Width:  videoWidth,
-					Height: videoHeight,
-				}
-			}
-
-			if gifUrl != "" {
-				vidEmbed.Presentation = &presentationStr
-			}
-
-			post.Embed = &bsky.FeedPost_Embed{
-				EmbedVideo: vidEmbed,
-			}
-		} else if linkUrl != "" {
-			preview, err := GenerateLinkPreview(ctx, c, linkUrl)
-			if err == nil {
-				post.Embed = &bsky.FeedPost_Embed{
-					EmbedExternal: preview,
-				}
-			}
-		} else if len(post.Facets) > 0 {
-			// Look for link in facets
+		default:
+			// No explicit card: use the first link in the text, if any.
 			for _, facet := range post.Facets {
 				for _, feat := range facet.Features {
 					if feat.RichtextFacet_Link != nil {
-						preview, err := GenerateLinkPreview(ctx, c, feat.RichtextFacet_Link.Uri)
-						if err == nil {
-							post.Embed = &bsky.FeedPost_Embed{
-								EmbedExternal: preview,
-							}
+						if preview, err := GenerateLinkPreview(ctx, c, feat.RichtextFacet_Link.Uri); err == nil {
+							post.Embed = &bsky.FeedPost_Embed{EmbedExternal: preview}
 						}
 						break
 					}
@@ -215,45 +208,360 @@ func (s *PostBuilderService) CreatePost(text string, replyToUri, replyToCid stri
 			}
 		}
 
-		// 4. Create the record
-		input := &atproto.RepoCreateRecord_Input{
-			Collection: "app.bsky.feed.post",
-			Repo:       c.Auth.Did,
-			Record: &util.LexiconTypeDecoder{
-				Val: post,
-			},
-		}
-
-		res, err := atproto.RepoCreateRecord(ctx, c, input)
-		if err != nil {
-			return fmt.Errorf("failed to create post record: %w", err)
-		}
-
-		if threadgate != "" && threadgate != "everyone" && threadgate != "everybody" {
-			if err := s.createThreadgate(ctx, c, res.Uri, threadgate, listUris, post.Reply != nil); err != nil {
-				return fmt.Errorf("failed to apply reply restrictions: %w", err)
-			}
-		}
-
-		if post.Embed != nil && post.Embed.EmbedVideo != nil {
-			s.waitForVideoPostIndexed(ctx, c, res.Uri)
-		}
-
-		out = &PostRefDTO{Uri: res.Uri, Cid: res.Cid}
-		if post.Reply != nil {
-			out.RootUri = post.Reply.Root.Uri
-			out.RootCid = post.Reply.Root.Cid
-		} else {
-			// A post that replies to nothing opens the thread, so it is its
-			// own root. Reporting it uniformly lets the caller chain the next
-			// post the same way whether the thread started here or not.
-			out.RootUri = res.Uri
-			out.RootCid = res.Cid
-		}
-		return nil
+		out, err = s.publishPost(ctx, c, post, threadgate, listUris, videoInfo)
+		return err
 	})
 
 	return out, err
+}
+
+func newFeedPost(ctx context.Context, c *xrpc.Client, text, language string, selfLabels []string) *bsky.FeedPost {
+	post := &bsky.FeedPost{
+		LexiconTypeID: "app.bsky.feed.post",
+		Text:          text,
+		CreatedAt:     nowISO8601(),
+		Facets:        ParseFacets(ctx, c, text),
+	}
+	if language != "" {
+		post.Langs = []string{language}
+	}
+
+	var labels []*atproto.LabelDefs_SelfLabel
+	for _, v := range selfLabels {
+		if v = strings.TrimSpace(v); v != "" {
+			labels = append(labels, &atproto.LabelDefs_SelfLabel{Val: v})
+		}
+	}
+	if len(labels) > 0 {
+		post.Labels = &bsky.FeedPost_Labels{
+			LabelDefs_SelfLabels: &atproto.LabelDefs_SelfLabels{
+				LexiconTypeID: "com.atproto.label.defs#selfLabels",
+				Values:        labels,
+			},
+		}
+	}
+	return post
+}
+
+func (s *PostBuilderService) uploadMedia(ctx context.Context, c *xrpc.Client, imagePaths, altTexts []string, videoPath, videoAlt, gifUrl string, videoWidth, videoHeight int64, captionPath, captionLang string) (*bsky.EmbedImages, *bsky.EmbedGallery, *uploadedVideo, error) {
+	if len(imagePaths) > 0 {
+		limit := len(imagePaths)
+		if limit > 10 {
+			limit = 10
+		}
+		if limit > 4 {
+			var items []*bsky.EmbedGallery_Items_Elem
+			for i := 0; i < limit; i++ {
+				if altTexts[i] == "" {
+					return nil, nil, nil, codedErrorArg(ErrCodeAltTextRequiredImage, i+1)
+				}
+				blobRef, err := uploadBlob(ctx, c, imagePaths[i])
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("failed to upload image %d: %w", i+1, err)
+				}
+				items = append(items, &bsky.EmbedGallery_Items_Elem{
+					EmbedGallery_Image: &bsky.EmbedGallery_Image{
+						LexiconTypeID: "app.bsky.embed.gallery#image",
+						Alt:           altTexts[i],
+						Image:         blobRef,
+					},
+				})
+			}
+			return nil, &bsky.EmbedGallery{LexiconTypeID: "app.bsky.embed.gallery", Items: items}, nil, nil
+		}
+
+		var images []*bsky.EmbedImages_Image
+		for i := 0; i < limit; i++ {
+			if altTexts[i] == "" {
+				return nil, nil, nil, codedErrorArg(ErrCodeAltTextRequiredImage, i+1)
+			}
+			blobRef, err := uploadBlob(ctx, c, imagePaths[i])
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to upload image %d: %w", i+1, err)
+			}
+			images = append(images, &bsky.EmbedImages_Image{Alt: altTexts[i], Image: blobRef})
+		}
+		return &bsky.EmbedImages{LexiconTypeID: "app.bsky.embed.images", Images: images}, nil, nil, nil
+	}
+
+	if videoPath == "" && gifUrl == "" {
+		return nil, nil, nil, nil
+	}
+	if videoAlt == "" {
+		return nil, nil, nil, codedError(ErrCodeAltTextRequiredVideo)
+	}
+
+	var localPath string
+	cleanup := func() {}
+	if gifUrl != "" {
+		tmpPath, err := downloadTempFile(ctx, gifUrl)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to download GIF: %w", err)
+		}
+		localPath = tmpPath
+		cleanup = func() {
+			os.Remove(tmpPath)
+		}
+	} else {
+		resolved, resolvedCleanup, err := ResolvePathOrDataURL(videoPath)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to prepare video: %w", err)
+		}
+		localPath = resolved
+		cleanup = resolvedCleanup
+	}
+
+	blobRef, reused, err := s.uploadVideo(ctx, c, localPath)
+	if err != nil {
+		cleanup()
+		return nil, nil, nil, fmt.Errorf("failed to upload video: %w", err)
+	}
+	video := &bsky.EmbedVideo{
+		LexiconTypeID: "app.bsky.embed.video",
+		Video:         blobRef,
+		Alt:           &videoAlt,
+	}
+	if videoWidth > 0 && videoHeight > 0 {
+		video.AspectRatio = &bsky.EmbedDefs_AspectRatio{Width: videoWidth, Height: videoHeight}
+	}
+	if gifUrl != "" {
+		presentation := "gif"
+		video.Presentation = &presentation
+	}
+	if captionPath != "" {
+		caption, err := uploadCaption(ctx, c, captionPath, captionLang)
+		if err != nil {
+			cleanup()
+			return nil, nil, nil, fmt.Errorf("failed to upload captions: %w", err)
+		}
+		video.Captions = []*bsky.EmbedVideo_Caption{caption}
+	}
+	return nil, nil, &uploadedVideo{
+		embed:     video,
+		localPath: localPath,
+		reused:    reused,
+		cleanup:   cleanup,
+	}, nil
+}
+
+func uploadCaption(ctx context.Context, c *xrpc.Client, captionPath, lang string) (*bsky.EmbedVideo_Caption, error) {
+	localPath, cleanup, err := ResolvePathOrDataURL(captionPath)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	f, err := os.Open(localPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	res, err := atproto.RepoUploadBlob(ctx, c, f)
+	if err != nil {
+		return nil, err
+	}
+	res.Blob.MimeType = "text/vtt"
+	if lang == "" {
+		lang = "en"
+	}
+	return &bsky.EmbedVideo_Caption{File: res.Blob, Lang: lang}, nil
+}
+
+func isVideoBlobNotFound(err error, embed *bsky.EmbedVideo) bool {
+	if err == nil || embed == nil || embed.Video == nil {
+		return false
+	}
+	var xrpcErr *xrpc.XRPCError
+	if !errors.As(err, &xrpcErr) {
+		return false
+	}
+	if xrpcErr.ErrStr != "BlobNotFound" && !strings.Contains(xrpcErr.Message, "Could not find blob") {
+		return false
+	}
+	videoCID := embed.Video.Ref.String()
+	for _, cap := range embed.Captions {
+		if cap != nil && cap.File != nil {
+			capCID := cap.File.Ref.String()
+			if capCID != "" && capCID != videoCID && strings.Contains(xrpcErr.Message, capCID) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isMP4File(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	var header [12]byte
+	if _, err := io.ReadFull(f, header[:]); err != nil {
+		return false
+	}
+	return string(header[4:8]) == "ftyp" && string(header[8:12]) != "qt  "
+}
+
+func uploadVideoBlobToPDS(ctx context.Context, c *xrpc.Client, localPath string) (*util.LexBlob, error) {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var out atproto.RepoUploadBlob_Output
+	if err := c.Do(ctx, xrpc.Procedure, "video/mp4", "com.atproto.repo.uploadBlob", nil, f, &out); err != nil {
+		return nil, err
+	}
+	if out.Blob == nil {
+		return nil, fmt.Errorf("uploadBlob returned empty blob")
+	}
+	if out.Blob.MimeType == "" || out.Blob.MimeType == "application/octet-stream" {
+		out.Blob.MimeType = "video/mp4"
+	}
+	return out.Blob, nil
+}
+
+func (s *PostBuilderService) createPostRecord(ctx context.Context, c *xrpc.Client, post *bsky.FeedPost, videoInfo *uploadedVideo) (*atproto.RepoCreateRecord_Output, error) {
+	createInput := func() *atproto.RepoCreateRecord_Input {
+		return &atproto.RepoCreateRecord_Input{
+			Collection: "app.bsky.feed.post",
+			Repo:       c.Auth.Did,
+			Record:     &util.LexiconTypeDecoder{Val: post},
+		}
+	}
+
+	res, err := atproto.RepoCreateRecord(ctx, c, createInput())
+	if err == nil || videoInfo == nil || !isVideoBlobNotFound(err, videoInfo.embed) {
+		return res, err
+	}
+
+	if !videoInfo.reused {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(s.blobRetryDelay()):
+		}
+		res, err = atproto.RepoCreateRecord(ctx, c, createInput())
+		if err == nil || !isVideoBlobNotFound(err, videoInfo.embed) {
+			return res, err
+		}
+	}
+
+	if videoInfo.localPath == "" || !isMP4File(videoInfo.localPath) {
+		return nil, err
+	}
+
+	s.clientMgr.EmitEvent("video_upload_progress", map[string]interface{}{
+		"state":    "UPLOADING",
+		"progress": 0,
+	})
+	directBlob, uploadErr := uploadVideoBlobToPDS(ctx, c, videoInfo.localPath)
+	if uploadErr != nil {
+		if isAuthExpired(uploadErr) {
+			return nil, uploadErr
+		}
+		return nil, fmt.Errorf("%w (PDS blob upload fallback failed: %v)", err, uploadErr)
+	}
+
+	videoInfo.embed.Video = directBlob
+	s.clientMgr.EmitEvent("video_upload_progress", map[string]interface{}{
+		"state":    "JOB_STATE_COMPLETED",
+		"progress": 100,
+	})
+	return atproto.RepoCreateRecord(ctx, c, createInput())
+}
+
+// publishPost writes the record and then applies the reply and quote
+// restrictions. Once the record exists it never returns an error: the caller
+// would retry and publish the post twice. A restriction that could not be
+// applied is reported through Warning instead.
+func (s *PostBuilderService) publishPost(ctx context.Context, c *xrpc.Client, post *bsky.FeedPost, threadgate string, listUris []string, videoInfo *uploadedVideo) (*PostRefDTO, error) {
+	res, err := s.createPostRecord(ctx, c, post, videoInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create post record: %w", err)
+	}
+	s.discardVideoUpload()
+
+	// A post that replies to nothing opens the thread, so it is its own root.
+	// Reporting it uniformly lets the caller chain the next post the same way
+	// whether the thread started here or not.
+	out := &PostRefDTO{Uri: res.Uri, Cid: res.Cid, RootUri: res.Uri, RootCid: res.Cid}
+	if post.Reply != nil {
+		out.RootUri, out.RootCid = post.Reply.Root.Uri, post.Reply.Root.Cid
+	}
+
+	if threadgate != "" && threadgate != "everyone" && threadgate != "everybody" {
+		if err := s.createThreadgate(ctx, c, res.Uri, threadgate, listUris, post.Reply != nil); err != nil {
+			out.Warning = ErrCodeReplyGateFailed
+		}
+	}
+
+	if e := post.Embed; e != nil && (e.EmbedVideo != nil || (e.EmbedRecordWithMedia != nil && e.EmbedRecordWithMedia.Media.EmbedVideo != nil)) {
+		s.waitForVideoPostIndexed(ctx, c, res.Uri)
+	}
+	return out, nil
+}
+
+// AppendVideoChunk streams a picked video into a temp file piece by piece and
+// returns its path, to be passed on as videoPath. Sent as one base64 string, a
+// 300 MB video would sit in memory several times over. first starts a new file
+// and drops the previous one.
+func (s *PostBuilderService) AppendVideoChunk(ext string, first bool, chunkBase64 string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(chunkBase64)
+	if err != nil {
+		return "", codedErrorWrap(ErrCodeDecodeBase64, err)
+	}
+
+	s.uploadMu.Lock()
+	defer s.uploadMu.Unlock()
+
+	if first {
+		if s.uploadPath != "" {
+			os.Remove(s.uploadPath)
+			s.uploadPath = ""
+		}
+		switch ext {
+		case ".mp4", ".mov", ".webm", ".mpeg", ".mpg":
+		default:
+			ext = ".mp4"
+		}
+		f, err := os.CreateTemp("", "mixko_upload_*"+ext)
+		if err != nil {
+			return "", codedErrorWrap(ErrCodeTempFileCreate, err)
+		}
+		f.Close()
+		s.uploadPath = f.Name()
+	}
+	if s.uploadPath == "" {
+		return "", fmt.Errorf("no video upload in progress")
+	}
+
+	f, err := os.OpenFile(s.uploadPath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return "", codedErrorWrap(ErrCodeTempFileWrite, err)
+	}
+	defer f.Close()
+
+	if info, err := f.Stat(); err == nil && info.Size()+int64(len(data)) > maxVideoUploadBytes {
+		return "", fmt.Errorf("video exceeds maximum allowed size of 300 MB")
+	}
+	if _, err := f.Write(data); err != nil {
+		return "", codedErrorWrap(ErrCodeTempFileWrite, err)
+	}
+	return s.uploadPath, nil
+}
+
+func (s *PostBuilderService) discardVideoUpload() {
+	s.uploadMu.Lock()
+	defer s.uploadMu.Unlock()
+	if s.uploadPath != "" {
+		os.Remove(s.uploadPath)
+		s.uploadPath = ""
+	}
 }
 
 // resolveThreadRoot returns the root ref of the thread that parentUri sits in,
@@ -479,7 +787,8 @@ func (s *PostBuilderService) createThreadgate(ctx context.Context, c *xrpc.Clien
 	return putThreadgateRecord(ctx, c, rkey, postUri, nowISO8601(), allow, true, nil)
 }
 
-func (s *PostBuilderService) uploadBlob(ctx context.Context, c *xrpc.Client, path string) (*util.LexBlob, error) {
+// uploadBlob uploads an image, shrinking it first to fit the 1 MB blob limit.
+func uploadBlob(ctx context.Context, c *xrpc.Client, path string) (*util.LexBlob, error) {
 	localPath, cleanup, err := ResolvePathOrDataURL(path)
 	if err != nil {
 		return nil, err
@@ -540,7 +849,7 @@ func detectVideoMimeType(filePath string) string {
 	case ".mpeg", ".mpg":
 		return "video/mpeg"
 	case ".gif":
-		return "video/mp4"
+		return "image/gif"
 	default:
 		if m := mime.TypeByExtension(ext); m != "" {
 			return m
@@ -549,11 +858,33 @@ func detectVideoMimeType(filePath string) string {
 	}
 }
 
+func formatVideoJobError(st *bsky.VideoDefs_JobStatus) string {
+	if st == nil {
+		return ""
+	}
+	if st.Error != nil && *st.Error != "" {
+		if st.Message != nil && *st.Message != "" && *st.Message != *st.Error {
+			return *st.Error + ": " + *st.Message
+		}
+		return *st.Error
+	}
+	if st.FailureCode != nil && *st.FailureCode != "" {
+		return *st.FailureCode
+	}
+	if st.Message != nil && *st.Message != "" {
+		return *st.Message
+	}
+	return ""
+}
+
 func (s *PostBuilderService) getVideoUploadAuthToken(ctx context.Context, c *xrpc.Client) (string, error) {
 	exp := time.Now().Add(30 * time.Minute).Unix()
-	pdsHost := s.clientMgr.ResolvePDSHost(ctx, c.Auth.Did)
-	if pdsHost == "" {
-		pdsHost = c.Host
+	pdsHost := normalizePDSHost(c.Host)
+	if pdsHost == "" || pdsHost == DefaultPDSHost {
+		resolved := s.clientMgr.ResolvePDSHost(ctx, c.Auth.Did)
+		if resolved != "" {
+			pdsHost = resolved
+		}
 	}
 	if parsed, err := url.Parse(pdsHost); err == nil && parsed.Hostname() != "" {
 		pdsDid := "did:web:" + parsed.Hostname()
@@ -586,31 +917,105 @@ func (s *PostBuilderService) waitForVideoPostIndexed(ctx context.Context, c *xrp
 	}
 }
 
-func (s *PostBuilderService) uploadVideo(ctx context.Context, c *xrpc.Client, path string) (*util.LexBlob, error) {
-	localPath, cleanup, err := ResolvePathOrDataURL(path)
-	if err != nil {
+func (s *PostBuilderService) tryMultipartVideoUpload(ctx context.Context, c *xrpc.Client, httpClient *http.Client, token string, localPath string, fileName string, fileSize int64) (*bsky.VideoDefs_JobStatus, error) {
+	videoClient := &xrpc.Client{
+		Client: httpClient,
+		Host:   s.videoHost(),
+		Auth: &xrpc.AuthInfo{
+			AccessJwt: token,
+			Did:       c.Auth.Did,
+			Handle:    c.Auth.Handle,
+		},
+	}
+	startOut, err := bsky.VideoStartUpload(ctx, videoClient, &bsky.VideoStartUpload_Input{
+		MimeType:  detectVideoMimeType(localPath),
+		Name:      &fileName,
+		SizeBytes: fileSize,
+	})
+	if err != nil || startOut == nil || startOut.JobId == "" {
+		if err == nil {
+			err = fmt.Errorf("empty startUpload jobId")
+		}
 		return nil, err
 	}
-	defer cleanup()
 
+	f, err := os.Open(localPath)
+	if err != nil {
+		_, _ = bsky.VideoAbortUpload(ctx, videoClient, &bsky.VideoAbortUpload_Input{JobId: startOut.JobId})
+		return nil, err
+	}
+	defer f.Close()
+
+	partCount := startOut.PartCount
+	if partCount <= 0 {
+		partCount = 1
+	}
+	partSize := startOut.PartSizeBytes
+	if partSize <= 0 {
+		partSize = fileSize
+	}
+
+	for partNum := int64(1); partNum <= partCount; partNum++ {
+		limit := partSize
+		remaining := fileSize - (partNum-1)*partSize
+		if remaining < limit || partNum == partCount {
+			limit = remaining
+		}
+		if limit <= 0 {
+			break
+		}
+		chunk := make([]byte, limit)
+		n, readErr := io.ReadFull(f, chunk)
+		if readErr != nil && !errors.Is(readErr, io.ErrUnexpectedEOF) && !errors.Is(readErr, io.EOF) {
+			_, _ = bsky.VideoAbortUpload(ctx, videoClient, &bsky.VideoAbortUpload_Input{JobId: startOut.JobId})
+			return nil, readErr
+		}
+		if _, upErr := bsky.VideoUploadPart(ctx, videoClient, bytes.NewReader(chunk[:n]), startOut.JobId, partNum); upErr != nil {
+			_, _ = bsky.VideoAbortUpload(ctx, videoClient, &bsky.VideoAbortUpload_Input{JobId: startOut.JobId})
+			return nil, upErr
+		}
+		s.clientMgr.EmitEvent("video_upload_progress", map[string]interface{}{
+			"state":    "UPLOADING",
+			"progress": (partNum * 50) / partCount,
+		})
+	}
+
+	finishOut, err := bsky.VideoFinishUpload(ctx, videoClient, &bsky.VideoFinishUpload_Input{
+		JobId: startOut.JobId,
+	})
+	if err != nil || finishOut == nil {
+		_, _ = bsky.VideoAbortUpload(ctx, videoClient, &bsky.VideoAbortUpload_Input{JobId: startOut.JobId})
+		if err == nil {
+			err = fmt.Errorf("empty finishUpload output")
+		}
+		return nil, err
+	}
+
+	st := finishOut.JobStatus
+	if st == nil {
+		st = &bsky.VideoDefs_JobStatus{}
+	}
+	if finishOut.CompletedJobId != "" {
+		st.JobId = finishOut.CompletedJobId
+	} else if st.JobId == "" {
+		st.JobId = startOut.JobId
+	}
+	return st, nil
+}
+
+func (s *PostBuilderService) uploadVideo(ctx context.Context, c *xrpc.Client, localPath string) (*util.LexBlob, bool, error) {
 	fileInfo, err := os.Stat(localPath)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if fileInfo.Size() > maxVideoUploadBytes {
-		return nil, fmt.Errorf("video exceeds maximum allowed size of 300 MB")
+		return nil, false, fmt.Errorf("video exceeds maximum allowed size of 300 MB")
 	}
 
 	token, err := s.getVideoUploadAuthToken(ctx, c)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service auth: %w", err)
+		return nil, false, fmt.Errorf("failed to get service auth: %w", err)
 	}
-
-	file, err := os.Open(localPath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
 
 	s.clientMgr.EmitEvent("video_upload_progress", map[string]interface{}{
 		"state":    "UPLOADING",
@@ -621,88 +1026,122 @@ func (s *PostBuilderService) uploadVideo(ctx context.Context, c *xrpc.Client, pa
 	if fileName == "" || fileName == "." {
 		fileName = fmt.Sprintf("video_%d.mp4", time.Now().UnixNano())
 	}
-	uploadURL := fmt.Sprintf("https://video.bsky.app/xrpc/app.bsky.video.uploadVideo?did=%s&name=%s",
-		url.QueryEscape(c.Auth.Did),
-		url.QueryEscape(fileName),
-	)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, file)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", detectVideoMimeType(localPath))
-	req.ContentLength = fileInfo.Size()
 
 	httpClient := c.Client
 	if httpClient == nil {
 		httpClient = s.clientMgr.HTTPClient()
 	}
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("video upload failed: %w", err)
-	}
-	respBytes, readErr := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if readErr != nil {
-		return nil, fmt.Errorf("failed to read video upload response: %w", readErr)
-	}
-
-	var wrapped bsky.VideoUploadVideo_Output
-	var directStatus bsky.VideoDefs_JobStatus
 	var jobStatus *bsky.VideoDefs_JobStatus
-	if json.Unmarshal(respBytes, &wrapped) == nil && wrapped.JobStatus != nil && wrapped.JobStatus.JobId != "" {
-		jobStatus = wrapped.JobStatus
-	} else if json.Unmarshal(respBytes, &directStatus) == nil && directStatus.JobId != "" {
-		jobStatus = &directStatus
+	var reused bool
+
+	if !strings.HasPrefix(fileName, "mixko_gif_") {
+		if mpStatus, mpErr := s.tryMultipartVideoUpload(ctx, c, httpClient, token, localPath, fileName, fileInfo.Size()); mpErr == nil && mpStatus != nil {
+			jobStatus = mpStatus
+		}
 	}
 
-	// HTTP 409 Conflict ("already_exists") returns the existing jobStatus (often already completed with blob)
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
-		return nil, fmt.Errorf("video upload failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+	if jobStatus == nil {
+		file, openErr := os.Open(localPath)
+		if openErr != nil {
+			return nil, false, openErr
+		}
+		defer file.Close()
+
+		uploadURL := fmt.Sprintf("%s/xrpc/app.bsky.video.uploadVideo?did=%s&name=%s",
+			s.videoHost(),
+			url.QueryEscape(c.Auth.Did),
+			url.QueryEscape(fileName),
+		)
+
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, file)
+		if reqErr != nil {
+			return nil, false, reqErr
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", detectVideoMimeType(localPath))
+		req.ContentLength = fileInfo.Size()
+
+		resp, doErr := httpClient.Do(req)
+		if doErr != nil {
+			return nil, false, fmt.Errorf("video upload failed: %w", doErr)
+		}
+		respBytes, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, false, fmt.Errorf("failed to read video upload response: %w", readErr)
+		}
+
+		var wrapped bsky.VideoUploadVideo_Output
+		var directStatus bsky.VideoDefs_JobStatus
+		if json.Unmarshal(respBytes, &wrapped) == nil && wrapped.JobStatus != nil && (wrapped.JobStatus.JobId != "" || wrapped.JobStatus.Blob != nil || wrapped.JobStatus.Error != nil) {
+			jobStatus = wrapped.JobStatus
+		} else if json.Unmarshal(respBytes, &directStatus) == nil && (directStatus.JobId != "" || directStatus.Blob != nil || directStatus.Error != nil) {
+			jobStatus = &directStatus
+		}
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
+			return nil, false, fmt.Errorf("video upload failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		}
+		reused = resp.StatusCode == http.StatusConflict
 	}
-	if jobStatus == nil || jobStatus.JobId == "" {
-		return nil, fmt.Errorf("video upload did not return a job ID")
+
+	if jobStatus != nil && jobStatus.Error != nil && *jobStatus.Error == "already_exists" {
+		reused = true
 	}
-	if jobStatus.State == "JOB_STATE_COMPLETED" && jobStatus.Blob != nil {
+	if jobStatus != nil && jobStatus.Blob != nil {
 		s.clientMgr.EmitEvent("video_upload_progress", map[string]interface{}{
 			"state":    "JOB_STATE_COMPLETED",
 			"progress": 100,
 		})
-		return jobStatus.Blob, nil
+		return jobStatus.Blob, reused, nil
+	}
+	if jobStatus == nil || jobStatus.JobId == "" {
+		if reused && isMP4File(localPath) {
+			if directBlob, upErr := uploadVideoBlobToPDS(ctx, c, localPath); upErr == nil {
+				return directBlob, false, nil
+			}
+		}
+		if errMsg := formatVideoJobError(jobStatus); errMsg != "" {
+			return nil, false, fmt.Errorf("video upload failed: %s", errMsg)
+		}
+		return nil, false, fmt.Errorf("video upload did not return a job ID")
 	}
 
 	jobId := jobStatus.JobId
 	videoClient := &xrpc.Client{
 		Client: httpClient,
-		Host:   "https://video.bsky.app",
-		Auth: &xrpc.AuthInfo{
-			AccessJwt: token,
-			Did:       c.Auth.Did,
-			Handle:    c.Auth.Handle,
-		},
-	}
-	if statusAuthRes, err := atproto.ServerGetServiceAuth(ctx, c, "did:web:video.bsky.app", time.Now().Add(30*time.Minute).Unix(), "app.bsky.video.getJobStatus"); err == nil && statusAuthRes != nil && statusAuthRes.Token != "" {
-		videoClient.Auth.AccessJwt = statusAuthRes.Token
+		Host:   s.videoHost(),
 	}
 
-	// Poll until complete (up to 10 minutes: 300 * 2s)
+	const maxPollErrors = 50
+	consecutiveErrors := 0
+	completedWithoutBlob := 0
 	for i := 0; i < 300; i++ {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(2 * time.Second):
+			return nil, false, ctx.Err()
+		case <-time.After(s.videoPollInterval()):
 		}
 
 		statusRes, err := bsky.VideoGetJobStatus(ctx, videoClient, jobId)
 		if err != nil {
-			// Refresh job status token on transient auth failure
-			if statusAuthRes, authErr := atproto.ServerGetServiceAuth(ctx, c, "did:web:video.bsky.app", time.Now().Add(30*time.Minute).Unix(), "app.bsky.video.getJobStatus"); authErr == nil && statusAuthRes != nil && statusAuthRes.Token != "" {
-				videoClient.Auth.AccessJwt = statusAuthRes.Token
+			consecutiveErrors++
+			if isAuthExpired(err) {
+				if statusAuthRes, authErr := atproto.ServerGetServiceAuth(ctx, c, "did:web:video.bsky.app", time.Now().Add(30*time.Minute).Unix(), "app.bsky.video.getJobStatus"); authErr == nil && statusAuthRes != nil && statusAuthRes.Token != "" {
+					videoClient.Auth = &xrpc.AuthInfo{
+						AccessJwt: statusAuthRes.Token,
+						Did:       c.Auth.Did,
+						Handle:    c.Auth.Handle,
+					}
+				}
+			}
+			if consecutiveErrors >= maxPollErrors {
+				return nil, false, fmt.Errorf("failed to get video job status: %w", err)
 			}
 			continue
 		}
+		consecutiveErrors = 0
 		if statusRes == nil || statusRes.JobStatus == nil {
 			continue
 		}
@@ -715,21 +1154,39 @@ func (s *PostBuilderService) uploadVideo(ctx context.Context, c *xrpc.Client, pa
 			"state":    st.State,
 			"progress": prog,
 		})
-		if st.State == "JOB_STATE_COMPLETED" && st.Blob != nil {
-			return st.Blob, nil
+		if st.Error != nil && *st.Error == "already_exists" {
+			reused = true
+		}
+		if st.Blob != nil {
+			return st.Blob, reused, nil
+		}
+		if st.State == "JOB_STATE_COMPLETED" {
+			completedWithoutBlob++
+			if completedWithoutBlob >= 3 {
+				if reused && isMP4File(localPath) {
+					if directBlob, upErr := uploadVideoBlobToPDS(ctx, c, localPath); upErr == nil {
+						return directBlob, false, nil
+					}
+				}
+				return nil, false, fmt.Errorf("video processing completed without returning a blob")
+			}
+			continue
 		}
 		if st.State == "JOB_STATE_FAILED" {
-			errStr := "unknown error"
-			if st.Error != nil && *st.Error != "" {
-				errStr = *st.Error
-			} else if st.Message != nil && *st.Message != "" {
-				errStr = *st.Message
+			if reused && isMP4File(localPath) {
+				if directBlob, upErr := uploadVideoBlobToPDS(ctx, c, localPath); upErr == nil {
+					return directBlob, false, nil
+				}
 			}
-			return nil, fmt.Errorf("video processing failed: %v", errStr)
+			errStr := formatVideoJobError(st)
+			if errStr == "" {
+				errStr = "unknown error"
+			}
+			return nil, false, fmt.Errorf("video processing failed: %v", errStr)
 		}
 	}
 
-	return nil, fmt.Errorf("video processing timed out")
+	return nil, false, fmt.Errorf("video processing timed out")
 }
 
 // LikePost handles liking a post
@@ -812,7 +1269,7 @@ func (s *PostBuilderService) Repost(uri, cid string) (string, error) {
 }
 
 // QuotePost handles quoting a post
-func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string) (*PostRefDTO, error) {
+func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePaths []string, altTexts []string, videoPath string, videoAlt string, language string, threadgate string, gifUrl string, videoWidth int64, videoHeight int64, listUris []string, selfLabels []string, captionPath string, captionLang string) (*PostRefDTO, error) {
 	// Posting can include a video upload plus transcode polling, which runs far
 	// longer than a plain API call.
 	ctx, cancel := s.clientMgr.NewContextTimeout(postWithMediaTimeout)
@@ -823,74 +1280,14 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 
 	var out *PostRefDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		var langs []string
-		if language != "" {
-			langs = append(langs, language)
-		}
-		post := &bsky.FeedPost{
-			LexiconTypeID: "app.bsky.feed.post",
-			Text:          text,
-			CreatedAt:     nowISO8601(),
-			Facets:        ParseFacets(ctx, c, text),
-			Langs:         langs,
-		}
+		post := newFeedPost(ctx, c, text, language, selfLabels)
 
-		var media *bsky.EmbedRecordWithMedia_Media
-
-		if len(imagePaths) > 0 {
-			var images []*bsky.EmbedImages_Image
-			for i, path := range imagePaths {
-				altText := altTexts[i]
-				if altText == "" {
-					return codedError(ErrCodeAltTextRequired)
-				}
-				blobRef, err := s.uploadBlob(ctx, c, path)
-				if err != nil {
-					return fmt.Errorf("failed to upload image %d: %w", i+1, err)
-				}
-				images = append(images, &bsky.EmbedImages_Image{
-					Alt:   altText,
-					Image: blobRef,
-				})
-			}
-			media = &bsky.EmbedRecordWithMedia_Media{
-				EmbedImages: &bsky.EmbedImages{
-					LexiconTypeID: "app.bsky.embed.images",
-					Images:        images,
-				},
-			}
-		} else if videoPath != "" || gifUrl != "" {
-			altText := videoAlt
-			if gifUrl != "" {
-				altText = "GIF"
-				tmpPath, err := downloadTempFile(ctx, gifUrl)
-				if err != nil {
-					return fmt.Errorf("failed to download GIF: %w", err)
-				}
-				defer os.Remove(tmpPath)
-				videoPath = tmpPath
-			}
-			if altText == "" {
-				return codedError(ErrCodeAltTextRequiredVideo)
-			}
-			blobRef, err := s.uploadVideo(ctx, c, videoPath)
-			if err != nil {
-				return fmt.Errorf("failed to upload video: %w", err)
-			}
-			vidEmbed := &bsky.EmbedVideo{
-				LexiconTypeID: "app.bsky.embed.video",
-				Video:         blobRef,
-				Alt:           &altText,
-			}
-			if videoWidth > 0 && videoHeight > 0 {
-				vidEmbed.AspectRatio = &bsky.EmbedDefs_AspectRatio{
-					Width:  videoWidth,
-					Height: videoHeight,
-				}
-			}
-			media = &bsky.EmbedRecordWithMedia_Media{
-				EmbedVideo: vidEmbed,
-			}
+		images, gallery, videoInfo, err := s.uploadMedia(ctx, c, imagePaths, altTexts, videoPath, videoAlt, gifUrl, videoWidth, videoHeight, captionPath, captionLang)
+		if err != nil {
+			return err
+		}
+		if videoInfo != nil && videoInfo.cleanup != nil {
+			defer videoInfo.cleanup()
 		}
 
 		quoteRec := &bsky.EmbedRecord{
@@ -901,44 +1298,26 @@ func (s *PostBuilderService) QuotePost(text, quoteUri, quoteCid string, imagePat
 			},
 		}
 
-		if media != nil {
+		if images != nil || gallery != nil || videoInfo != nil {
+			var videoEmbed *bsky.EmbedVideo
+			if videoInfo != nil {
+				videoEmbed = videoInfo.embed
+			}
 			post.Embed = &bsky.FeedPost_Embed{
 				EmbedRecordWithMedia: &bsky.EmbedRecordWithMedia{
 					LexiconTypeID: "app.bsky.embed.recordWithMedia",
-					Media:         media,
+					Media:         &bsky.EmbedRecordWithMedia_Media{EmbedImages: images, EmbedGallery: gallery, EmbedVideo: videoEmbed},
 					Record:        quoteRec,
 				},
 			}
 		} else {
-			post.Embed = &bsky.FeedPost_Embed{
-				EmbedRecord: quoteRec,
-			}
+			post.Embed = &bsky.FeedPost_Embed{EmbedRecord: quoteRec}
 		}
 
-		input := &atproto.RepoCreateRecord_Input{
-			Collection: "app.bsky.feed.post",
-			Repo:       c.Auth.Did,
-			Record: &util.LexiconTypeDecoder{
-				Val: post,
-			},
-		}
-
-		res, err := atproto.RepoCreateRecord(ctx, c, input)
-		if err != nil {
-			return err
-		}
-		if threadgate != "" && threadgate != "everyone" && threadgate != "everybody" {
-			if err := s.createThreadgate(ctx, c, res.Uri, threadgate, listUris, false); err != nil {
-				return fmt.Errorf("failed to apply reply restrictions: %w", err)
-			}
-		}
-		if media != nil && media.EmbedVideo != nil {
-			s.waitForVideoPostIndexed(ctx, c, res.Uri)
-		}
 		// A quote embeds the post it points at rather than replying to it, so
 		// it opens a thread of its own and is its own root.
-		out = &PostRefDTO{Uri: res.Uri, Cid: res.Cid, RootUri: res.Uri, RootCid: res.Cid}
-		return nil
+		out, err = s.publishPost(ctx, c, post, threadgate, listUris, videoInfo)
+		return err
 	})
 	return out, err
 }
@@ -983,78 +1362,72 @@ func (s *PostBuilderService) DeleteRepost(repostUri string) error {
 	})
 }
 
-func (s *PostBuilderService) CheckVideoStatus(jobId string) (*VideoJobStatusDTO, error) {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-	var out *VideoJobStatusDTO
-	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		videoClient := &xrpc.Client{
-			Client: c.Client,
-			Host:   "https://video.bsky.app",
-			Auth: &xrpc.AuthInfo{
-				AccessJwt: c.Auth.AccessJwt,
-				Did:       c.Auth.Did,
-				Handle:    c.Auth.Handle,
-			},
+// getOwnRecordJSON reads a record from the signed-in user's repo. It returns
+// nil without an error only when the server says the record does not exist:
+// every caller writes the record back afterwards, and treating a failed read
+// as "nothing there" would wipe what the record already holds.
+func getOwnRecordJSON(ctx context.Context, c *xrpc.Client, collection, rkey string) ([]byte, error) {
+	res, err := atproto.RepoGetRecord(ctx, c, "", collection, c.Auth.Did, rkey)
+	if err != nil {
+		var xrpcErr *xrpc.XRPCError
+		if errors.As(err, &xrpcErr) && (xrpcErr.ErrStr == "RecordNotFound" || strings.Contains(xrpcErr.Message, "Could not locate record")) {
+			return nil, nil
 		}
-		if authOut, authErr := atproto.ServerGetServiceAuth(ctx, c, "did:web:video.bsky.app", time.Now().Add(10*time.Minute).Unix(), "app.bsky.video.getJobStatus"); authErr == nil && authOut != nil && authOut.Token != "" {
-			videoClient.Auth.AccessJwt = authOut.Token
-		}
-		res, err := bsky.VideoGetJobStatus(ctx, videoClient, jobId)
-		if err != nil {
-			return err
-		}
-		if res != nil && res.JobStatus != nil {
-			status := res.JobStatus
-			out = &VideoJobStatusDTO{
-				JobId: status.JobId,
-				Did:   status.Did,
-				State: status.State,
-			}
-			if status.Progress != nil {
-				out.Progress = *status.Progress
-			}
-			if status.Message != nil {
-				out.Message = *status.Message
-			}
-			if status.Error != nil {
-				out.Error = *status.Error
-			}
-		}
-		return nil
-	})
-	return out, err
+		return nil, err
+	}
+	if res == nil || res.Value == nil || res.Value.Val == nil {
+		return nil, nil
+	}
+	return json.Marshal(res.Value.Val)
+}
+
+// loadThreadgate returns the gate record of a thread, or a fresh one when
+// there is none yet. hasAllow reports whether the stored record restricts who
+// may reply.
+func loadThreadgate(ctx context.Context, c *xrpc.Client, rkey, postUri string) (tg bsky.FeedThreadgate, hasAllow, exists bool, err error) {
+	tg = bsky.FeedThreadgate{
+		LexiconTypeID: "app.bsky.feed.threadgate",
+		Post:          postUri,
+		CreatedAt:     nowISO8601(),
+	}
+	raw, err := getOwnRecordJSON(ctx, c, "app.bsky.feed.threadgate", rkey)
+	if err != nil || raw == nil {
+		return tg, false, false, err
+	}
+	if err := json.Unmarshal(raw, &tg); err != nil {
+		return tg, false, false, err
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil {
+		_, hasAllow = fields["allow"]
+	}
+	return tg, hasAllow, true, nil
+}
+
+// ownThreadRkey returns the record key of a thread root, refusing a root in
+// someone else's repo: only the thread author's gate record has any effect.
+func ownThreadRkey(c *xrpc.Client, postUri string) (string, error) {
+	repo, _, rkey, ok := parseATURI(postUri)
+	if !ok {
+		return "", fmt.Errorf("invalid post uri")
+	}
+	if repo != c.Auth.Did {
+		return "", fmt.Errorf("only the author of the thread can hide its replies")
+	}
+	return rkey, nil
 }
 
 func (s *PostBuilderService) HideReply(postUri string, replyUri string) error {
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		parts := strings.Split(postUri, "/")
-		if len(parts) < 3 {
-			return fmt.Errorf("invalid post uri")
+		rkey, err := ownThreadRkey(c, postUri)
+		if err != nil {
+			return err
 		}
-		rkey := parts[len(parts)-1]
-
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.feed.threadgate", c.Auth.Did, rkey)
-
-		var tg bsky.FeedThreadgate
-		hasAllow := false
-		if err == nil && res != nil && res.Value != nil && res.Value.Val != nil {
-			bytes, err := json.Marshal(res.Value.Val)
-			if err == nil {
-				_ = json.Unmarshal(bytes, &tg)
-				var rawMap map[string]interface{}
-				if json.Unmarshal(bytes, &rawMap) == nil {
-					_, hasAllow = rawMap["allow"]
-				}
-			}
-		} else {
-			tg = bsky.FeedThreadgate{
-				LexiconTypeID: "app.bsky.feed.threadgate",
-				Post:          postUri,
-				CreatedAt:     nowISO8601(),
-			}
+		tg, hasAllow, _, err := loadThreadgate(ctx, c, rkey, postUri)
+		if err != nil {
+			return err
 		}
 
 		for _, hidden := range tg.HiddenReplies {
@@ -1062,7 +1435,6 @@ func (s *PostBuilderService) HideReply(postUri string, replyUri string) error {
 				return nil
 			}
 		}
-
 		tg.HiddenReplies = append(tg.HiddenReplies, replyUri)
 
 		return putThreadgateRecord(ctx, c, rkey, postUri, tg.CreatedAt, tg.Allow, hasAllow, tg.HiddenReplies)
@@ -1070,75 +1442,43 @@ func (s *PostBuilderService) HideReply(postUri string, replyUri string) error {
 }
 
 func (s *PostBuilderService) FetchLinkCard(linkUrl string) (*ExternalEmbedDTO, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(s.clientMgr.AppContext(), 5*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", linkUrl, nil)
-	if err != nil {
-		return nil, err
+	var dynamicCard *ExternalEmbedDTO
+	if s.clientMgr != nil {
+		_ = s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+			res, err := bsky.EmbedGetEmbedExternalView(ctx, c, []string{}, linkUrl)
+			if err == nil && res != nil && res.View != nil && res.View.External != nil && res.View.External.Title != "" {
+				ext := res.View.External
+				dynamicCard = &ExternalEmbedDTO{
+					URI:         ext.Uri,
+					Title:       ext.Title,
+					Description: ext.Description,
+					Thumb:       safeString(ext.Thumb),
+				}
+				if ext.Source != nil {
+					dynamicCard.SourceTitle = ext.Source.Title
+					dynamicCard.SourceURI = ext.Source.Uri
+				}
+			}
+			return nil
+		})
 	}
-	req.Header.Set("User-Agent", "MixkoApp/1.0 (Bluesky Client)")
+	if dynamicCard != nil {
+		return dynamicCard, nil
+	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fetchRemote(ctx, linkUrl)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch link metadata: HTTP %d", resp.StatusCode)
-	}
-
-	doc, err := html.Parse(resp.Body)
+	title, description, imageUrl, err := parseLinkMeta(resp.Body, linkUrl)
 	if err != nil {
 		return nil, err
 	}
-
-	var title, description, imageUrl string
-	var f func(*html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "meta" {
-			var name, content string
-			for _, a := range n.Attr {
-				if a.Key == "property" || a.Key == "name" {
-					name = a.Val
-				}
-				if a.Key == "content" {
-					content = a.Val
-				}
-			}
-			switch name {
-			case "og:title":
-				title = content
-			case "og:description":
-				description = content
-			case "og:image":
-				imageUrl = content
-			}
-		}
-		if n.Type == html.ElementNode && n.Data == "title" && title == "" && n.FirstChild != nil {
-			title = n.FirstChild.Data
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
-		}
-	}
-	f(doc)
-
-	if title == "" {
-		title = linkUrl
-	}
-
-	if imageUrl != "" && !strings.HasPrefix(imageUrl, "http") {
-		parsedBase, err := url.Parse(linkUrl)
-		if err == nil {
-			parsedImg, err := url.Parse(imageUrl)
-			if err == nil {
-				imageUrl = parsedBase.ResolveReference(parsedImg).String()
-			}
-		}
-	}
-
 	return &ExternalEmbedDTO{
 		URI:         linkUrl,
 		Title:       title,
@@ -1180,28 +1520,13 @@ func (s *PostBuilderService) UnhideReply(postUri string, replyUri string) error 
 	ctx, cancel := s.clientMgr.NewContext()
 	defer cancel()
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		parts := strings.Split(postUri, "/")
-		if len(parts) < 3 {
-			return fmt.Errorf("invalid post uri")
-		}
-		rkey := parts[len(parts)-1]
-
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.feed.threadgate", c.Auth.Did, rkey)
-		if err != nil || res == nil || res.Value == nil || res.Value.Val == nil {
-			return nil
-		}
-		var tg bsky.FeedThreadgate
-		bytes, err := json.Marshal(res.Value.Val)
+		rkey, err := ownThreadRkey(c, postUri)
 		if err != nil {
 			return err
 		}
-		if err := json.Unmarshal(bytes, &tg); err != nil {
+		tg, hasAllow, exists, err := loadThreadgate(ctx, c, rkey, postUri)
+		if err != nil || !exists {
 			return err
-		}
-		hasAllow := false
-		var rawMap map[string]interface{}
-		if json.Unmarshal(bytes, &rawMap) == nil {
-			_, hasAllow = rawMap["allow"]
 		}
 
 		filtered := make([]string, 0, len(tg.HiddenReplies))
@@ -1243,15 +1568,9 @@ func (s *PostBuilderService) UpdateThreadgate(postUri string, ruleSpec string, l
 			}
 		}
 
-		res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.feed.threadgate", c.Auth.Did, rkey)
-		var existing bsky.FeedThreadgate
-		hasExisting := false
-		if err == nil && res != nil && res.Value != nil && res.Value.Val != nil {
-			if bytes, mErr := json.Marshal(res.Value.Val); mErr == nil {
-				if json.Unmarshal(bytes, &existing) == nil {
-					hasExisting = true
-				}
-			}
+		existing, _, hasExisting, err := loadThreadgate(ctx, c, rkey, postUri)
+		if err != nil {
+			return err
 		}
 
 		if !hasReplyRestriction {
@@ -1283,28 +1602,21 @@ func (s *PostBuilderService) UpdateThreadgate(postUri string, ruleSpec string, l
 	})
 }
 
-func (s *PostBuilderService) getExistingPostgate(ctx context.Context, c *xrpc.Client, postUri, rkey string) (*bsky.FeedPostgate, bool) {
-	res, err := atproto.RepoGetRecord(ctx, c, "", "app.bsky.feed.postgate", c.Auth.Did, rkey)
-	if err == nil && res != nil && res.Value != nil && res.Value.Val != nil {
-		var pg bsky.FeedPostgate
-		if bytes, mErr := json.Marshal(res.Value.Val); mErr == nil {
-			if json.Unmarshal(bytes, &pg) == nil {
-				pg.LexiconTypeID = "app.bsky.feed.postgate"
-				if pg.Post == "" {
-					pg.Post = postUri
-				}
-				if pg.CreatedAt == "" {
-					pg.CreatedAt = nowISO8601()
-				}
-				return &pg, true
-			}
-		}
-	}
-	return &bsky.FeedPostgate{
+func (s *PostBuilderService) getExistingPostgate(ctx context.Context, c *xrpc.Client, postUri, rkey string) (*bsky.FeedPostgate, bool, error) {
+	pg := &bsky.FeedPostgate{
 		LexiconTypeID: "app.bsky.feed.postgate",
 		Post:          postUri,
 		CreatedAt:     nowISO8601(),
-	}, false
+	}
+	raw, err := getOwnRecordJSON(ctx, c, "app.bsky.feed.postgate", rkey)
+	if err != nil || raw == nil {
+		return pg, false, err
+	}
+	if err := json.Unmarshal(raw, pg); err != nil {
+		return pg, false, err
+	}
+	pg.LexiconTypeID = "app.bsky.feed.postgate"
+	return pg, true, nil
 }
 
 func (s *PostBuilderService) togglePostQuotesInternal(ctx context.Context, c *xrpc.Client, postUri string, disableQuotes bool) error {
@@ -1314,7 +1626,10 @@ func (s *PostBuilderService) togglePostQuotesInternal(ctx context.Context, c *xr
 	}
 	rkey := parts[4]
 
-	pg, exists := s.getExistingPostgate(ctx, c, postUri, rkey)
+	pg, exists, err := s.getExistingPostgate(ctx, c, postUri, rkey)
+	if err != nil {
+		return err
+	}
 	if disableQuotes {
 		pg.EmbeddingRules = []*bsky.FeedPostgate_EmbeddingRules_Elem{
 			{
@@ -1339,7 +1654,7 @@ func (s *PostBuilderService) togglePostQuotesInternal(ctx context.Context, c *xr
 		return nil
 	}
 
-	_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+	_, err = atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
 		Collection: "app.bsky.feed.postgate",
 		Repo:       c.Auth.Did,
 		Rkey:       rkey,
@@ -1366,7 +1681,10 @@ func (s *PostBuilderService) DetachQuote(quotedPostUri, quotingPostUri string) e
 		}
 		rkey := parts[4]
 
-		pg, _ := s.getExistingPostgate(ctx, c, quotedPostUri, rkey)
+		pg, _, err := s.getExistingPostgate(ctx, c, quotedPostUri, rkey)
+		if err != nil {
+			return err
+		}
 		for _, u := range pg.DetachedEmbeddingUris {
 			if u == quotingPostUri {
 				return nil
@@ -1374,7 +1692,7 @@ func (s *PostBuilderService) DetachQuote(quotedPostUri, quotingPostUri string) e
 		}
 		pg.DetachedEmbeddingUris = append(pg.DetachedEmbeddingUris, quotingPostUri)
 
-		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+		_, err = atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
 			Collection: "app.bsky.feed.postgate",
 			Repo:       c.Auth.Did,
 			Rkey:       rkey,
@@ -1394,9 +1712,9 @@ func (s *PostBuilderService) ReattachQuote(quotedPostUri, quotingPostUri string)
 		}
 		rkey := parts[4]
 
-		pg, exists := s.getExistingPostgate(ctx, c, quotedPostUri, rkey)
-		if !exists {
-			return nil
+		pg, exists, err := s.getExistingPostgate(ctx, c, quotedPostUri, rkey)
+		if err != nil || !exists {
+			return err
 		}
 		filtered := make([]string, 0, len(pg.DetachedEmbeddingUris))
 		for _, u := range pg.DetachedEmbeddingUris {
@@ -1415,102 +1733,11 @@ func (s *PostBuilderService) ReattachQuote(quotedPostUri, quotingPostUri string)
 			return err
 		}
 
-		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
+		_, err = atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
 			Collection: "app.bsky.feed.postgate",
 			Repo:       c.Auth.Did,
 			Rkey:       rkey,
 			Record:     &util.LexiconTypeDecoder{Val: pg},
-		})
-		return err
-	})
-}
-
-// ApplyPostExtras attaches self-labels, video captions (.vtt), and/or postgate rules to an authored post.
-func (s *PostBuilderService) ApplyPostExtras(postUri string, selfLabels []string, disableQuotes bool, captionPath string, captionLang string) error {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		if disableQuotes {
-			if err := s.togglePostQuotesInternal(ctx, c, postUri, true); err != nil {
-				return err
-			}
-		}
-
-		if len(selfLabels) == 0 && captionPath == "" {
-			return nil
-		}
-
-		parts := strings.Split(postUri, "/")
-		if len(parts) < 5 {
-			return fmt.Errorf("invalid post uri")
-		}
-		rkey := parts[4]
-
-		rec := s.fetchOwnPostRecord(ctx, c, postUri)
-		if rec == nil {
-			return fmt.Errorf("post record not found")
-		}
-
-		if len(selfLabels) > 0 {
-			vals := make([]*atproto.LabelDefs_SelfLabel, 0, len(selfLabels))
-			for _, v := range selfLabels {
-				vTrim := strings.TrimSpace(v)
-				if vTrim != "" {
-					vals = append(vals, &atproto.LabelDefs_SelfLabel{Val: vTrim})
-				}
-			}
-			if len(vals) > 0 {
-				rec.Labels = &bsky.FeedPost_Labels{
-					LabelDefs_SelfLabels: &atproto.LabelDefs_SelfLabels{
-						LexiconTypeID: "com.atproto.label.defs#selfLabels",
-						Values:        vals,
-					},
-				}
-			}
-		}
-
-		if captionPath != "" {
-			localPath, cleanup, err := ResolvePathOrDataURL(captionPath)
-			if err != nil {
-				return err
-			}
-			defer cleanup()
-
-			f, err := os.Open(localPath)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			upRes, err := atproto.RepoUploadBlob(ctx, c, f)
-			if err != nil {
-				return err
-			}
-			if upRes.Blob != nil {
-				upRes.Blob.MimeType = "text/vtt"
-			}
-			lang := captionLang
-			if lang == "" {
-				lang = "en"
-			}
-			capItem := &bsky.EmbedVideo_Caption{
-				File: upRes.Blob,
-				Lang: lang,
-			}
-			if rec.Embed != nil {
-				if rec.Embed.EmbedVideo != nil {
-					rec.Embed.EmbedVideo.Captions = append(rec.Embed.EmbedVideo.Captions, capItem)
-				} else if rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil && rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
-					rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo.Captions = append(rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo.Captions, capItem)
-				}
-			}
-		}
-
-		_, err := atproto.RepoPutRecord(ctx, c, &atproto.RepoPutRecord_Input{
-			Collection: "app.bsky.feed.post",
-			Repo:       c.Auth.Did,
-			Rkey:       rkey,
-			Record:     &util.LexiconTypeDecoder{Val: rec},
 		})
 		return err
 	})
@@ -1558,7 +1785,9 @@ func (s *PostBuilderService) GetVideoUploadLimits() (*VideoUploadLimitsDTO, erro
 	return out, err
 }
 
-func buildDraftRecord(text string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) *bsky.DraftDefs_Draft {
+const draftThreadSplitMarker = "\n---MIXKO_THREAD_SPLIT---\n"
+
+func buildDraftRecordFromPosts(posts []string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) *bsky.DraftDefs_Draft {
 	var labelsUnion *bsky.DraftDefs_DraftPost_Labels
 	if len(selfLabels) > 0 {
 		vals := make([]*atproto.LabelDefs_SelfLabel, 0, len(selfLabels))
@@ -1579,25 +1808,36 @@ func buildDraftRecord(text string, langs []string, selfLabels []string, threadga
 
 	var tgAllow []*bsky.DraftDefs_Draft_ThreadgateAllow_Elem
 	for _, r := range threadgateAllow {
-		switch strings.TrimSpace(r) {
-		case "mentioned":
+		trimmed := strings.TrimSpace(r)
+		switch {
+		case trimmed == "mentioned":
 			tgAllow = append(tgAllow, &bsky.DraftDefs_Draft_ThreadgateAllow_Elem{
 				FeedThreadgate_MentionRule: &bsky.FeedThreadgate_MentionRule{
 					LexiconTypeID: "app.bsky.feed.threadgate#mentionRule",
 				},
 			})
-		case "following":
+		case trimmed == "following":
 			tgAllow = append(tgAllow, &bsky.DraftDefs_Draft_ThreadgateAllow_Elem{
 				FeedThreadgate_FollowingRule: &bsky.FeedThreadgate_FollowingRule{
 					LexiconTypeID: "app.bsky.feed.threadgate#followingRule",
 				},
 			})
-		case "followers":
+		case trimmed == "followers":
 			tgAllow = append(tgAllow, &bsky.DraftDefs_Draft_ThreadgateAllow_Elem{
 				FeedThreadgate_FollowerRule: &bsky.FeedThreadgate_FollowerRule{
 					LexiconTypeID: "app.bsky.feed.threadgate#followerRule",
 				},
 			})
+		case strings.HasPrefix(trimmed, "list:"):
+			listURI := strings.TrimSpace(strings.TrimPrefix(trimmed, "list:"))
+			if listURI != "" {
+				tgAllow = append(tgAllow, &bsky.DraftDefs_Draft_ThreadgateAllow_Elem{
+					FeedThreadgate_ListRule: &bsky.FeedThreadgate_ListRule{
+						LexiconTypeID: "app.bsky.feed.threadgate#listRule",
+						List:          listURI,
+					},
+				})
+			}
 		}
 	}
 
@@ -1610,17 +1850,34 @@ func buildDraftRecord(text string, langs []string, selfLabels []string, threadga
 		})
 	}
 
+	draftPosts := make([]*bsky.DraftDefs_DraftPost, 0, len(posts))
+	for i, pText := range posts {
+		dp := &bsky.DraftDefs_DraftPost{
+			Text: pText,
+		}
+		if i == 0 {
+			dp.Labels = labelsUnion
+		}
+		draftPosts = append(draftPosts, dp)
+	}
+	if len(draftPosts) == 0 {
+		draftPosts = append(draftPosts, &bsky.DraftDefs_DraftPost{
+			Text:   "",
+			Labels: labelsUnion,
+		})
+	}
+
 	return &bsky.DraftDefs_Draft{
-		Langs: langs,
-		Posts: []*bsky.DraftDefs_DraftPost{
-			{
-				Text:   text,
-				Labels: labelsUnion,
-			},
-		},
+		Langs:                  langs,
+		Posts:                  draftPosts,
 		ThreadgateAllow:        tgAllow,
 		PostgateEmbeddingRules: pgRules,
 	}
+}
+
+func buildDraftRecord(text string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) *bsky.DraftDefs_Draft {
+	parts := strings.Split(text, draftThreadSplitMarker)
+	return buildDraftRecordFromPosts(parts, langs, selfLabels, threadgateAllow, disableQuotes)
 }
 
 func (s *PostBuilderService) GetDrafts(cursor string) (*DraftListDTO, error) {
@@ -1645,13 +1902,18 @@ func (s *PostBuilderService) GetDrafts(cursor string) (*DraftListDTO, error) {
 				UpdatedAt: dv.UpdatedAt,
 				Langs:     dv.Draft.Langs,
 			}
-			if len(dv.Draft.Posts) > 0 && dv.Draft.Posts[0] != nil {
-				p0 := dv.Draft.Posts[0]
-				d.Text = p0.Text
-				if p0.Labels != nil && p0.Labels.LabelDefs_SelfLabels != nil {
-					for _, lv := range p0.Labels.LabelDefs_SelfLabels.Values {
-						if lv != nil && lv.Val != "" {
-							d.SelfLabels = append(d.SelfLabels, lv.Val)
+			for i, p := range dv.Draft.Posts {
+				if p == nil {
+					continue
+				}
+				d.Posts = append(d.Posts, p.Text)
+				if i == 0 {
+					d.Text = p.Text
+					if p.Labels != nil && p.Labels.LabelDefs_SelfLabels != nil {
+						for _, lv := range p.Labels.LabelDefs_SelfLabels.Values {
+							if lv != nil && lv.Val != "" {
+								d.SelfLabels = append(d.SelfLabels, lv.Val)
+							}
 						}
 					}
 				}
@@ -1722,6 +1984,40 @@ func (s *PostBuilderService) DeleteDraft(id string) error {
 	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
 		return bsky.DraftDeleteDraft(ctx, c, &bsky.DraftDeleteDraft_Input{
 			Id: id,
+		})
+	})
+}
+
+func (s *PostBuilderService) CreateThreadDraft(posts []string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) (string, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var draftID string
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		draft := buildDraftRecordFromPosts(posts, langs, selfLabels, threadgateAllow, disableQuotes)
+		res, err := bsky.DraftCreateDraft(ctx, c, &bsky.DraftCreateDraft_Input{
+			Draft: draft,
+		})
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			draftID = res.Id
+		}
+		return nil
+	})
+	return draftID, err
+}
+
+func (s *PostBuilderService) UpdateThreadDraft(id string, posts []string, langs []string, selfLabels []string, threadgateAllow []string, disableQuotes bool) error {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	return s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		draft := buildDraftRecordFromPosts(posts, langs, selfLabels, threadgateAllow, disableQuotes)
+		return bsky.DraftUpdateDraft(ctx, c, &bsky.DraftUpdateDraft_Input{
+			Draft: &bsky.DraftDefs_DraftWithId{
+				Id:    id,
+				Draft: draft,
+			},
 		})
 	})
 }

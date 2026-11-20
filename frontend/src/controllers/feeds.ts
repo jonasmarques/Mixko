@@ -202,7 +202,7 @@ export async function loadFeedsTab() {
             const res = await window.go.services.FeedService.GetPopularFeedGenerators("", query);
             container.innerHTML = `
                 <div style="margin-bottom: 15px; display: flex; gap: 10px;">
-                    <input type="search" id="discover-feed-search-input" placeholder="${i18n.t('feeds.searchFeedsPlaceholder')}" value="${query}" style="flex:1; padding:6px;" />
+                    <input type="search" id="discover-feed-search-input" placeholder="${i18n.t('feeds.searchFeedsPlaceholder')}" value="${esc(query)}" style="flex:1; padding:6px;" />
                     <button type="button" id="btn-search-discover-feeds" style="padding:6px 12px;">${i18n.t('feeds.searchFeedsBtn')}</button>
                 </div>
                 <div id="discover-feeds-list"></div>

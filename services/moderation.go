@@ -5,6 +5,7 @@ import (
 
 	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/api/ozone"
 	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
 )
@@ -292,5 +293,98 @@ func (s *ModerationService) ReportChatMessage(convoId, messageId, offenderDid, r
 		var out map[string]interface{}
 		return cc.Do(ctx, xrpc.Procedure, "application/json", "com.atproto.moderation.createReport", nil, payload, &out)
 	})
+}
+
+func parseModerationInboxSubject(sv *ozone.InboxDefs_SubjectView) *ModerationInboxItemDTO {
+	if sv == nil {
+		return nil
+	}
+	item := &ModerationInboxItemDTO{
+		UpdatedAt: sv.UpdatedAt,
+	}
+	if sv.Subject != nil {
+		if sv.Subject.RepoStrongRef != nil {
+			item.SubjectURI = sv.Subject.RepoStrongRef.Uri
+			item.SubjectCID = sv.Subject.RepoStrongRef.Cid
+		} else if sv.Subject.AdminDefs_RepoRef != nil {
+			item.SubjectDID = sv.Subject.AdminDefs_RepoRef.Did
+		}
+	}
+	if sv.Enforcement != nil {
+		item.EnforcementState = sv.Enforcement.State
+		item.Labels = sv.Enforcement.Labels
+	}
+	if sv.Appeal != nil {
+		item.AppealState = sv.Appeal.State
+		item.AppealNote = safeString(sv.Appeal.Note)
+	}
+	return item
+}
+
+func (s *ModerationService) GetModerationInbox(cursor string) (*ModerationInboxListDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	out := &ModerationInboxListDTO{Items: []*ModerationInboxItemDTO{}}
+	_ = s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		params := map[string]interface{}{
+			"limit": 50,
+		}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		var raw struct {
+			Cursor   *string                       `json:"cursor,omitempty"`
+			Subjects []*ozone.InboxDefs_SubjectView `json:"subjects"`
+		}
+		if err := c.Do(ctx, xrpc.Query, "", "tools.ozone.inbox.listActionedSubjects", params, nil, &raw); err != nil {
+			return nil
+		}
+		out.Cursor = safeString(raw.Cursor)
+		for _, sv := range raw.Subjects {
+			if dto := parseModerationInboxSubject(sv); dto != nil {
+				out.Items = append(out.Items, dto)
+			}
+		}
+		return nil
+	})
+	return out, nil
+}
+
+func (s *ModerationService) AppealModerationSubject(subjectUri string, subjectCid string, subjectDid string, reason string) (*ModerationInboxItemDTO, error) {
+	ctx, cancel := s.clientMgr.NewContext()
+	defer cancel()
+	var out *ModerationInboxItemDTO
+	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		subj := &ozone.InboxAppealActionedSubject_Input_Subject{}
+		if subjectUri != "" && subjectCid != "" {
+			subj.RepoStrongRef = &atproto.RepoStrongRef{
+				LexiconTypeID: "com.atproto.repo.strongRef",
+				Uri:           subjectUri,
+				Cid:           subjectCid,
+			}
+		} else {
+			did := strings.TrimSpace(subjectDid)
+			if did == "" {
+				did = c.Auth.Did
+			}
+			subj.AdminDefs_RepoRef = &atproto.AdminDefs_RepoRef{
+				LexiconTypeID: "com.atproto.admin.defs#repoRef",
+				Did:           did,
+			}
+		}
+		input := &ozone.InboxAppealActionedSubject_Input{
+			Subject: subj,
+		}
+		if trimmed := strings.TrimSpace(reason); trimmed != "" {
+			input.Reason = &trimmed
+		}
+		res, err := ozone.InboxAppealActionedSubject(ctx, c, input)
+		if err != nil {
+			return err
+		}
+		out = parseModerationInboxSubject(res)
+		return nil
+	})
+	return out, err
 }
 

@@ -42,6 +42,8 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
   let muteBtnText = list.viewerMuted ? i18n.t('list.unmute') : i18n.t('list.mute');
   let blockBtnText = list.viewerBlock ? i18n.t('list.unblock') : i18n.t('list.block');
   let subscribeBtnText = list.viewerSubscribed ? i18n.t('list.unsubscribe') : i18n.t('list.subscribe');
+  const isRefList = list.purpose === 'app.bsky.graph.defs#referencelist' || Boolean(list.referenceListOptOutUri);
+  const optOutBtnText = list.referenceListOptOutUri ? i18n.t('sec2.undoOptOutListBtn') : i18n.t('sec2.optOutListBtn');
 
   div.innerHTML = `
     <div>
@@ -63,6 +65,7 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
         ${isMod ? `<button type="button" class="btn-subscribe-list" style="padding:6px 12px;">${subscribeBtnText}</button>` : ''}
         <button type="button" class="btn-mute-list" style="padding:6px 12px;">${muteBtnText}</button>
         <button type="button" class="btn-block-list" style="padding:6px 12px;">${blockBtnText}</button>
+        ${(!isOwner && isRefList) ? `<button type="button" class="btn-optout-ref-list" style="padding:6px 12px;">${esc(optOutBtnText)}</button>` : ''}
         ${isOwner ? `
           <button type="button" class="btn-edit-list" style="padding:6px 12px;">${i18n.t('list.edit')}</button>
           <button type="button" class="btn-delete-list" style="padding:6px 12px; background:#d32f2f; color:#fff;">${i18n.t('list.delete')}</button>
@@ -216,6 +219,26 @@ export function createListArticle(list: ListDTO, options?: ListArticleOptions): 
       }
     });
   }
+
+  div.querySelector('.btn-optout-ref-list')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget as HTMLButtonElement;
+    try {
+      if (list.referenceListOptOutUri) {
+        await window.go.services.SocialService.UndoOptOutReferenceList(list.referenceListOptOutUri);
+        list.referenceListOptOutUri = '';
+        btn.textContent = i18n.t('sec2.optOutListBtn');
+        announceAssertive(i18n.t('sec2.undidOptOutListMsg'));
+      } else {
+        const uri = await window.go.services.SocialService.OptOutReferenceList(list.uri);
+        list.referenceListOptOutUri = uri || 'opted-out';
+        btn.textContent = i18n.t('sec2.undoOptOutListBtn');
+        announceAssertive(i18n.t('sec2.optedOutListMsg'));
+      }
+    } catch (err: unknown) {
+      announceAssertive(i18n.t('post.error', { error: String(err) }));
+    }
+  });
 
   return div;
 }

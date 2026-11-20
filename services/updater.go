@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// AppVersion pode ser sobrescrito na compilação via: -ldflags "-X mixko/services.AppVersion=v2.2"
+// AppVersion pode ser sobrescrito na compilação via: -ldflags "-X mixko/services.AppVersion=v2.3"
 var AppVersion = "v1.0"
 
 type UpdaterService struct{}

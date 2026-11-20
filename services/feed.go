@@ -37,9 +37,18 @@ func (s *FeedService) GetTimeline(cursor string, limit int64) (*FeedDTO, error) 
 		}
 
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
+		preResolveFeedViewCaptionHosts(res.Feed)
 		for _, item := range res.Feed {
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
+				if dto != nil {
+					if item.OpThreadPostCount != nil {
+						dto.OpThreadPostCount = *item.OpThreadPostCount
+					}
+					if item.OpThreadPostIndex != nil {
+						dto.OpThreadPostIndex = *item.OpThreadPostIndex
+					}
+				}
 				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
 					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
 						dto.RepostedBy = *item.Reason.FeedDefs_ReasonRepost.By.DisplayName
@@ -102,6 +111,18 @@ func extractSelfLabelsFromRecord(recVal interface{}) []string {
 	if recVal == nil {
 		return nil
 	}
+	if fp, ok := recVal.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Labels == nil || fp.Labels.LabelDefs_SelfLabels == nil {
+			return nil
+		}
+		var out []string
+		for _, v := range fp.Labels.LabelDefs_SelfLabels.Values {
+			if v != nil && v.Val != "" {
+				out = append(out, v.Val)
+			}
+		}
+		return out
+	}
 	raw, err := json.Marshal(recVal)
 	if err != nil {
 		return nil
@@ -125,12 +146,69 @@ func extractSelfLabelsFromRecord(recVal interface{}) []string {
 	return out
 }
 
+func feedPostHasVideoCaptions(recVal interface{}) bool {
+	fp, ok := recVal.(*bsky.FeedPost)
+	if !ok || fp == nil || fp.Embed == nil {
+		return false
+	}
+	var vid *bsky.EmbedVideo
+	if fp.Embed.EmbedVideo != nil {
+		vid = fp.Embed.EmbedVideo
+	} else if fp.Embed.EmbedRecordWithMedia != nil && fp.Embed.EmbedRecordWithMedia.Media != nil {
+		vid = fp.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+	}
+	return vid != nil && len(vid.Captions) > 0
+}
+
+func collectCaptionAuthorDIDsFromPostView(post *bsky.FeedDefs_PostView, dids *[]string) {
+	if post == nil {
+		return
+	}
+	if post.Author != nil && post.Record != nil && feedPostHasVideoCaptions(post.Record.Val) {
+		*dids = append(*dids, post.Author.Did)
+	}
+	if post.Embed != nil {
+		var rv *bsky.EmbedRecord_ViewRecord
+		if post.Embed.EmbedRecord_View != nil && post.Embed.EmbedRecord_View.Record != nil {
+			rv = post.Embed.EmbedRecord_View.Record.EmbedRecord_ViewRecord
+		} else if post.Embed.EmbedRecordWithMedia_View != nil && post.Embed.EmbedRecordWithMedia_View.Record != nil && post.Embed.EmbedRecordWithMedia_View.Record.Record != nil {
+			rv = post.Embed.EmbedRecordWithMedia_View.Record.Record.EmbedRecord_ViewRecord
+		}
+		if rv != nil && rv.Author != nil && rv.Value != nil && feedPostHasVideoCaptions(rv.Value.Val) {
+			*dids = append(*dids, rv.Author.Did)
+		}
+	}
+}
+
+func preResolveFeedViewCaptionHosts(items []*bsky.FeedDefs_FeedViewPost) {
+	var dids []string
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		collectCaptionAuthorDIDsFromPostView(item.Post, &dids)
+		if item.Reply != nil {
+			if item.Reply.Parent != nil {
+				collectCaptionAuthorDIDsFromPostView(item.Reply.Parent.FeedDefs_PostView, &dids)
+			}
+			if item.Reply.Root != nil {
+				collectCaptionAuthorDIDsFromPostView(item.Reply.Root.FeedDefs_PostView, &dids)
+			}
+		}
+	}
+	ResolveAuthorPDSHostsBatch(dids)
+}
+
+func preResolvePostViewCaptionHosts(posts []*bsky.FeedDefs_PostView) {
+	var dids []string
+	for _, post := range posts {
+		collectCaptionAuthorDIDsFromPostView(post, &dids)
+	}
+	ResolveAuthorPDSHostsBatch(dids)
+}
+
 func extractVideoCaptionsFromRecord(recVal interface{}, authorDid string) []VideoCaptionDTO {
 	if recVal == nil || authorDid == "" {
-		return nil
-	}
-	raw, err := json.Marshal(recVal)
-	if err != nil {
 		return nil
 	}
 	type capItem struct {
@@ -139,55 +217,81 @@ func extractVideoCaptionsFromRecord(recVal interface{}, authorDid string) []Vide
 	}
 	var caps []capItem
 
-	var feedPost bsky.FeedPost
-	if json.Unmarshal(raw, &feedPost) == nil && feedPost.Embed != nil {
-		var vid *bsky.EmbedVideo
-		if feedPost.Embed.EmbedVideo != nil {
-			vid = feedPost.Embed.EmbedVideo
-		} else if feedPost.Embed.EmbedRecordWithMedia != nil && feedPost.Embed.EmbedRecordWithMedia.Media != nil && feedPost.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
-			vid = feedPost.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+	if fp, ok := recVal.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Embed == nil {
+			return nil
 		}
-		if vid != nil {
-			for _, c := range vid.Captions {
-				if c != nil && c.File != nil {
-					if cid := c.File.Ref.String(); cid != "" && cid != "undefined" {
-						caps = append(caps, capItem{lang: c.Lang, cid: cid})
+		var vid *bsky.EmbedVideo
+		if fp.Embed.EmbedVideo != nil {
+			vid = fp.Embed.EmbedVideo
+		} else if fp.Embed.EmbedRecordWithMedia != nil && fp.Embed.EmbedRecordWithMedia.Media != nil {
+			vid = fp.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+		}
+		if vid == nil || len(vid.Captions) == 0 {
+			return nil
+		}
+		for _, c := range vid.Captions {
+			if c != nil && c.File != nil {
+				if cid := c.File.Ref.String(); cid != "" && cid != "undefined" {
+					caps = append(caps, capItem{lang: c.Lang, cid: cid})
+				}
+			}
+		}
+	} else {
+		raw, err := json.Marshal(recVal)
+		if err != nil {
+			return nil
+		}
+		var feedPost bsky.FeedPost
+		if json.Unmarshal(raw, &feedPost) == nil && feedPost.Embed != nil {
+			var vid *bsky.EmbedVideo
+			if feedPost.Embed.EmbedVideo != nil {
+				vid = feedPost.Embed.EmbedVideo
+			} else if feedPost.Embed.EmbedRecordWithMedia != nil && feedPost.Embed.EmbedRecordWithMedia.Media != nil && feedPost.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
+				vid = feedPost.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+			}
+			if vid != nil {
+				for _, c := range vid.Captions {
+					if c != nil && c.File != nil {
+						if cid := c.File.Ref.String(); cid != "" && cid != "undefined" {
+							caps = append(caps, capItem{lang: c.Lang, cid: cid})
+						}
 					}
 				}
 			}
 		}
-	}
 
-	if len(caps) == 0 {
-		type capRaw struct {
-			Lang string `json:"lang"`
-			File struct {
-				Ref struct {
-					Link string `json:"$link"`
-				} `json:"ref"`
-				Cid string `json:"cid"`
-			} `json:"file"`
-		}
-		var parsed struct {
-			Embed struct {
-				Captions []capRaw `json:"captions"`
-				Media    struct {
-					Captions []capRaw `json:"captions"`
-				} `json:"media"`
-			} `json:"embed"`
-		}
-		if json.Unmarshal(raw, &parsed) == nil {
-			rawCaps := parsed.Embed.Captions
-			if len(rawCaps) == 0 {
-				rawCaps = parsed.Embed.Media.Captions
+		if len(caps) == 0 {
+			type capRaw struct {
+				Lang string `json:"lang"`
+				File struct {
+					Ref struct {
+						Link string `json:"$link"`
+					} `json:"ref"`
+					Cid string `json:"cid"`
+				} `json:"file"`
 			}
-			for _, c := range rawCaps {
-				cid := c.File.Ref.Link
-				if cid == "" {
-					cid = c.File.Cid
+			var parsed struct {
+				Embed struct {
+					Captions []capRaw `json:"captions"`
+					Media    struct {
+						Captions []capRaw `json:"captions"`
+					} `json:"media"`
+				} `json:"embed"`
+			}
+			if json.Unmarshal(raw, &parsed) == nil {
+				rawCaps := parsed.Embed.Captions
+				if len(rawCaps) == 0 {
+					rawCaps = parsed.Embed.Media.Captions
 				}
-				if cid != "" {
-					caps = append(caps, capItem{lang: c.Lang, cid: cid})
+				for _, c := range rawCaps {
+					cid := c.File.Ref.Link
+					if cid == "" {
+						cid = c.File.Cid
+					}
+					if cid != "" {
+						caps = append(caps, capItem{lang: c.Lang, cid: cid})
+					}
 				}
 			}
 		}
@@ -216,53 +320,71 @@ func ExtractVideoFromRecord(recVal interface{}, authorDid string) *VideoEmbedDTO
 	if recVal == nil || authorDid == "" {
 		return nil
 	}
-	raw, err := json.Marshal(recVal)
-	if err != nil {
-		return nil
-	}
 	var cid, alt, presentation string
-	var rec bsky.FeedPost
-	if json.Unmarshal(raw, &rec) == nil && rec.Embed != nil {
+	if fp, ok := recVal.(*bsky.FeedPost); ok {
+		if fp == nil || fp.Embed == nil {
+			return nil
+		}
 		var vid *bsky.EmbedVideo
-		if rec.Embed.EmbedVideo != nil {
-			vid = rec.Embed.EmbedVideo
-		} else if rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil && rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
-			vid = rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo
+		if fp.Embed.EmbedVideo != nil {
+			vid = fp.Embed.EmbedVideo
+		} else if fp.Embed.EmbedRecordWithMedia != nil && fp.Embed.EmbedRecordWithMedia.Media != nil {
+			vid = fp.Embed.EmbedRecordWithMedia.Media.EmbedVideo
 		}
-		if vid != nil && vid.Video != nil {
-			cid = vid.Video.Ref.String()
-			alt = safeString(vid.Alt)
-			presentation = safeString(vid.Presentation)
+		if vid == nil || vid.Video == nil {
+			return nil
 		}
-	}
-	if cid == "" || cid == "undefined" {
-		type vidRaw struct {
-			Alt          string `json:"alt"`
-			Presentation string `json:"presentation"`
-			Video        struct {
-				Ref struct {
-					Link string `json:"$link"`
-				} `json:"ref"`
-				Cid string `json:"cid"`
-			} `json:"video"`
+		cid = vid.Video.Ref.String()
+		alt = safeString(vid.Alt)
+		presentation = safeString(vid.Presentation)
+	} else {
+		raw, err := json.Marshal(recVal)
+		if err != nil {
+			return nil
 		}
-		var parsed struct {
-			Embed struct {
-				vidRaw
-				Media vidRaw `json:"media"`
-			} `json:"embed"`
-		}
-		if json.Unmarshal(raw, &parsed) == nil {
-			v := parsed.Embed.vidRaw
-			if v.Video.Ref.Link == "" && v.Video.Cid == "" {
-				v = parsed.Embed.Media
+		var rec bsky.FeedPost
+		if json.Unmarshal(raw, &rec) == nil && rec.Embed != nil {
+			var vid *bsky.EmbedVideo
+			if rec.Embed.EmbedVideo != nil {
+				vid = rec.Embed.EmbedVideo
+			} else if rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil && rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo != nil {
+				vid = rec.Embed.EmbedRecordWithMedia.Media.EmbedVideo
 			}
-			cid = v.Video.Ref.Link
-			if cid == "" {
-				cid = v.Video.Cid
+			if vid != nil && vid.Video != nil {
+				cid = vid.Video.Ref.String()
+				alt = safeString(vid.Alt)
+				presentation = safeString(vid.Presentation)
 			}
-			alt = v.Alt
-			presentation = v.Presentation
+		}
+		if cid == "" || cid == "undefined" {
+			type vidRaw struct {
+				Alt          string `json:"alt"`
+				Presentation string `json:"presentation"`
+				Video        struct {
+					Ref struct {
+						Link string `json:"$link"`
+					} `json:"ref"`
+					Cid string `json:"cid"`
+				} `json:"video"`
+			}
+			var parsed struct {
+				Embed struct {
+					vidRaw
+					Media vidRaw `json:"media"`
+				} `json:"embed"`
+			}
+			if json.Unmarshal(raw, &parsed) == nil {
+				v := parsed.Embed.vidRaw
+				if v.Video.Ref.Link == "" && v.Video.Cid == "" {
+					v = parsed.Embed.Media
+				}
+				cid = v.Video.Ref.Link
+				if cid == "" {
+					cid = v.Video.Cid
+				}
+				alt = v.Alt
+				presentation = v.Presentation
+			}
 		}
 	}
 	if cid == "" || cid == "undefined" {
@@ -296,7 +418,7 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 		authorVerified = true
 	}
 
-	replyCount, repostCount, likeCount := int64(0), int64(0), int64(0)
+	replyCount, repostCount, likeCount, quoteCount, bookmarkCount := int64(0), int64(0), int64(0), int64(0), int64(0)
 	if post.ReplyCount != nil {
 		replyCount = *post.ReplyCount
 	}
@@ -306,6 +428,12 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 	if post.LikeCount != nil {
 		likeCount = *post.LikeCount
 	}
+	if post.QuoteCount != nil {
+		quoteCount = *post.QuoteCount
+	}
+	if post.BookmarkCount != nil {
+		bookmarkCount = *post.BookmarkCount
+	}
 
 	var recVal interface{}
 	if recOverride != nil {
@@ -314,10 +442,15 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 		recVal = post.Record.Val
 	}
 
+	authorIsBot := false
 	var postLabels []string
 	addLabel := func(val string) {
 		val = strings.TrimSpace(val)
 		if val == "" || strings.HasPrefix(val, "!") {
+			return
+		}
+		if strings.EqualFold(val, "bot") {
+			authorIsBot = true
 			return
 		}
 		if !containsString(postLabels, val) {
@@ -325,14 +458,18 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 		}
 	}
 	for _, l := range post.Labels {
-		if l != nil {
+		if l != nil && (l.Neg == nil || !*l.Neg) {
 			addLabel(l.Val)
 		}
 	}
 	if post.Author != nil {
 		for _, l := range post.Author.Labels {
-			if l != nil {
-				addLabel(l.Val)
+			if l != nil && (l.Neg == nil || !*l.Neg) {
+				if strings.EqualFold(strings.TrimSpace(l.Val), "bot") {
+					authorIsBot = true
+				} else {
+					addLabel(l.Val)
+				}
 			}
 		}
 	}
@@ -431,8 +568,16 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 				quoteRecVal = rv.Value.Val
 			}
 			qVerified := false
-			if rv.Author != nil && rv.Author.Verification != nil && rv.Author.Verification.VerifiedStatus == "valid" {
-				qVerified = true
+			qIsBot := false
+			if rv.Author != nil {
+				if rv.Author.Verification != nil && rv.Author.Verification.VerifiedStatus == "valid" {
+					qVerified = true
+				}
+				for _, l := range rv.Author.Labels {
+					if l != nil && (l.Neg == nil || !*l.Neg) && strings.EqualFold(strings.TrimSpace(l.Val), "bot") {
+						qIsBot = true
+					}
+				}
 			}
 			quotePost = &PostDTO{
 				URI:            rv.Uri,
@@ -441,8 +586,12 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 				AuthorDID:      rv.Author.Did,
 				AuthorPronouns: strings.TrimSpace(safeString(rv.Author.Pronouns)),
 				AuthorVerified: qVerified,
+				AuthorIsBot:    qIsBot,
 				Text:           ParseFeedPost(quoteRecVal),
 				CreatedAt:      rv.IndexedAt,
+			}
+			if rv.QuoteCount != nil {
+				quotePost.QuoteCount = *rv.QuoteCount
 			}
 			if rv.Author.DisplayName != nil {
 				quotePost.AuthorName = *rv.Author.DisplayName
@@ -477,6 +626,26 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 					}
 					quotePost.HasMedia = true
 				}
+				if emb.EmbedGallery_View != nil {
+					for _, gItem := range emb.EmbedGallery_View.Items {
+						if gItem == nil || gItem.EmbedGallery_ViewImage == nil {
+							continue
+						}
+						gv := gItem.EmbedGallery_ViewImage
+						quotePost.ImageAlts = append(quotePost.ImageAlts, gv.Alt)
+						dto := &ImageDTO{
+							Thumb:    gv.Thumbnail,
+							Fullsize: gv.Fullsize,
+							Alt:      gv.Alt,
+						}
+						if gv.AspectRatio != nil {
+							dto.Width = gv.AspectRatio.Width
+							dto.Height = gv.AspectRatio.Height
+						}
+						quotePost.Images = append(quotePost.Images, dto)
+					}
+					quotePost.HasMedia = true
+				}
 				if emb.EmbedRecordWithMedia_View != nil && emb.EmbedRecordWithMedia_View.Media != nil {
 					media := emb.EmbedRecordWithMedia_View.Media
 					if media.EmbedImages_View != nil {
@@ -498,6 +667,26 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 							if img.AspectRatio != nil {
 								dto.Width = img.AspectRatio.Width
 								dto.Height = img.AspectRatio.Height
+							}
+							quotePost.Images = append(quotePost.Images, dto)
+						}
+						quotePost.HasMedia = true
+					}
+					if media.EmbedGallery_View != nil {
+						for _, gItem := range media.EmbedGallery_View.Items {
+							if gItem == nil || gItem.EmbedGallery_ViewImage == nil {
+								continue
+							}
+							gv := gItem.EmbedGallery_ViewImage
+							quotePost.ImageAlts = append(quotePost.ImageAlts, gv.Alt)
+							dto := &ImageDTO{
+								Thumb:    gv.Thumbnail,
+								Fullsize: gv.Fullsize,
+								Alt:      gv.Alt,
+							}
+							if gv.AspectRatio != nil {
+								dto.Width = gv.AspectRatio.Width
+								dto.Height = gv.AspectRatio.Height
 							}
 							quotePost.Images = append(quotePost.Images, dto)
 						}
@@ -525,6 +714,10 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 							Description: ext.Description,
 							Thumb:       safeString(ext.Thumb),
 						}
+						if ext.Source != nil {
+							quotePost.External.SourceTitle = ext.Source.Title
+							quotePost.External.SourceURI = ext.Source.Uri
+						}
 						quotePost.HasMedia = true
 					}
 				}
@@ -549,6 +742,10 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 						Title:       ext.Title,
 						Description: ext.Description,
 						Thumb:       safeString(ext.Thumb),
+					}
+					if ext.Source != nil {
+						quotePost.External.SourceTitle = ext.Source.Title
+						quotePost.External.SourceURI = ext.Source.Uri
 					}
 					quotePost.HasMedia = true
 				}
@@ -586,6 +783,10 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 				Description: ext.Description,
 				Thumb:       safeString(ext.Thumb),
 			}
+			if ext.Source != nil {
+				external.SourceTitle = ext.Source.Title
+				external.SourceURI = ext.Source.Uri
+			}
 		} else if post.Embed.EmbedRecordWithMedia_View != nil && post.Embed.EmbedRecordWithMedia_View.Media != nil && post.Embed.EmbedRecordWithMedia_View.Media.EmbedExternal_View != nil && post.Embed.EmbedRecordWithMedia_View.Media.EmbedExternal_View.External != nil {
 			ext := post.Embed.EmbedRecordWithMedia_View.Media.EmbedExternal_View.External
 			external = &ExternalEmbedDTO{
@@ -593,6 +794,10 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 				Title:       ext.Title,
 				Description: ext.Description,
 				Thumb:       safeString(ext.Thumb),
+			}
+			if ext.Source != nil {
+				external.SourceTitle = ext.Source.Title
+				external.SourceURI = ext.Source.Uri
 			}
 		}
 	}
@@ -644,9 +849,28 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 		viewerThreadMuted = *post.Viewer.ThreadMuted
 	}
 
+	viewerBookmark := ""
+	var knownLikers []string
 	embeddingDisabled := false
 	replyDisabled := false
 	if post.Viewer != nil {
+		if post.Viewer.Bookmarked != nil && *post.Viewer.Bookmarked {
+			viewerBookmark = "bookmarked"
+		}
+		if post.Viewer.KnownLikers != nil {
+			for _, lk := range post.Viewer.KnownLikers.Actors {
+				if lk == nil {
+					continue
+				}
+				name := strings.TrimSpace(safeString(lk.DisplayName))
+				if name == "" {
+					name = "@" + lk.Handle
+				}
+				if name != "" && !containsString(knownLikers, name) {
+					knownLikers = append(knownLikers, name)
+				}
+			}
+		}
 		if post.Viewer.EmbeddingDisabled != nil {
 			embeddingDisabled = *post.Viewer.EmbeddingDisabled
 		}
@@ -692,11 +916,15 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 		AuthorDID:         post.Author.Did,
 		AuthorPronouns:    strings.TrimSpace(safeString(post.Author.Pronouns)),
 		AuthorVerified:    authorVerified,
+		AuthorIsBot:       authorIsBot,
 		Text:              ParseFeedPost(recVal),
 		CreatedAt:         post.IndexedAt,
 		ReplyCount:        replyCount,
 		RepostCount:       repostCount,
 		LikeCount:         likeCount,
+		QuoteCount:        quoteCount,
+		BookmarkCount:     bookmarkCount,
+		KnownLikers:       knownLikers,
 		IsReply:           isReply,
 		ReplyToAuthor:     replyToAuthor,
 		ReplyToAuthorName: replyToAuthorName,
@@ -714,6 +942,7 @@ func parsePostViewWithRecord(post *bsky.FeedDefs_PostView, recOverride interface
 		HasMedia:          (len(images) > 0) || (external != nil) || (video != nil) || (post.Embed != nil && (post.Embed.EmbedImages_View != nil || post.Embed.EmbedGallery_View != nil || post.Embed.EmbedRecordWithMedia_View != nil)),
 		ViewerLike:        viewerLike,
 		ViewerRepost:      viewerRepost,
+		ViewerBookmark:    viewerBookmark,
 		ViewerThreadMuted: viewerThreadMuted,
 		EmbeddingDisabled: embeddingDisabled,
 		ReplyDisabled:     replyDisabled,
@@ -736,9 +965,18 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 		}
 
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
+		preResolveFeedViewCaptionHosts(res.Feed)
 		for _, item := range res.Feed {
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
+				if dto != nil {
+					if item.OpThreadPostCount != nil {
+						dto.OpThreadPostCount = *item.OpThreadPostCount
+					}
+					if item.OpThreadPostIndex != nil {
+						dto.OpThreadPostIndex = *item.OpThreadPostIndex
+					}
+				}
 				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
 					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
 						dto.RepostedBy = *item.Reason.FeedDefs_ReasonRepost.By.DisplayName
@@ -777,22 +1015,6 @@ func (s *FeedService) GetAuthorFeed(actor string, cursor string, limit int64, fi
 				out.Posts = append(out.Posts, dto)
 			}
 		}
-		return nil
-	})
-	return out, err
-}
-
-// GetThread retrieves a specific post and its replies
-func (s *FeedService) GetThread(uri string, depth int64) (*bsky.FeedGetPostThread_Output, error) {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-	var out *bsky.FeedGetPostThread_Output
-	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.FeedGetPostThread(ctx, c, depth, 10, uri)
-		if err != nil {
-			return err
-		}
-		out = res
 		return nil
 	})
 	return out, err
@@ -966,6 +1188,44 @@ func (s *FeedService) GetPostThread(uri string, depth int64) (*FeedDTO, error) {
 	defer cancel()
 	var out *FeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
+		if resV2, errV2 := bsky.UnspeccedGetPostThreadV2(ctx, c, true, uri, depth, 10, "newest"); errV2 == nil && resV2 != nil && len(resV2.Thread) > 0 {
+			var v2Posts []*PostDTO
+			var rootAuthor, rootAuthorName, rootURI string
+			for _, item := range resV2.Thread {
+				if item == nil || item.Value == nil || item.Value.UnspeccedDefs_ThreadItemPost == nil || item.Value.UnspeccedDefs_ThreadItemPost.Post == nil {
+					continue
+				}
+				tp := item.Value.UnspeccedDefs_ThreadItemPost
+				dto := ParsePostView(tp.Post)
+				if dto == nil {
+					continue
+				}
+				if tp.OpThreadPostCount != nil {
+					dto.OpThreadPostCount = *tp.OpThreadPostCount
+				}
+				if tp.OpThreadPostIndex != nil {
+					dto.OpThreadPostIndex = *tp.OpThreadPostIndex
+				}
+				if len(v2Posts) == 0 {
+					rootAuthor = dto.AuthorHandle
+					rootAuthorName = dto.AuthorName
+					rootURI = dto.URI
+				} else if item.Depth > 0 && dto.RootURI == "" && rootURI != "" {
+					dto.RootAuthor = rootAuthor
+					dto.RootAuthorName = rootAuthorName
+					dto.RootURI = rootURI
+				}
+				v2Posts = append(v2Posts, dto)
+			}
+			if len(v2Posts) > 0 {
+				out = &FeedDTO{
+					Posts:           v2Posts,
+					HasOtherReplies: resV2.HasOtherReplies,
+				}
+				return nil
+			}
+		}
+
 		res, err := bsky.FeedGetPostThread(ctx, c, depth, 10, uri)
 		if err != nil || res == nil || res.Thread == nil || res.Thread.FeedDefs_ThreadViewPost == nil {
 			if targetDTO := s.fetchPostDTOFromPDS(ctx, c, uri, true); targetDTO != nil {
@@ -1066,9 +1326,18 @@ func (s *FeedService) GetListFeed(listUri string, cursor string, limit int64) (*
 		}
 
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
+		preResolveFeedViewCaptionHosts(res.Feed)
 		for _, item := range res.Feed {
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
+				if dto != nil {
+					if item.OpThreadPostCount != nil {
+						dto.OpThreadPostCount = *item.OpThreadPostCount
+					}
+					if item.OpThreadPostIndex != nil {
+						dto.OpThreadPostIndex = *item.OpThreadPostIndex
+					}
+				}
 				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
 					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
 						dto.RepostedBy = *item.Reason.FeedDefs_ReasonRepost.By.DisplayName
@@ -1117,7 +1386,7 @@ func (s *FeedService) GetSavedFeeds() ([]*SavedFeedDTO, error) {
 	defer cancel()
 	var out []*SavedFeedDTO
 	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.ActorGetPreferences(ctx, c)
+		res, err := s.clientMgr.GetCachedPreferences(ctx, c)
 		if err != nil {
 			return err
 		}
@@ -1204,11 +1473,18 @@ func (s *FeedService) GetCustomFeed(feedUri string, cursor string, limit int64) 
 		}
 
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
+		preResolveFeedViewCaptionHosts(res.Feed)
 		for _, item := range res.Feed {
 			if item.Post != nil {
 				dto := ParsePostView(item.Post)
 				if dto != nil {
 					dto.FeedContext = safeString(item.FeedContext)
+					if item.OpThreadPostCount != nil {
+						dto.OpThreadPostCount = *item.OpThreadPostCount
+					}
+					if item.OpThreadPostIndex != nil {
+						dto.OpThreadPostIndex = *item.OpThreadPostIndex
+					}
 				}
 				if item.Reason != nil && item.Reason.FeedDefs_ReasonRepost != nil {
 					if item.Reason.FeedDefs_ReasonRepost.By.DisplayName != nil && *item.Reason.FeedDefs_ReasonRepost.By.DisplayName != "" {
@@ -1472,6 +1748,7 @@ func (s *FeedService) GetActorLikes(actor string, cursor string, limit int64) (*
 			return err
 		}
 		out = &FeedDTO{Cursor: safeString(res.Cursor)}
+		preResolveFeedViewCaptionHosts(res.Feed)
 		for _, item := range res.Feed {
 			if item.Post != nil {
 				if dto := ParsePostView(item.Post); dto != nil {
@@ -1789,46 +2066,6 @@ func (s *FeedService) SendFeedInteraction(feedUri, itemUri, event, feedContext s
 		})
 		return err
 	})
-}
-
-func (s *FeedService) GetPostThreadV2(uri string) (*FeedDTO, error) {
-	ctx, cancel := s.clientMgr.NewContext()
-	defer cancel()
-	out := &FeedDTO{Posts: []*PostDTO{}}
-	err := s.clientMgr.WithClient(ctx, func(c *xrpc.Client) error {
-		res, err := bsky.UnspeccedGetPostThreadV2(ctx, c, true, uri, 6, 10, "newest")
-		if err != nil {
-			return err
-		}
-		if res == nil {
-			return nil
-		}
-		for _, item := range res.Thread {
-			if item == nil || item.Value == nil || item.Value.UnspeccedDefs_ThreadItemPost == nil {
-				continue
-			}
-			pv := item.Value.UnspeccedDefs_ThreadItemPost.Post
-			if dto := ParsePostView(pv); dto != nil {
-				out.Posts = append(out.Posts, dto)
-			}
-		}
-		if len(out.Posts) > 0 && out.Posts[0].IsReply && out.Posts[0].ReplyToURI != "" {
-			parents := s.fetchParentChainFromPDS(ctx, c, out.Posts[0].ReplyToURI, 6)
-			if len(parents) > 0 {
-				out.Posts = append(parents, out.Posts...)
-			}
-		}
-		if res.HasOtherReplies {
-			out.Cursor = "has_other_replies"
-		}
-		return nil
-	})
-	if err != nil || len(out.Posts) == 0 {
-		if fallback, fbErr := s.GetPostThread(uri, 6); fbErr == nil && fallback != nil && len(fallback.Posts) > 0 {
-			return fallback, nil
-		}
-	}
-	return out, err
 }
 
 func (s *FeedService) GetPostThreadOtherV2(uri string) (*FeedDTO, error) {

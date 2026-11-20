@@ -3,6 +3,7 @@ package services
 import (
 	"testing"
 
+	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
 )
 
@@ -158,5 +159,36 @@ func TestParseProfileViewsCarryPronouns(t *testing.T) {
 	})
 	if pvb == nil || pvb.Pronouns != "ela/dela" {
 		t.Fatalf("ParseProfileViewBasic Pronouns = %v, want %q", pvb, "ela/dela")
+	}
+}
+
+func TestParseVerificationStateAndIdentityLabels(t *testing.T) {
+	issuerName := "Bluesky"
+	issuerHandle := "bsky.app"
+	verified, trusted, verifiedBy := parseVerificationState(&bsky.ActorDefs_VerificationState{
+		VerifiedStatus:        "valid",
+		TrustedVerifierStatus: "none",
+		Verifications: []*bsky.ActorDefs_VerificationView{
+			{
+				IsValid:           true,
+				Issuer:            "did:plc:bsky",
+				IssuerDisplayName: &issuerName,
+				IssuerHandle:      &issuerHandle,
+			},
+		},
+	})
+	if !verified || trusted {
+		t.Errorf("verified=%v trusted=%v, want true/false", verified, trusted)
+	}
+	if len(verifiedBy) != 1 || verifiedBy[0] != "Bluesky (@bsky.app)" {
+		t.Errorf("verifiedBy = %v, want [Bluesky (@bsky.app)]", verifiedBy)
+	}
+
+	isBot, hideLoggedOut := parseProfileIdentityLabels([]*atproto.LabelDefs_Label{
+		{Val: "bot"},
+		{Val: "!no-unauthenticated"},
+	})
+	if !isBot || !hideLoggedOut {
+		t.Errorf("isBot=%v hideLoggedOut=%v, want true/true", isBot, hideLoggedOut)
 	}
 }

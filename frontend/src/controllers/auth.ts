@@ -6,7 +6,7 @@ import { loadTimeline } from './timeline';
 import { loadNotifications } from './notifications';
 import { loadChat, openChatConvo } from './chat';
 import { checkAppUpdates } from './updater';
-import { loadSettings } from './settings';
+import { hydrateStartupPreferences } from './settings';
 import { i18n } from '../utils/i18n';
 import { promptDialog } from '../utils/dialog';
 
@@ -86,7 +86,6 @@ export function setupAuth() {
                 state.loggedInHandle = idInput.value;
                 state.currentHandle = state.loggedInHandle;
                 localStorage.setItem('lastHandle', state.loggedInHandle);
-                await captureIdentity();
                 announceAssertive(i18n.t('auth.loginSuccess'));
                 DOM.loginSection.classList.add('hidden');
                 DOM.appSections.classList.remove('hidden');
@@ -94,8 +93,13 @@ export function setupAuth() {
                 const newPostBtn = document.getElementById('btn-new-post-visual');
                 if (newPostBtn) newPostBtn.classList.remove('hidden');
                 state.isAppReady = true;
-                try { await loadSettings(); } catch(e) {}
-                try { state.savedFeeds = await window.go.services.FeedService.GetSavedFeeds() || []; } catch(e) {}
+                await Promise.allSettled([
+                    captureIdentity(),
+                    hydrateStartupPreferences(),
+                    window.go.services.FeedService.GetSavedFeeds().then(feeds => {
+                        state.savedFeeds = feeds || [];
+                    }),
+                ]);
                 switchTab('timeline');
             } catch (err: unknown) { 
                 const msg = i18n.t('auth.loginError', { err: String(err) });
@@ -188,7 +192,6 @@ export async function initApp() {
         if (handle) {
             state.loggedInHandle = handle;
             state.currentHandle = state.loggedInHandle;
-            await captureIdentity();
             announceAssertive(i18n.t('auth.sessionRestored'));
             DOM.loginSection.classList.add('hidden');
             DOM.appSections.classList.remove('hidden');
@@ -196,8 +199,13 @@ export async function initApp() {
             const newPostBtn = document.getElementById('btn-new-post-visual');
             if (newPostBtn) newPostBtn.classList.remove('hidden');
             state.isAppReady = true;
-            try { await loadSettings(); } catch(e) {}
-            try { state.savedFeeds = await window.go.services.FeedService.GetSavedFeeds() || []; } catch(e) {}
+            await Promise.allSettled([
+                captureIdentity(),
+                hydrateStartupPreferences(),
+                window.go.services.FeedService.GetSavedFeeds().then(feeds => {
+                    state.savedFeeds = feeds || [];
+                }),
+            ]);
             switchTab('timeline');
         } else {
             announcePolite(i18n.t('auth.readyToLogin'));

@@ -5,9 +5,13 @@ import type {
   AppPasswordDTO,
   ChatAvailabilityDTO,
   ChatConvoDTO,
+  ChatDeclarationDTO,
   ChatGroupJoinLinkDTO,
+  ChatGroupPreviewDTO,
   ChatJoinRequestListDTO,
   ChatMessagesDTO,
+  ChatNotificationPrefsDTO,
+  ChatStatusDTO,
   ContentFilterDTO,
   DraftListDTO,
   ExternalEmbedDTO,
@@ -18,6 +22,8 @@ import type {
   ListDTO,
   ListMembershipResponseDTO,
   ListResponseDTO,
+  ModerationInboxItemDTO,
+  ModerationInboxListDTO,
   MuteScopeDTO,
   NotificationListDTO,
   NotificationPreferencesDTO,
@@ -53,7 +59,6 @@ declare global {
     go: {
       services: {
         AuthService: {
-          Login(identifier: string, password: string, remember: boolean): Promise<void>;
           LoginWithFactor(identifier: string, password: string, authFactorToken: string, remember: boolean): Promise<void>;
           RestoreSession(): Promise<string>;
           Logout(): Promise<void>;
@@ -76,7 +81,6 @@ declare global {
           GetSavedFeeds(): Promise<SavedFeedDTO[]>;
           GetCustomFeed(feedUri: string, cursor: string, limit: number): Promise<FeedDTO>;
           GetPostThread(uri: string, depth: number): Promise<FeedDTO>;
-          GetPostThreadV2(uri: string): Promise<FeedDTO>;
           GetPostThreadOtherV2(uri: string): Promise<FeedDTO>;
           GetListFeed(listUri: string, cursor: string, limit: number): Promise<FeedDTO>;
           GetPopularFeedGenerators(cursor: string, query: string): Promise<FeedGeneratorResponseDTO>;
@@ -95,11 +99,11 @@ declare global {
           GetBookmarks(cursor: string, limit: number): Promise<FeedDTO>;
         };
         PostBuilderService: {
-          CreatePost(text: string, replyUri: string, replyCid: string, rootUri: string, rootCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, linkUrl: string, language: string, threadgate: string, gifUrl: string, videoWidth: number, videoHeight: number, listUris: string[]): Promise<PostRefDTO>;
+          CreatePost(text: string, replyUri: string, replyCid: string, rootUri: string, rootCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, linkUrl: string, language: string, threadgate: string, gifUrl: string, videoWidth: number, videoHeight: number, listUris: string[], selfLabels: string[], captionPath: string, captionLang: string): Promise<PostRefDTO>;
           LikePost(uri: string, cid: string): Promise<string>;
           UnlikePost(likeUri: string): Promise<void>;
           Repost(uri: string, cid: string): Promise<string>;
-          QuotePost(text: string, quoteUri: string, quoteCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, language: string, threadgate: string, gifUrl: string, videoWidth: number, videoHeight: number, listUris: string[]): Promise<PostRefDTO>;
+          QuotePost(text: string, quoteUri: string, quoteCid: string, images: string[], alts: string[], videoPath: string, videoAlt: string, language: string, threadgate: string, gifUrl: string, videoWidth: number, videoHeight: number, listUris: string[], selfLabels: string[], captionPath: string, captionLang: string): Promise<PostRefDTO>;
           DeletePost(uri: string): Promise<void>;
           DeleteRepost(repostUri: string): Promise<void>;
           HideReply(postUri: string, replyUri: string): Promise<void>;
@@ -108,11 +112,13 @@ declare global {
           TogglePostQuotes(postUri: string, disableQuotes: boolean): Promise<void>;
           DetachQuote(quotedPostUri: string, quotingPostUri: string): Promise<void>;
           ReattachQuote(quotedPostUri: string, quotingPostUri: string): Promise<void>;
-          ApplyPostExtras(postUri: string, selfLabels: string[], disableQuotes: boolean, captionPath: string, captionLang: string): Promise<void>;
+          AppendVideoChunk(ext: string, first: boolean, chunkBase64: string): Promise<string>;
           GetVideoUploadLimits(): Promise<VideoUploadLimitsDTO>;
           GetDrafts(cursor: string): Promise<DraftListDTO>;
           CreateDraft(text: string, langs: string[], selfLabels: string[], threadgateAllow: string[], disableQuotes: boolean): Promise<string>;
           UpdateDraft(id: string, text: string, langs: string[], selfLabels: string[], threadgateAllow: string[], disableQuotes: boolean): Promise<void>;
+          CreateThreadDraft(posts: string[], langs: string[], selfLabels: string[], threadgateAllow: string[], disableQuotes: boolean): Promise<string>;
+          UpdateThreadDraft(id: string, posts: string[], langs: string[], selfLabels: string[], threadgateAllow: string[], disableQuotes: boolean): Promise<void>;
           DeleteDraft(id: string): Promise<void>;
           FetchLinkCard(url: string): Promise<ExternalEmbedDTO>;
           BookmarkPost(uri: string, cid: string): Promise<string>;
@@ -121,11 +127,14 @@ declare global {
         NotificationsService: {
           GetNotifications(cursor: string): Promise<NotificationListDTO>;
           GetNotificationsFiltered(cursor: string, reasons: string[], priority: boolean): Promise<NotificationListDTO>;
+          GetGroupedNotifications(cursor: string, feed: string): Promise<NotificationListDTO>;
           UpdateSeen(seenAt: string): Promise<void>;
           PutActivitySubscription(subject: string, post: boolean, reply: boolean): Promise<ActivitySubscriptionDTO>;
           ListActivitySubscriptions(cursor: string): Promise<ProfileListDTO>;
           GetNotificationPreferences(): Promise<NotificationPreferencesDTO>;
           PutNotificationPreferences(prefs: NotificationPreferencesDTO): Promise<NotificationPreferencesDTO>;
+          GetNotificationDeclaration(): Promise<string>;
+          UpdateNotificationDeclaration(allowSubscriptions: string): Promise<void>;
         };
         SocialService: {
           GetProfile(actor: string): Promise<ProfileDTO>;
@@ -200,9 +209,15 @@ declare global {
           ImportContacts(token: string, contacts: string[]): Promise<number>;
           GetContactMatches(cursor: string): Promise<ProfileListDTO>;
           RemoveContactData(): Promise<void>;
+          GetContentVisibilityDeclaration(): Promise<boolean>;
+          UpdateContentVisibilityDeclaration(hideFromRecommendations: boolean): Promise<void>;
+          OptOutReferenceList(listUri: string): Promise<string>;
+          UndoOptOutReferenceList(optOutUri: string): Promise<void>;
         };
         ChatService: {
           ListConvos(cursor: string): Promise<ChatConvoDTO[]>;
+          ListConvoRequests(cursor: string): Promise<ChatConvoDTO[]>;
+          AcceptConvo(convoId: string): Promise<void>;
           GetMessages(convoId: string, cursor: string): Promise<ChatMessagesDTO>;
           SendMessage(convoId: string, text: string): Promise<void>;
           SendMessageWithGif(convoId: string, text: string, gifUrl: string): Promise<void>;
@@ -220,6 +235,13 @@ declare global {
           LeaveConvo(convoId: string): Promise<void>;
           GetChatDeclaration(): Promise<string>;
           UpdateChatDeclaration(allowIncoming: string): Promise<void>;
+          GetChatDeclarationFull(): Promise<ChatDeclarationDTO>;
+          UpdateChatDeclarationFull(allowIncoming: string, allowGroupInvites: string): Promise<void>;
+          GetUnreadCounts(): Promise<number>;
+          GetChatStatus(): Promise<ChatStatusDTO>;
+          ExportChatAccountData(): Promise<string>;
+          GetChatNotificationPreferences(): Promise<ChatNotificationPrefsDTO>;
+          PutChatNotificationPreferences(input: ChatNotificationPrefsDTO): Promise<void>;
           CreateGroup(name: string, memberActors: string[]): Promise<ChatConvoDTO>;
           EditGroup(convoId: string, name: string): Promise<ChatConvoDTO>;
           AddGroupMembers(convoId: string, memberActors: string[]): Promise<ChatConvoDTO>;
@@ -227,11 +249,16 @@ declare global {
           LockConvo(convoId: string): Promise<ChatConvoDTO>;
           UnlockConvo(convoId: string): Promise<ChatConvoDTO>;
           CreateGroupJoinLink(convoId: string, requireApproval: boolean): Promise<ChatGroupJoinLinkDTO>;
+          EditGroupJoinLink(convoId: string, requireApproval: boolean): Promise<ChatGroupJoinLinkDTO>;
           EnableGroupJoinLink(convoId: string): Promise<ChatGroupJoinLinkDTO>;
           DisableGroupJoinLink(convoId: string): Promise<ChatGroupJoinLinkDTO>;
+          PreviewGroupJoinLink(codeOrUrl: string): Promise<ChatGroupPreviewDTO>;
+          RequestJoinGroup(codeOrUrl: string): Promise<ChatConvoDTO>;
+          WithdrawGroupJoinRequest(convoId: string): Promise<void>;
           ListGroupJoinRequests(convoId: string, cursor: string): Promise<ChatJoinRequestListDTO>;
           ApproveGroupJoinRequest(convoId: string, memberDid: string): Promise<void>;
           RejectGroupJoinRequest(convoId: string, memberDid: string): Promise<void>;
+          ListMutualGroups(actor: string, cursor: string): Promise<ChatConvoDTO[]>;
         };
         ModerationService: {
           MuteActor(actor: string): Promise<void>;
@@ -247,6 +274,8 @@ declare global {
           ReportPost(uri: string, cid: string, reasonType: string, reason: string): Promise<void>;
           ReportAccount(did: string, reasonType: string, reason: string): Promise<void>;
           ReportChatMessage(convoId: string, messageId: string, offenderDid: string, reasonType: string, reason: string): Promise<void>;
+          GetModerationInbox(cursor: string): Promise<ModerationInboxListDTO>;
+          AppealModerationSubject(subjectUri: string, subjectCid: string, subjectDid: string, reason: string): Promise<ModerationInboxItemDTO>;
         };
         SearchService: {
           SearchPosts(filter: PostSearchFilter): Promise<FeedDTO>;
@@ -279,5 +308,15 @@ export interface PostSearchFilter {
   Tag?: string[];
   URL?: string;
   Cursor: string;
+  AllTime?: boolean;
+  Following?: boolean;
+  HasMedia?: boolean;
+  HasVideo?: boolean;
+  ExcludeReplies?: boolean;
+  RepliesOnly?: boolean;
+  ExcludeAuthors?: string[];
+  ExcludeHashtags?: string[];
+  ExcludeDomains?: string[];
+  ThreadRootURI?: string;
 }
 

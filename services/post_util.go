@@ -16,6 +16,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bluesky-social/indigo/api/bsky"
@@ -103,6 +104,13 @@ func trimURLTrailingPunctuation(raw string) string {
 	return raw
 }
 
+var (
+	facetMentionRegex  = regexp.MustCompile(`(?:^|[\s(])@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)`)
+	facetLinkRegex     = regexp.MustCompile(`https?://[^\s<>"]+`)
+	facetBareLinkRegex = regexp.MustCompile(`(?i)(?:^|[\s(])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|co|app|dev|me|info|biz|tv|gg|xyz|social|br|pt|es|uk|de|fr|it|ca|au|jp|kr|cn|in|ru|mx|ar|cl)(?:/[^\s<>"]*)?)`)
+	facetTagRegex      = regexp.MustCompile(`(?i)(?:^|[\s(])#([\p{L}\p{N}_-]+)`)
+)
+
 // ParseFacets parses mentions, links, and tags from text and generates Facets.
 func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.RichtextFacet {
 	var facets []*bsky.RichtextFacet
@@ -122,28 +130,64 @@ func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.Richt
 		return false
 	}
 
-	// Mentions first so @user.bsky.social is resolved as a mention and not a bare-domain link
-	mentionRegex := regexp.MustCompile(`(?:^|[\s(])@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+)`)
-	for _, match := range mentionRegex.FindAllSubmatchIndex(textBytes, -1) {
+	type mentionMatch struct {
+		start  int
+		end    int
+		handle string
+	}
+	var mentionMatches []mentionMatch
+	uniqueHandles := make(map[string]struct{})
+	for _, match := range facetMentionRegex.FindAllSubmatchIndex(textBytes, -1) {
 		handleStart, handleEnd := match[2], match[3]
-		start := handleStart - 1 // include '@'
+		start := handleStart - 1
 		end := handleEnd
 		handle := string(textBytes[handleStart:handleEnd])
 		occupied = append(occupied, byteSpan{start: start, end: end})
-		if c != nil {
-			res, err := atproto.IdentityResolveHandle(ctx, c, handle)
-			if err == nil && res != nil && res.Did != "" {
+		mentionMatches = append(mentionMatches, mentionMatch{start: start, end: end, handle: handle})
+		uniqueHandles[handle] = struct{}{}
+	}
+
+	if c != nil && len(mentionMatches) > 0 {
+		resolvedDIDs := make(map[string]string, len(uniqueHandles))
+		var uncached []string
+		for handle := range uniqueHandles {
+			if did, ok := GetDIDForHandle(handle); ok && did != "" {
+				resolvedDIDs[handle] = did
+			} else {
+				uncached = append(uncached, handle)
+			}
+		}
+		if len(uncached) > 0 {
+			var (
+				resMu sync.Mutex
+				resWG sync.WaitGroup
+			)
+			for _, handle := range uncached {
+				resWG.Add(1)
+				go func(h string) {
+					defer resWG.Done()
+					res, err := atproto.IdentityResolveHandle(ctx, c, h)
+					if err == nil && res != nil && res.Did != "" {
+						CacheDID(res.Did, h)
+						resMu.Lock()
+						resolvedDIDs[h] = res.Did
+						resMu.Unlock()
+					}
+				}(handle)
+			}
+			resWG.Wait()
+		}
+		for _, m := range mentionMatches {
+			if did := resolvedDIDs[m.handle]; did != "" {
 				facets = append(facets, &bsky.RichtextFacet{
-					Index:    &bsky.RichtextFacet_ByteSlice{ByteStart: int64(start), ByteEnd: int64(end)},
-					Features: []*bsky.RichtextFacet_Features_Elem{{RichtextFacet_Mention: &bsky.RichtextFacet_Mention{Did: res.Did}}},
+					Index:    &bsky.RichtextFacet_ByteSlice{ByteStart: int64(m.start), ByteEnd: int64(m.end)},
+					Features: []*bsky.RichtextFacet_Features_Elem{{RichtextFacet_Mention: &bsky.RichtextFacet_Mention{Did: did}}},
 				})
 			}
 		}
 	}
 
-	// Explicit http(s) links
-	linkRegex := regexp.MustCompile(`https?://[^\s<>"]+`)
-	for _, match := range linkRegex.FindAllIndex(textBytes, -1) {
+	for _, match := range facetLinkRegex.FindAllIndex(textBytes, -1) {
 		start, end := match[0], match[1]
 		raw := string(textBytes[start:end])
 		cleaned := trimURLTrailingPunctuation(raw)
@@ -161,9 +205,7 @@ func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.Richt
 		})
 	}
 
-	// Bare domain links (e.g. bsky.app/profile/... or example.com)
-	bareLinkRegex := regexp.MustCompile(`(?i)(?:^|[\s(])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|co|app|dev|me|info|biz|tv|gg|xyz|social|br|pt|es|uk|de|fr|it|ca|au|jp|kr|cn|in|ru|mx|ar|cl)(?:/[^\s<>"]*)?)`)
-	for _, match := range bareLinkRegex.FindAllSubmatchIndex(textBytes, -1) {
+	for _, match := range facetBareLinkRegex.FindAllSubmatchIndex(textBytes, -1) {
 		start, end := match[2], match[3]
 		if start > 0 && (textBytes[start-1] == '@' || textBytes[start-1] == '/' || textBytes[start-1] == '.') {
 			continue
@@ -185,11 +227,9 @@ func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.Richt
 		})
 	}
 
-	// Tags
-	tagRegex := regexp.MustCompile(`(?i)(?:^|[\s(])#([\p{L}\p{N}_-]+)`)
-	for _, match := range tagRegex.FindAllSubmatchIndex(textBytes, -1) {
+	for _, match := range facetTagRegex.FindAllSubmatchIndex(textBytes, -1) {
 		tagStart, tagEnd := match[2], match[3]
-		start := tagStart - 1 // include '#'
+		start := tagStart - 1
 		end := tagEnd
 		if overlaps(start, end) {
 			continue
@@ -203,20 +243,14 @@ func ParseFacets(ctx context.Context, c *xrpc.Client, text string) []*bsky.Richt
 	return facets
 }
 
-// GenerateLinkPreview fetches the link and returns a card embed.
-func GenerateLinkPreview(ctx context.Context, c *xrpc.Client, linkUrl string) (*bsky.EmbedExternal, error) {
-	resp, err := fetchRemote(ctx, linkUrl)
+// parseLinkMeta reads the Open Graph title, description and image of a page.
+// The title falls back to the URL and the image URL is made absolute.
+func parseLinkMeta(body io.Reader, linkUrl string) (title, description, imageUrl string, err error) {
+	doc, err := html.Parse(io.LimitReader(body, maxRemoteBodyBytes))
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxRemoteBodyBytes))
-	if err != nil {
-		return nil, err
+		return "", "", "", err
 	}
 
-	var title, description, imageUrl string
 	var f func(*html.Node)
 	f = func(n *html.Node) {
 		if n.Type == html.ElementNode && n.Data == "meta" {
@@ -244,23 +278,37 @@ func GenerateLinkPreview(ctx context.Context, c *xrpc.Client, linkUrl string) (*
 	}
 	f(doc)
 
-	if title == "" { title = linkUrl }
+	if title == "" {
+		title = linkUrl
+	}
+	if imageUrl != "" && !strings.HasPrefix(imageUrl, "http") {
+		if parsedBase, err := url.Parse(linkUrl); err == nil {
+			if parsedImg, err := url.Parse(imageUrl); err == nil {
+				imageUrl = parsedBase.ResolveReference(parsedImg).String()
+			}
+		}
+	}
+	return title, description, imageUrl, nil
+}
+
+// GenerateLinkPreview fetches the link and returns a card embed.
+func GenerateLinkPreview(ctx context.Context, c *xrpc.Client, linkUrl string) (*bsky.EmbedExternal, error) {
+	resp, err := fetchRemote(ctx, linkUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	title, description, imageUrl, err := parseLinkMeta(resp.Body, linkUrl)
+	if err != nil {
+		return nil, err
+	}
 
 	external := &bsky.EmbedExternal_External{
 		Uri: linkUrl, Title: title, Description: description,
 	}
 
 	if imageUrl != "" {
-		if !strings.HasPrefix(imageUrl, "http") {
-			parsedBase, err := url.Parse(linkUrl)
-			if err == nil {
-				parsedImg, err := url.Parse(imageUrl)
-				if err == nil {
-					imageUrl = parsedBase.ResolveReference(parsedImg).String()
-				}
-			}
-		}
-		
 		// A missing or unreachable thumbnail is not fatal: the card is still
 		// worth embedding without it.
 		if imgResp, err := fetchRemote(ctx, imageUrl); err == nil {

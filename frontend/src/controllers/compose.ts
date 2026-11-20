@@ -2,7 +2,7 @@ import { state } from '../config/state';
 import { DOM } from '../config/dom';
 import { announcePolite, announceAssertive } from '../utils/a11y';
 import { reloadCurrentTab } from './tabs';
-import { getFilePathOrDataUrl, esc, escUrl, countGraphemes } from '../utils/helpers';
+import { getFilePathOrDataUrl, imageFileToDataUrl, esc, escUrl, countGraphemes } from '../utils/helpers';
 import { initGifModal, openGifPicker } from '../components/gif_modal';
 import { i18n, translateError } from '../utils/i18n';
 import { MentionAutocomplete } from '../components/mention_autocomplete';
@@ -15,6 +15,25 @@ export let selectedCaptionPath: string = "";
 export let selectedGifUrl: string = "";
 export let selectedGifAlt: string = "";
 export let postCount = 1;
+export let currentEditingDraftId: string | null = null;
+
+/**
+ * Posts of the thread being published that already went out. After a failure
+ * the next attempt resumes here instead of publishing them a second time.
+ */
+let threadProgress: { sent: number; replyUri: string; replyCid: string; rootUri: string; rootCid: string } | null = null;
+
+/** Sends a video to the backend in pieces and returns the temp file it was written to. */
+async function uploadVideoInChunks(file: File): Promise<string> {
+    const chunkSize = 4 * 1024 * 1024;
+    const ext = (file.name.match(/\.[a-z0-9]+$/i)?.[0] || '').toLowerCase();
+    let path = '';
+    for (let offset = 0; offset === 0 || offset < file.size; offset += chunkSize) {
+        const dataUrl = await getFilePathOrDataUrl(file.slice(offset, offset + chunkSize));
+        path = await window.go.services.PostBuilderService.AppendVideoChunk(ext, offset === 0, dataUrl.slice(dataUrl.indexOf(',') + 1));
+    }
+    return path;
+}
 
 export async function loadUserListsForThreadgate() {
     const selectEl = document.getElementById('post-threadgate-list') as HTMLSelectElement;
@@ -167,7 +186,9 @@ export function openComposeModal(mode: 'post' | 'reply' | 'quote' = 'post', targ
   selectedCaptionPath = "";
   selectedGifUrl = "";
   selectedGifAlt = "";
-  
+  threadProgress = null;
+  currentEditingDraftId = null;
+
   const gifContainer = document.getElementById('selected-gif-container');
   if (gifContainer) gifContainer.classList.add('hidden');
   
@@ -423,7 +444,7 @@ export function setupCompose() {
             const files = (e.target as HTMLInputElement).files;
             if (!files || files.length === 0) return;
 
-            const slotsAvailable = 4 - selectedImages.length;
+            const slotsAvailable = 10 - selectedImages.length;
             if (slotsAvailable <= 0) {
                 announceAssertive(i18n.t('compose.maxImagesLimit'));
                 postImageInput.value = "";
@@ -444,7 +465,7 @@ export function setupCompose() {
             if (videoAltContainer) videoAltContainer.classList.add('hidden');
 
             for (let i = 0; i < filesToAdd.length; i++) {
-                const pathOrData = await getFilePathOrDataUrl(filesToAdd[i]);
+                const pathOrData = await imageFileToDataUrl(filesToAdd[i]);
                 selectedImages.push(pathOrData);
                 const globalIndex = selectedImages.length;
                 const div = document.createElement('div');
@@ -494,7 +515,19 @@ export function setupCompose() {
                 if (gifContainer) gifContainer.classList.add('hidden');
                 if (altContainer) altContainer.innerHTML = '';
 
-                selectedVideo = await getFilePathOrDataUrl(file);
+                // Publishing while the file is still on its way would post without it.
+                const btnSubmitPost = document.getElementById('btn-submit-post') as HTMLButtonElement | null;
+                if (btnSubmitPost) btnSubmitPost.disabled = true;
+                selectedVideo = "";
+                try {
+                    selectedVideo = await uploadVideoInChunks(file);
+                } catch (err: unknown) {
+                    postVideoInput.value = "";
+                    announceAssertive(i18n.t('post.error', { error: translateError(err) }));
+                    return;
+                } finally {
+                    if (btnSubmitPost) btnSubmitPost.disabled = false;
+                }
 
                 try {
                     const videoUrl = URL.createObjectURL(file);
@@ -545,6 +578,80 @@ export function setupCompose() {
         });
     }
 
+    const appendThreadPostInput = (initialText = "", focusInput = true) => {
+        postCount++;
+        const container = document.getElementById('thread-additional-posts') as HTMLDivElement;
+        if (!container) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.style.marginTop = '15px';
+        wrapper.style.paddingTop = '15px';
+        wrapper.style.borderTop = '1px solid #ddd';
+
+        const label = document.createElement('label');
+        label.textContent = i18n.t('compose.postCountLabel', { count: postCount.toString() });
+        label.style.display = 'block';
+        label.style.fontWeight = 'bold';
+        label.style.marginBottom = '5px';
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'thread-text-input';
+        textarea.rows = 4;
+        textarea.required = true;
+        textarea.style.width = '100%';
+        textarea.value = initialText;
+
+        const threadAutoc = new MentionAutocomplete(textarea);
+        threadMentionAutocompletes.push(threadAutoc);
+
+        const threadPostState: PostLinkState = { fetchedLinkUrl: "", dismissedLinkUrl: "", linkPreviewTimer: null };
+        (textarea as unknown as { _linkState: PostLinkState })._linkState = threadPostState;
+
+        const previewContainer = document.createElement('div');
+        previewContainer.className = 'compose-link-preview hidden';
+        previewContainer.style.cssText = 'margin: 10px 0; border: 1px solid #ccc; padding: 10px; border-radius: 6px; position: relative;';
+
+        const counter = document.createElement('div');
+        counter.className = 'char-counter';
+        counter.style.fontSize = '0.85em';
+        counter.style.color = '#555';
+        counter.style.marginBottom = '10px';
+        const initRem = 300 - countGraphemes(initialText);
+        counter.textContent = i18n.t('compose.charsRemaining', { count: initRem.toString() });
+
+        textarea.addEventListener('input', (e) => {
+            const val = (e.target as HTMLTextAreaElement).value;
+            const len = countGraphemes(val);
+            const remaining = 300 - len;
+            counter.textContent = i18n.t('compose.charsRemaining', { count: remaining.toString() });
+            if (remaining <= 5) {
+                counter.style.color = 'red';
+                counter.style.fontWeight = 'bold';
+                announceAssertive(i18n.t('compose.warnRemainingThread', { remaining: remaining.toString(), count: postCount.toString() }));
+            } else {
+                counter.style.color = '#555';
+                counter.style.fontWeight = 'normal';
+            }
+            checkAndFetchLinkPreviewForPost(threadPostState, val, previewContainer);
+        });
+
+        const btnRemove = document.createElement('button');
+        btnRemove.type = 'button';
+        btnRemove.textContent = i18n.t('compose.removePostBtn');
+        btnRemove.onclick = () => { wrapper.remove(); };
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(textarea);
+        wrapper.appendChild(counter);
+        wrapper.appendChild(previewContainer);
+        wrapper.appendChild(btnRemove);
+        container.appendChild(wrapper);
+        if (focusInput) {
+            textarea.focus();
+            announcePolite(i18n.t('compose.postAdded', { count: postCount.toString() }));
+        }
+    };
+
     const btnSaveDraft = document.getElementById('btn-save-draft') as HTMLButtonElement | null;
     if (btnSaveDraft) {
         btnSaveDraft.addEventListener('click', async () => {
@@ -553,14 +660,29 @@ export function setupCompose() {
                 announceAssertive(i18n.t('compose.emptyPost'));
                 return;
             }
+            const allPosts: string[] = [text];
+            document.querySelectorAll<HTMLTextAreaElement>('.thread-text-input').forEach(ta => {
+                if (ta.value.trim()) {
+                    allPosts.push(ta.value.trim());
+                }
+            });
             const lang = postLanguageInput ? postLanguageInput.value : '';
             const selfLabels: string[] = [];
             document.querySelectorAll<HTMLInputElement>('.post-self-label:checked').forEach(cb => selfLabels.push(cb.value));
             const threadgate = postThreadgateInput ? postThreadgateInput.value : 'everybody';
             const disableQuotes = (document.getElementById('post-disable-quotes') as HTMLInputElement | null)?.checked === true;
             try {
-                await window.go.services.PostBuilderService.CreateDraft(text, lang ? [lang] : [], selfLabels, [threadgate], disableQuotes);
-                announceAssertive(i18n.t('sec2.draftSaved'));
+                if (currentEditingDraftId && window.go.services.PostBuilderService.UpdateThreadDraft) {
+                    await window.go.services.PostBuilderService.UpdateThreadDraft(currentEditingDraftId, allPosts, lang ? [lang] : [], selfLabels, [threadgate], disableQuotes);
+                    announceAssertive(i18n.t('sec2.draftUpdatedMsg'));
+                } else if (window.go.services.PostBuilderService.CreateThreadDraft) {
+                    const newId = await window.go.services.PostBuilderService.CreateThreadDraft(allPosts, lang ? [lang] : [], selfLabels, [threadgate], disableQuotes);
+                    if (newId) currentEditingDraftId = newId;
+                    announceAssertive(i18n.t('sec2.draftSaved'));
+                } else {
+                    await window.go.services.PostBuilderService.CreateDraft(allPosts.join('\n---MIXKO_THREAD_SPLIT---\n'), lang ? [lang] : [], selfLabels, [threadgate], disableQuotes);
+                    announceAssertive(i18n.t('sec2.draftSaved'));
+                }
             } catch (err: unknown) {
                 announceAssertive(i18n.t('post.error', { error: String(err) }));
             }
@@ -589,9 +711,11 @@ export function setupCompose() {
                 drafts.forEach(d => {
                     const row = document.createElement('div');
                     row.style.cssText = 'border-bottom: 1px solid #eee; padding: 6px 0; display: flex; justify-content: space-between; align-items: center; gap: 8px;';
-                    const firstText = d.text || '';
+                    const draftPosts = (d.posts && d.posts.length > 0) ? d.posts : [d.text || ''];
+                    const firstText = draftPosts[0] || '';
+                    const threadSuffix = draftPosts.length > 1 ? ` ${i18n.t('sec2.threadDraftBadge', { count: draftPosts.length.toString() })}` : '';
                     const span = document.createElement('span');
-                    span.textContent = firstText.slice(0, 80) + (firstText.length > 80 ? '…' : '');
+                    span.textContent = firstText.slice(0, 80) + (firstText.length > 80 ? '…' : '') + threadSuffix;
                     const actions = document.createElement('div');
                     actions.style.display = 'flex';
                     actions.style.gap = '6px';
@@ -599,9 +723,30 @@ export function setupCompose() {
                     btnLoad.type = 'button';
                     btnLoad.textContent = i18n.t('sec2.loadDraft');
                     btnLoad.addEventListener('click', () => {
+                        currentEditingDraftId = d.id;
                         if (postTextInput) {
-                            postTextInput.value = d.text || '';
+                            postTextInput.value = draftPosts[0] || '';
                             updateCharCounter(postTextInput.value);
+                        }
+                        const addContainer = document.getElementById('thread-additional-posts') as HTMLDivElement | null;
+                        if (addContainer) {
+                            addContainer.innerHTML = '';
+                            postCount = 1;
+                            for (let i = 1; i < draftPosts.length; i++) {
+                                appendThreadPostInput(draftPosts[i], false);
+                            }
+                        }
+                        if (d.langs && d.langs.length > 0 && postLanguageInput) {
+                            postLanguageInput.value = d.langs[0];
+                        }
+                        if (d.selfLabels) {
+                            document.querySelectorAll<HTMLInputElement>('.post-self-label').forEach(cb => {
+                                cb.checked = d.selfLabels?.includes(cb.value) === true;
+                            });
+                        }
+                        const disableQuotesInput = document.getElementById('post-disable-quotes') as HTMLInputElement | null;
+                        if (disableQuotesInput) {
+                            disableQuotesInput.checked = d.disableQuotes === true;
                         }
                         container.classList.add('hidden');
                         announceAssertive(i18n.t('sec2.loadDraft'));
@@ -612,6 +757,9 @@ export function setupCompose() {
                     btnDel.addEventListener('click', async () => {
                         try {
                             await window.go.services.PostBuilderService.DeleteDraft(d.id);
+                            if (currentEditingDraftId === d.id) {
+                                currentEditingDraftId = null;
+                            }
                             row.remove();
                             announceAssertive(i18n.t('sec2.draftDeleted'));
                         } catch (err: unknown) {
@@ -668,74 +816,7 @@ export function setupCompose() {
     postCount = 1;
     if (btnAddPost) {
         btnAddPost.addEventListener('click', () => {
-            postCount++;
-            const container = document.getElementById('thread-additional-posts') as HTMLDivElement;
-            if (!container) return;
-            
-            const wrapper = document.createElement('div');
-            wrapper.style.marginTop = '15px';
-            wrapper.style.paddingTop = '15px';
-            wrapper.style.borderTop = '1px solid #ddd';
-            
-            const label = document.createElement('label');
-            label.textContent = i18n.t('compose.postCountLabel', { count: postCount.toString() });
-            label.style.display = 'block';
-            label.style.fontWeight = 'bold';
-            label.style.marginBottom = '5px';
-            
-            const textarea = document.createElement('textarea');
-            textarea.className = 'thread-text-input';
-            textarea.rows = 4;
-            textarea.required = true;
-            textarea.style.width = '100%';
-            
-            const threadAutoc = new MentionAutocomplete(textarea);
-            threadMentionAutocompletes.push(threadAutoc);
-
-            const threadPostState: PostLinkState = { fetchedLinkUrl: "", dismissedLinkUrl: "", linkPreviewTimer: null };
-            (textarea as unknown as { _linkState: PostLinkState })._linkState = threadPostState;
-
-            const previewContainer = document.createElement('div');
-            previewContainer.className = 'compose-link-preview hidden';
-            previewContainer.style.cssText = 'margin: 10px 0; border: 1px solid #ccc; padding: 10px; border-radius: 6px; position: relative;';
-
-            const counter = document.createElement('div');
-            counter.className = 'char-counter';
-            counter.style.fontSize = '0.85em';
-            counter.style.color = '#555';
-            counter.style.marginBottom = '10px';
-            counter.textContent = i18n.t('compose.charsRemaining', { count: '300' });
-            
-            textarea.addEventListener('input', (e) => {
-                const val = (e.target as HTMLTextAreaElement).value;
-                const len = countGraphemes(val);
-                const remaining = 300 - len;
-                counter.textContent = i18n.t('compose.charsRemaining', { count: remaining.toString() });
-                if (remaining <= 5) {
-                    counter.style.color = 'red';
-                    counter.style.fontWeight = 'bold';
-                    announceAssertive(i18n.t('compose.warnRemainingThread', { remaining: remaining.toString(), count: postCount.toString() }));
-                } else {
-                    counter.style.color = '#555';
-                    counter.style.fontWeight = 'normal';
-                }
-                checkAndFetchLinkPreviewForPost(threadPostState, val, previewContainer);
-            });
-            
-            const btnRemove = document.createElement('button');
-            btnRemove.type = 'button';
-            btnRemove.textContent = i18n.t('compose.removePostBtn');
-            btnRemove.onclick = () => { wrapper.remove(); };
-            
-            wrapper.appendChild(label);
-            wrapper.appendChild(textarea);
-            wrapper.appendChild(counter);
-            wrapper.appendChild(previewContainer);
-            wrapper.appendChild(btnRemove);
-            container.appendChild(wrapper);
-            textarea.focus();
-            
-            announcePolite(i18n.t('compose.postAdded', { count: postCount.toString() }));
+            appendThreadPostInput("", true);
         });
     }
 
@@ -871,12 +952,15 @@ export function setupCompose() {
 
           announcePolite(postItems.length > 1 ? i18n.t('compose.publishingMultiple', { count: postItems.length.toString() }) : i18n.t('compose.publishingSingle'));
           try {
-            let currentReplyUri = state.composeTarget?.uri || "";
-            let currentReplyCid = state.composeTarget?.cid || "";
-            let threadRootUri = "";
-            let threadRootCid = "";
-            
-            for (let i = 0; i < postItems.length; i++) {
+            const progress = threadProgress ?? {
+                sent: 0,
+                replyUri: state.composeTarget?.uri || "",
+                replyCid: state.composeTarget?.cid || "",
+                rootUri: "",
+                rootCid: "",
+            };
+
+            for (let i = progress.sent; i < postItems.length; i++) {
                 let res;
                 const item = postItems[i];
                 const pPaths = i === 0 ? imageSources : [];
@@ -890,31 +974,39 @@ export function setupCompose() {
                 const pVidWidth = i === 0 ? selectedVideoWidth : 0;
                 const pVidHeight = i === 0 ? selectedVideoHeight : 0;
                 const pListUris = i === 0 ? listUris : [];
-                
+                const pLabels = i === 0 ? selfLabels : [];
+                const pCaption = i === 0 ? selectedCaptionPath : "";
+                const pCaptionLang = language || 'pt';
+
                 if (state.composeMode === 'quote' && i === 0 && state.composeTarget) {
-                    res = await window.go.services.PostBuilderService.QuotePost(item.text, state.composeTarget.uri, state.composeTarget.cid, pPaths, pAlts, pVid, pVidAlt, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris);
+                    res = await window.go.services.PostBuilderService.QuotePost(item.text, state.composeTarget.uri, state.composeTarget.cid, pPaths, pAlts, pVid, pVidAlt, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris, pLabels, pCaption, pCaptionLang);
                 } else {
-                    res = await window.go.services.PostBuilderService.CreatePost(item.text, currentReplyUri, currentReplyCid, threadRootUri, threadRootCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris);
+                    res = await window.go.services.PostBuilderService.CreatePost(item.text, progress.replyUri, progress.replyCid, progress.rootUri, progress.rootCid, pPaths, pAlts, pVid, pVidAlt, pLink, pLang, pThreadgate, pGifUrl, pVidWidth, pVidHeight, pListUris, pLabels, pCaption, pCaptionLang);
                 }
 
                 if (!res || !res.uri || !res.cid) {
                     throw new Error(i18n.t('compose.threadRefMissing', { count: (i + 1).toString() }));
                 }
-                if (i === 0 && (selfLabels.length > 0 || selectedCaptionPath !== "")) {
-                    await window.go.services.PostBuilderService.ApplyPostExtras(res.uri, selfLabels, false, selectedCaptionPath, language || 'pt');
+                progress.sent = i + 1;
+                progress.replyUri = res.uri;
+                progress.replyCid = res.cid;
+                if (!progress.rootUri) {
+                    progress.rootUri = res.rootUri || res.uri;
+                    progress.rootCid = res.rootCid || res.cid;
                 }
-                currentReplyUri = res.uri;
-                currentReplyCid = res.cid;
-                if (!threadRootUri) {
-                    threadRootUri = res.rootUri || res.uri;
-                    threadRootCid = res.rootCid || res.cid;
+                threadProgress = progress;
+                if (res.warning) {
+                    const warning = translateError(res.warning);
+                    announceAssertive(warning);
+                    alert(warning);
                 }
-                
+
                 if (postItems.length > 1) {
                     announcePolite(i18n.t('compose.sendingOf', { current: (i + 1).toString(), total: postItems.length.toString() }));
                 }
             }
             
+            threadProgress = null;
             announceAssertive(postItems.length > 1 ? i18n.t('compose.threadSuccess') : i18n.t('compose.postSuccess'));
             forceCloseComposeModal();
             if (state.currentTab !== 'notifications') {

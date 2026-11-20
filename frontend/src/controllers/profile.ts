@@ -7,7 +7,7 @@ import { switchTab } from './tabs';
 import { loadTimeline } from './timeline';
 import { openChatConvo } from './chat';
 import { showMuteMenu } from './shortcuts';
-import { getFilePathOrDataUrl, esc, escUrl, linkify, renderProfileLink, countGraphemes } from '../utils/helpers';
+import { imageFileToDataUrl, esc, escUrl, linkify, renderProfileLink, countGraphemes } from '../utils/helpers';
 import { i18n } from '../utils/i18n';
 import { markPageLoaded, pagesLoadedFor, resetPagesLoaded, restoreFocusAfterReload } from '../utils/pagination';
 import type { StarterPackDTO, ProfileDTO, ProfileLinkDTO } from '../types/dto';
@@ -119,9 +119,9 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
           if (!res.isMe) {
               let followBtn = "";
               if (res.viewerFollowing) {
-                 followBtn = `<button id="btn-unfollow" data-uri="${res.viewerFollowing}" aria-label="${i18n.t('profile.unfollowAria', { name: res.displayName || res.handle })}">${i18n.t('profile.unfollowBtn')}</button>`;
+                 followBtn = `<button id="btn-unfollow" data-uri="${res.viewerFollowing}" aria-label="${esc(i18n.t('profile.unfollowAria', { name: res.displayName || res.handle }))}">${i18n.t('profile.unfollowBtn')}</button>`;
               } else {
-                 followBtn = `<button id="btn-follow" data-did="${res.did}" aria-label="${i18n.t('profile.followAria', { name: res.displayName || res.handle })}">${i18n.t('profile.followBtn')}</button>`;
+                 followBtn = `<button id="btn-follow" data-did="${res.did}" aria-label="${esc(i18n.t('profile.followAria', { name: res.displayName || res.handle }))}">${i18n.t('profile.followBtn')}</button>`;
               }
 
               let muteBtn = "";
@@ -159,6 +159,10 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               const notifyBtnAria = i18n.t('profile.notifyActivityAria', { name: authorTitle });
               const notifyBtn = `<button id="btn-notify-activity" class="${notifyBtnClass}" aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(notifyBtnAria)}">${esc(notifyBtnText)}</button>`;
 
+              const germBtn = res.germMessageMeUrl
+                ? `<a href="${escUrl(res.germMessageMeUrl)}" class="app-link link-external" data-external-url="${escUrl(res.germMessageMeUrl)}" style="display:inline-flex; align-items:center; padding:6px 12px; border:1px solid #3b82f6; border-radius:4px; text-decoration:none;">🔒 ${esc(i18n.t('sec2.germMessageBtn'))}</a>`
+                : '';
+
               actionsHtml = `
                 ${followBtn}
                 ${notifyBtn}
@@ -167,6 +171,7 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 ${blockBtn}
                 ${labelerBtn}
                 <button id="btn-message" data-did="${res.did}" data-handle="${esc(res.handle)}" data-display-name="${esc(res.displayName || '')}" aria-label="${i18n.t('profile.messageAria')}">${i18n.t('profile.messageBtn')}</button>
+                ${germBtn}
                 <button id="btn-manage-lists" data-did="${res.did}" aria-label="${i18n.t('profile.manageListsAria')}">${i18n.t('profile.manageListsBtn')}</button>
                 <button id="btn-report-user" data-did="${res.did}" aria-label="${i18n.t('profile.reportAria')}">${i18n.t('profile.reportBtn')}</button>
               `;
@@ -188,12 +193,23 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
 
           let verificationBadgeHtml = "";
           if (!state.hideVerificationBadges) {
+            const verifiersLabel = (res.verifiedBy && res.verifiedBy.length > 0)
+              ? i18n.t('sec2.verifiedByInfo', { verifiers: res.verifiedBy.join(', ') })
+              : '';
             if (res.trustedVerifier) {
-              verificationBadgeHtml = ` <span title="${esc(i18n.t('sec2.trustedVerifierBadge'))}" aria-label="${esc(i18n.t('sec2.trustedVerifierBadge'))}">🛡️✓</span>`;
+              const titleText = verifiersLabel ? `${i18n.t('sec2.trustedVerifierBadge')} (${verifiersLabel})` : i18n.t('sec2.trustedVerifierBadge');
+              verificationBadgeHtml = ` <span title="${esc(titleText)}" aria-label="${esc(titleText)}">🛡️✓</span>`;
             } else if (res.verified) {
-              verificationBadgeHtml = ` <span title="${esc(i18n.t('sec2.verifiedBadge'))}" aria-label="${esc(i18n.t('sec2.verifiedBadge'))}">✓</span>`;
+              const titleText = verifiersLabel ? `${i18n.t('sec2.verifiedBadge')} (${verifiersLabel})` : i18n.t('sec2.verifiedBadge');
+              verificationBadgeHtml = ` <span title="${esc(titleText)}" aria-label="${esc(titleText)}">✓</span>`;
             }
           }
+          const botBadgeHtml = res.isBot
+            ? ` <span class="bot-badge" title="${esc(i18n.t('sec2.botBadgeAria'))}" aria-label="${esc(i18n.t('sec2.botBadgeAria'))}" style="font-size: 0.8em; padding: 2px 8px; border-radius: 6px; background: rgba(100,116,139,0.2);">${esc(i18n.t('sec2.botBadge'))}</span>`
+            : '';
+          const verifiedByParagraphHtml = (!state.hideVerificationBadges && res.verifiedBy && res.verifiedBy.length > 0)
+            ? `<p style="margin: 2px 0; font-size: 0.85em; color: #60a5fa;">✓ ${esc(i18n.t('sec2.verifiedByInfo', { verifiers: res.verifiedBy.join(', ') }))}</p>`
+            : '';
 
           let liveStatusHtml = "";
           if (res.status && res.status.isActive) {
@@ -263,7 +279,8 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
               ${blockedNotice}
               ${liveStatusHtml}
               ${labelerBadge}
-              <h3>${esc(res.displayName)} (${renderProfileLink(res.handle)})${verificationBadgeHtml}</h3>
+              <h3>${esc(res.displayName)} (${renderProfileLink(res.handle)})${verificationBadgeHtml}${botBadgeHtml}</h3>
+              ${verifiedByParagraphHtml}
               ${pronounsHtml}
               ${res.viewerFollowedBy ? `<p><em>${i18n.t('profile.followsYouText')}</em></p>` : ''}
               <div id="known-followers-container" aria-live="polite" style="display:none; margin: 8px 0; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 6px;"></div>
@@ -797,8 +814,9 @@ export async function loadProfile(loadMore = false, keepFocus = false, silent = 
                 const profPronounsHtml = prof.pronouns
                     ? `<p class="profile-pronouns" style="margin: 2px 0; font-size: 0.9em; color: var(--text-muted, #9ca3af);">${esc(prof.pronouns)}</p>`
                     : '';
+                const profBotBadge = prof.isBot ? ` <span class="bot-badge" style="font-size:0.8em; padding:1px 5px; border-radius:4px; background:rgba(100,116,139,0.2);">${esc(i18n.t('sec2.botBadge'))}</span>` : '';
                 div.dataset.text = i18n.t('profile.profileCardAria', { name: profNameAria, desc: prof.description || '' });
-                div.innerHTML = `<h3>${esc(prof.displayName)} <small>(${renderProfileLink(prof.handle)})</small></h3>${profPronounsHtml}<p>${linkify(prof.description || '')}</p>`;
+                div.innerHTML = `<h3>${esc(prof.displayName)}${profBotBadge} <small>(${renderProfileLink(prof.handle)})</small></h3>${profPronounsHtml}<p>${linkify(prof.description || '')}</p>`;
                 
                 div.dataset.index = state.currentPosts.length.toString();
                 div.addEventListener('focus', () => {
@@ -1106,12 +1124,12 @@ export function setupProfile() {
       await window.go.services.SocialService.UpdateProfileWithLinks(name, desc, pronouns, links);
 
       if (avatarInput?.files && avatarInput.files.length > 0) {
-        const pathOrData = await getFilePathOrDataUrl(avatarInput.files[0]);
+        const pathOrData = await imageFileToDataUrl(avatarInput.files[0]);
         if (pathOrData) await window.go.services.SocialService.UploadProfileAvatar(pathOrData);
       }
 
       if (bannerInput?.files && bannerInput.files.length > 0) {
-        const pathOrData = await getFilePathOrDataUrl(bannerInput.files[0]);
+        const pathOrData = await imageFileToDataUrl(bannerInput.files[0]);
         if (pathOrData) await window.go.services.SocialService.UploadProfileBanner(pathOrData);
       }
 

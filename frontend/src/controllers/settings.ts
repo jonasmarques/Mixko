@@ -3,6 +3,8 @@ import { state } from '../config/state';
 import { announcePolite, announceAssertive, getPostAccessibleLabel } from '../utils/a11y';
 import { confirmDialog, promptDialog } from '../utils/dialog';
 import { switchTab } from './tabs';
+import { captureIdentity } from './auth';
+import { loadTimeline } from './timeline';
 import { i18n } from '../utils/i18n';
 import { NotificationPreferencesDTO, NotificationFilterablePrefDTO, NotificationSimplePrefDTO, SavedAccountDTO, AppPasswordDTO, ProfileDTO, LabelerDTO } from '../types/dto';
 
@@ -209,120 +211,127 @@ export function loadLocalSettings() {
     }
 }
 
-export async function loadSettings() {
+export async function hydrateStartupPreferences(): Promise<void> {
     loadLocalSettings();
 
-    const mutedList = document.getElementById('muted-words-list') as HTMLUListElement;
-    const adultContentCheckbox = document.getElementById('setting-adult-content') as HTMLInputElement;
-    const sortSelect = document.getElementById('thread-sort-select') as HTMLSelectElement;
-    const prioCheckbox = document.getElementById('setting-prioritize-followed') as HTMLInputElement;
-    const contentFiltersContainer = document.getElementById('content-filters-list') as HTMLDivElement;
+    const mutedList = document.getElementById('muted-words-list') as HTMLUListElement | null;
+    const adultContentCheckbox = document.getElementById('setting-adult-content') as HTMLInputElement | null;
+    const sortSelect = document.getElementById('thread-sort-select') as HTMLSelectElement | null;
+    const prioCheckbox = document.getElementById('setting-prioritize-followed') as HTMLInputElement | null;
+    const contentFiltersContainer = document.getElementById('content-filters-list') as HTMLDivElement | null;
 
+    const prefs = await window.go.services.SocialService.GetPreferences();
+    if (!prefs) return;
+
+    state.adultContentCache = prefs.adultContentEnabled || false;
+    if (adultContentCheckbox) adultContentCheckbox.checked = state.adultContentCache;
+
+    state.mutedWordsCache = (prefs.mutedWords || []).map((mw: { value: string }) => mw.value);
+    if (mutedList) renderMutedWords(mutedList);
+
+    if (sortSelect && prefs.threadSort) sortSelect.value = prefs.threadSort;
+    if (prioCheckbox) prioCheckbox.checked = Boolean(prefs.threadPrioritizeFollowed);
+
+    if (contentFiltersContainer) {
+        renderContentFilters(contentFiltersContainer, prefs.contentFilters || []);
+    }
+
+    state.hiddenPostUris = prefs.hiddenPosts || [];
+    state.hideVerificationBadges = Boolean(prefs.hideVerificationBadges);
+    const hideBadgesCb = document.getElementById('setting-hide-verification-badges') as HTMLInputElement | null;
+    if (hideBadgesCb) hideBadgesCb.checked = state.hideVerificationBadges;
+
+    state.feedViewHideReposts = Boolean(prefs.hideReposts);
+    state.feedViewHideQuotePosts = Boolean(prefs.hideQuotePosts);
+    state.feedViewHideRepliesByUnfollowed = Boolean(prefs.hideRepliesByUnfollowed);
+    const hideRepostsCb = document.getElementById('setting-hide-reposts') as HTMLInputElement | null;
+    const hideQuotesCb = document.getElementById('setting-hide-quote-posts') as HTMLInputElement | null;
+    const hideUnfollowedCb = document.getElementById('setting-hide-replies-unfollowed') as HTMLInputElement | null;
+    if (hideRepostsCb) hideRepostsCb.checked = state.feedViewHideReposts;
+    if (hideQuotesCb) hideQuotesCb.checked = state.feedViewHideQuotePosts;
+    if (hideUnfollowedCb) hideUnfollowedCb.checked = state.feedViewHideRepliesByUnfollowed;
+
+    const defGateSel = document.getElementById('setting-default-threadgate') as HTMLSelectElement | null;
+    const defDisQuotesCb = document.getElementById('setting-default-disable-quotes') as HTMLInputElement | null;
+    if (defGateSel && prefs.defaultThreadgateRules && prefs.defaultThreadgateRules.length > 0) {
+        const rawRule = prefs.defaultThreadgateRules.join(',');
+        const normalized = rawRule === 'everyone' ? 'everybody' : rawRule;
+        defGateSel.value = normalized;
+        localStorage.setItem('postThreadgate', normalized === 'everybody' ? 'everyone' : normalized);
+    }
+    if (defDisQuotesCb) defDisQuotesCb.checked = Boolean(prefs.defaultDisableQuotes);
+
+    const interestsInput = document.getElementById('setting-interests-input') as HTMLInputElement | null;
+    if (interestsInput) interestsInput.value = (prefs.interests || []).join(', ');
+}
+
+export async function loadSettings() {
     try {
-        const prefs = await window.go.services.SocialService.GetPreferences();
-        if (prefs) {
-            state.adultContentCache = prefs.adultContentEnabled || false;
-            if (adultContentCheckbox) adultContentCheckbox.checked = state.adultContentCache;
-
-            state.mutedWordsCache = (prefs.mutedWords || []).map((mw: { value: string }) => mw.value);
-            if (mutedList) renderMutedWords(mutedList);
-
-            if (sortSelect && prefs.threadSort) sortSelect.value = prefs.threadSort;
-            if (prioCheckbox) prioCheckbox.checked = Boolean(prefs.threadPrioritizeFollowed);
-
-            if (contentFiltersContainer) {
-                renderContentFilters(contentFiltersContainer, prefs.contentFilters || []);
-            }
-
-            state.hiddenPostUris = prefs.hiddenPosts || [];
-            state.hideVerificationBadges = Boolean(prefs.hideVerificationBadges);
-            const hideBadgesCb = document.getElementById('setting-hide-verification-badges') as HTMLInputElement | null;
-            if (hideBadgesCb) hideBadgesCb.checked = state.hideVerificationBadges;
-
-            state.feedViewHideReposts = Boolean(prefs.hideReposts);
-            state.feedViewHideQuotePosts = Boolean(prefs.hideQuotePosts);
-            state.feedViewHideRepliesByUnfollowed = Boolean(prefs.hideRepliesByUnfollowed);
-            const hideRepostsCb = document.getElementById('setting-hide-reposts') as HTMLInputElement | null;
-            const hideQuotesCb = document.getElementById('setting-hide-quote-posts') as HTMLInputElement | null;
-            const hideUnfollowedCb = document.getElementById('setting-hide-replies-unfollowed') as HTMLInputElement | null;
-            if (hideRepostsCb) hideRepostsCb.checked = state.feedViewHideReposts;
-            if (hideQuotesCb) hideQuotesCb.checked = state.feedViewHideQuotePosts;
-            if (hideUnfollowedCb) hideUnfollowedCb.checked = state.feedViewHideRepliesByUnfollowed;
-
-            const defGateSel = document.getElementById('setting-default-threadgate') as HTMLSelectElement | null;
-            const defDisQuotesCb = document.getElementById('setting-default-disable-quotes') as HTMLInputElement | null;
-            if (defGateSel && prefs.defaultThreadgateRules && prefs.defaultThreadgateRules.length > 0) {
-                const rawRule = prefs.defaultThreadgateRules.join(',');
-                const normalized = rawRule === 'everyone' ? 'everybody' : rawRule;
-                defGateSel.value = normalized;
-                localStorage.setItem('postThreadgate', normalized === 'everybody' ? 'everyone' : normalized);
-            }
-            if (defDisQuotesCb) defDisQuotesCb.checked = Boolean(prefs.defaultDisableQuotes);
-
-            const interestsInput = document.getElementById('setting-interests-input') as HTMLInputElement | null;
-            if (interestsInput) interestsInput.value = (prefs.interests || []).join(', ');
-        }
-
-        const mutedRes = await window.go.services.ModerationService.GetMutes("");
-        const mutedListDiv = document.getElementById('muted-users-list');
-        if (mutedListDiv && mutedRes && mutedRes.profiles) {
-            mutedListDiv.innerHTML = '';
-            if (mutedRes.profiles.length === 0) {
-                mutedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noMuted')}</p>`;
-            }
-            mutedRes.profiles.forEach((p: ProfileDTO) => {
-                const div = document.createElement('div');
-                div.style.padding = '5px';
-                div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>${renderProfileLink(p.handle)}</span> <button class="btn-unmute" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnmute')}</button>`;
-                mutedListDiv.appendChild(div);
-            });
-            mutedListDiv.querySelectorAll('.btn-unmute').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.preventDefault();
-                    const target = e.currentTarget as HTMLButtonElement;
-                    const did = target.dataset.did!;
-                    const handle = target.dataset.handle!;
-                    if (await confirmDialog(i18n.t('settingsMsgs.unmuteConfirm', { handle }), i18n.t('settingsMsgs.btnUnmute'))) {
-                        await window.go.services.ModerationService.UnmuteActor(did);
-                        announceAssertive(i18n.t('settingsMsgs.unmuteSuccess', { handle }));
-                        target.parentElement?.remove();
-                    }
+        const loadMutes = async () => {
+            const mutedRes = await window.go.services.ModerationService.GetMutes("");
+            const mutedListDiv = document.getElementById('muted-users-list');
+            if (mutedListDiv && mutedRes && mutedRes.profiles) {
+                mutedListDiv.innerHTML = '';
+                if (mutedRes.profiles.length === 0) {
+                    mutedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noMuted')}</p>`;
+                }
+                mutedRes.profiles.forEach((p: ProfileDTO) => {
+                    const div = document.createElement('div');
+                    div.style.padding = '5px';
+                    div.style.borderBottom = '1px solid #ccc';
+                    div.innerHTML = `<span>${renderProfileLink(p.handle)}</span> <button class="btn-unmute" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnmute')}</button>`;
+                    mutedListDiv.appendChild(div);
                 });
-            });
-        }
-
-        const blockedRes = await window.go.services.ModerationService.GetBlocks("");
-        const blockedListDiv = document.getElementById('blocked-users-list');
-        if (blockedListDiv && blockedRes && blockedRes.profiles) {
-            blockedListDiv.innerHTML = '';
-            if (blockedRes.profiles.length === 0) {
-                blockedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noBlocked')}</p>`;
-            }
-            blockedRes.profiles.forEach((p: ProfileDTO) => {
-                const div = document.createElement('div');
-                div.style.padding = '5px';
-                div.style.borderBottom = '1px solid #ccc';
-                div.innerHTML = `<span>${renderProfileLink(p.handle)}</span> <button class="btn-unblock" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnblock')}</button>`;
-                blockedListDiv.appendChild(div);
-            });
-            blockedListDiv.querySelectorAll('.btn-unblock').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.preventDefault();
-                    const target = e.currentTarget as HTMLButtonElement;
-                    const did = target.dataset.did!;
-                    const handle = target.dataset.handle!;
-                    if (await confirmDialog(i18n.t('settingsMsgs.unblockConfirm', { handle }), i18n.t('settingsMsgs.btnUnblock'))) {
-                        await window.go.services.ModerationService.UnblockActor(did);
-                        announceAssertive(i18n.t('settingsMsgs.unblockSuccess', { handle }));
-                        target.parentElement?.remove();
-                    }
+                mutedListDiv.querySelectorAll('.btn-unmute').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        const target = e.currentTarget as HTMLButtonElement;
+                        const did = target.dataset.did!;
+                        const handle = target.dataset.handle!;
+                        if (await confirmDialog(i18n.t('settingsMsgs.unmuteConfirm', { handle }), i18n.t('settingsMsgs.btnUnmute'))) {
+                            await window.go.services.ModerationService.UnmuteActor(did);
+                            announceAssertive(i18n.t('settingsMsgs.unmuteSuccess', { handle }));
+                            target.parentElement?.remove();
+                        }
+                    });
                 });
-            });
-        }
+            }
+        };
 
-        const subscribedLabelersListDiv = document.getElementById('subscribed-labelers-list');
-        if (subscribedLabelersListDiv) {
+        const loadBlocks = async () => {
+            const blockedRes = await window.go.services.ModerationService.GetBlocks("");
+            const blockedListDiv = document.getElementById('blocked-users-list');
+            if (blockedListDiv && blockedRes && blockedRes.profiles) {
+                blockedListDiv.innerHTML = '';
+                if (blockedRes.profiles.length === 0) {
+                    blockedListDiv.innerHTML = `<p>${i18n.t('settingsMsgs.noBlocked')}</p>`;
+                }
+                blockedRes.profiles.forEach((p: ProfileDTO) => {
+                    const div = document.createElement('div');
+                    div.style.padding = '5px';
+                    div.style.borderBottom = '1px solid #ccc';
+                    div.innerHTML = `<span>${renderProfileLink(p.handle)}</span> <button class="btn-unblock" style="float: right;" data-did="${esc(p.did)}" data-handle="${esc(p.handle)}">${i18n.t('settingsMsgs.btnUnblock')}</button>`;
+                    blockedListDiv.appendChild(div);
+                });
+                blockedListDiv.querySelectorAll('.btn-unblock').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        const target = e.currentTarget as HTMLButtonElement;
+                        const did = target.dataset.did!;
+                        const handle = target.dataset.handle!;
+                        if (await confirmDialog(i18n.t('settingsMsgs.unblockConfirm', { handle }), i18n.t('settingsMsgs.btnUnblock'))) {
+                            await window.go.services.ModerationService.UnblockActor(did);
+                            announceAssertive(i18n.t('settingsMsgs.unblockSuccess', { handle }));
+                            target.parentElement?.remove();
+                        }
+                    });
+                });
+            }
+        };
+
+        const loadLabelers = async () => {
+            const subscribedLabelersListDiv = document.getElementById('subscribed-labelers-list');
+            if (!subscribedLabelersListDiv) return;
             try {
                 subscribedLabelersListDiv.innerHTML = i18n.t('app.loading');
                 const labelers = await window.go.services.SocialService.GetSubscribedLabelers();
@@ -363,29 +372,74 @@ export async function loadSettings() {
                 console.error("Error loading subscribed labelers:", err);
                 subscribedLabelersListDiv.innerHTML = '<p style="color: #f87171;">' + i18n.t('settingsMsgs.labelerError') + '</p>';
             }
-        }
+        };
 
-        try {
-            const notifPrefs = await window.go.services.NotificationsService.GetNotificationPreferences();
-            if (notifPrefs) {
-                populateNotificationPreferences(notifPrefs);
+        const loadNotifPrefs = async () => {
+            try {
+                const notifPrefs = await window.go.services.NotificationsService.GetNotificationPreferences();
+                if (notifPrefs) {
+                    populateNotificationPreferences(notifPrefs);
+                }
+            } catch (notifErr) {
+                console.error("Error loading notification preferences:", notifErr);
             }
-        } catch (notifErr) {
-            console.error("Error loading notification preferences:", notifErr);
-        }
+        };
 
-        try {
-            const allowIncoming = await window.go.services.ChatService.GetChatDeclaration();
-            const chatAllowSelect = document.getElementById('setting-chat-allow-incoming') as HTMLSelectElement | null;
-            if (chatAllowSelect && allowIncoming) {
-                chatAllowSelect.value = allowIncoming;
+        const loadChatDecl = async () => {
+            try {
+                if (window.go.services.ChatService.GetChatDeclarationFull) {
+                    const decl = await window.go.services.ChatService.GetChatDeclarationFull();
+                    const chatAllowSelect = document.getElementById('setting-chat-allow-incoming') as HTMLSelectElement | null;
+                    const grpAllowSelect = document.getElementById('setting-chat-allow-group-invites') as HTMLSelectElement | null;
+                    if (chatAllowSelect && decl?.allowIncoming) {
+                        chatAllowSelect.value = decl.allowIncoming;
+                    }
+                    if (grpAllowSelect && decl?.allowGroupInvites) {
+                        grpAllowSelect.value = decl.allowGroupInvites;
+                    }
+                } else {
+                    const allowIncoming = await window.go.services.ChatService.GetChatDeclaration();
+                    const chatAllowSelect = document.getElementById('setting-chat-allow-incoming') as HTMLSelectElement | null;
+                    if (chatAllowSelect && allowIncoming) {
+                        chatAllowSelect.value = allowIncoming;
+                    }
+                }
+            } catch (chatDeclErr) {
+                console.error("Error loading chat declaration:", chatDeclErr);
             }
-        } catch (chatDeclErr) {
-            console.error("Error loading chat declaration:", chatDeclErr);
-        }
+        };
 
-        const accountsListDiv = document.getElementById('settings-accounts-list');
-        if (accountsListDiv) {
+        const loadNotifDecl = async () => {
+            try {
+                if (window.go.services.NotificationsService.GetNotificationDeclaration) {
+                    const allowSubs = await window.go.services.NotificationsService.GetNotificationDeclaration();
+                    const subsSelect = document.getElementById('setting-notif-allow-subscriptions') as HTMLSelectElement | null;
+                    if (subsSelect && allowSubs) {
+                        subsSelect.value = allowSubs;
+                    }
+                }
+            } catch (notifDeclErr) {
+                console.error("Error loading notification declaration:", notifDeclErr);
+            }
+        };
+
+        const loadContentVisDecl = async () => {
+            try {
+                if (window.go.services.SocialService.GetContentVisibilityDeclaration) {
+                    const hideAlgo = await window.go.services.SocialService.GetContentVisibilityDeclaration();
+                    const hideAlgoCb = document.getElementById('setting-hide-algo-recs') as HTMLInputElement | null;
+                    if (hideAlgoCb) {
+                        hideAlgoCb.checked = Boolean(hideAlgo);
+                    }
+                }
+            } catch (visDeclErr) {
+                console.error("Error loading content visibility declaration:", visDeclErr);
+            }
+        };
+
+        const loadAccounts = async () => {
+            const accountsListDiv = document.getElementById('settings-accounts-list');
+            if (!accountsListDiv) return;
             try {
                 const accounts: SavedAccountDTO[] = await window.go.services.AuthService.ListAccounts() || [];
                 accountsListDiv.innerHTML = '';
@@ -411,13 +465,19 @@ export async function loadSettings() {
                             state.loggedInHandle = newHandle;
                             state.currentHandle = newHandle;
                             localStorage.setItem('lastHandle', newHandle);
-                            const { captureIdentity } = await import('./auth');
-                            await captureIdentity();
+                            state.currentFeedUri = "";
                             Object.keys(state.tabStates).forEach((k) => {
                                 state.tabStates[k].loaded = false;
+                                state.tabStates[k].loadedAt = undefined;
                             });
+                            await Promise.allSettled([
+                                captureIdentity(),
+                                hydrateStartupPreferences(),
+                                window.go.services.FeedService.GetSavedFeeds().then(feeds => {
+                                    state.savedFeeds = feeds || [];
+                                }),
+                            ]);
                             announceAssertive(i18n.t('extended.switchedAccountMsg', { handle: newHandle }));
-                            await loadSettings();
                             switchTab('timeline');
                         } catch (err: unknown) {
                             announceAssertive(String(err));
@@ -437,10 +497,11 @@ export async function loadSettings() {
             } catch (accErr) {
                 console.error("Error loading saved accounts:", accErr);
             }
-        }
+        };
 
-        const appPasswordsListDiv = document.getElementById('settings-app-passwords-list');
-        if (appPasswordsListDiv) {
+        const loadAppPasswords = async () => {
+            const appPasswordsListDiv = document.getElementById('settings-app-passwords-list');
+            if (!appPasswordsListDiv) return;
             try {
                 const passwords: AppPasswordDTO[] = await window.go.services.AuthService.ListAppPasswords() || [];
                 appPasswordsListDiv.innerHTML = '';
@@ -476,10 +537,11 @@ export async function loadSettings() {
             } catch {
                 appPasswordsListDiv.innerHTML = `<p style="font-size:0.9em; color:#888;">${esc(i18n.t('extended.appPasswordNone'))}</p>`;
             }
-        }
+        };
 
-        const mutedListsDiv = document.getElementById('muted-lists-container');
-        if (mutedListsDiv) {
+        const loadMutedLists = async () => {
+            const mutedListsDiv = document.getElementById('muted-lists-container');
+            if (!mutedListsDiv) return;
             try {
                 const mlRes = await window.go.services.SocialService.GetMutedLists("");
                 mutedListsDiv.innerHTML = '';
@@ -504,10 +566,11 @@ export async function loadSettings() {
             } catch {
                 mutedListsDiv.innerHTML = `<p style="font-size:0.9em; color:#888;">${esc(i18n.t('sec2.noMutedLists'))}</p>`;
             }
-        }
+        };
 
-        const blockedListsDiv = document.getElementById('blocked-lists-container');
-        if (blockedListsDiv) {
+        const loadBlockedLists = async () => {
+            const blockedListsDiv = document.getElementById('blocked-lists-container');
+            if (!blockedListsDiv) return;
             try {
                 const blRes = await window.go.services.SocialService.GetBlockedLists("");
                 blockedListsDiv.innerHTML = '';
@@ -532,10 +595,11 @@ export async function loadSettings() {
             } catch {
                 blockedListsDiv.innerHTML = `<p style="font-size:0.9em; color:#888;">${esc(i18n.t('sec2.noBlockedLists'))}</p>`;
             }
-        }
+        };
 
-        const activitySubsDiv = document.getElementById('activity-subs-container');
-        if (activitySubsDiv) {
+        const loadActivitySubs = async () => {
+            const activitySubsDiv = document.getElementById('activity-subs-container');
+            if (!activitySubsDiv) return;
             try {
                 const subRes = await window.go.services.NotificationsService.ListActivitySubscriptions("");
                 activitySubsDiv.innerHTML = '';
@@ -560,10 +624,11 @@ export async function loadSettings() {
             } catch {
                 activitySubsDiv.innerHTML = `<p style="font-size:0.9em; color:#888;">${esc(i18n.t('sec2.noActivitySubscriptions'))}</p>`;
             }
-        }
+        };
 
-        const ageStatusEl = document.getElementById('age-assurance-status');
-        if (ageStatusEl) {
+        const loadAgeAssurance = async () => {
+            const ageStatusEl = document.getElementById('age-assurance-status');
+            if (!ageStatusEl) return;
             try {
                 const ageState = await window.go.services.SocialService.GetAgeAssuranceState("", "");
                 if (ageState) {
@@ -575,9 +640,31 @@ export async function loadSettings() {
             } catch {
                 ageStatusEl.textContent = '';
             }
+        };
+
+        const results = await Promise.allSettled([
+            hydrateStartupPreferences(),
+            loadMutes(),
+            loadBlocks(),
+            loadLabelers(),
+            loadNotifPrefs(),
+            loadChatDecl(),
+            loadNotifDecl(),
+            loadContentVisDecl(),
+            loadAccounts(),
+            loadAppPasswords(),
+            loadMutedLists(),
+            loadBlockedLists(),
+            loadActivitySubs(),
+            loadAgeAssurance(),
+        ]);
+
+        if (results[0].status === 'rejected') {
+            throw results[0].reason;
         }
 
         state.tabStates['settings'].loaded = true;
+        state.tabStates['settings'].loadedAt = Date.now();
     } catch (err) {
         console.error(err);
         if (state.loggedInHandle) {
@@ -605,7 +692,6 @@ export function setupSettings() {
             localStorage.setItem('hideReplies', String(state.hideReplies));
             announcePolite(state.hideReplies ? i18n.t('settingsMsgs.hideRepliesOn') : i18n.t('settingsMsgs.hideRepliesOff'));
             if (state.currentTab === 'timeline') {
-                const { loadTimeline } = await import('./timeline');
                 loadTimeline(false, true);
             }
         });
@@ -633,14 +719,14 @@ export function setupSettings() {
                 if (selectedLang !== oldLang) {
                     if (selectedLang === '') {
                         localStorage.removeItem('app-language');
-                        i18n.setLanguage(navigator.language.toLowerCase().replace('-', '_'));
+                        await i18n.setLanguage(navigator.language.toLowerCase().replace('-', '_'));
                     } else {
                         localStorage.setItem('app-language', selectedLang);
-                        i18n.setLanguage(selectedLang);
+                        await i18n.setLanguage(selectedLang);
                     }
                     
                     if (state.currentTab === 'timeline') {
-                        import('./timeline').then(m => m.loadTimeline(false, true));
+                        loadTimeline(false, true);
                     }
                 }
             }
@@ -736,11 +822,34 @@ export function setupSettings() {
                 await window.go.services.NotificationsService.PutNotificationPreferences(notifPrefs);
 
                 const chatAllowSelect = document.getElementById('setting-chat-allow-incoming') as HTMLSelectElement | null;
+                const grpAllowSelect = document.getElementById('setting-chat-allow-group-invites') as HTMLSelectElement | null;
                 if (chatAllowSelect && chatAllowSelect.value) {
                     try {
-                        await window.go.services.ChatService.UpdateChatDeclaration(chatAllowSelect.value);
+                        if (window.go.services.ChatService.UpdateChatDeclarationFull && grpAllowSelect) {
+                            await window.go.services.ChatService.UpdateChatDeclarationFull(chatAllowSelect.value, grpAllowSelect.value || 'following');
+                        } else {
+                            await window.go.services.ChatService.UpdateChatDeclaration(chatAllowSelect.value);
+                        }
                     } catch (chatErr) {
                         console.error("Error updating chat declaration:", chatErr);
+                    }
+                }
+
+                const subsSelect = document.getElementById('setting-notif-allow-subscriptions') as HTMLSelectElement | null;
+                if (subsSelect && subsSelect.value && window.go.services.NotificationsService.UpdateNotificationDeclaration) {
+                    try {
+                        await window.go.services.NotificationsService.UpdateNotificationDeclaration(subsSelect.value);
+                    } catch (subsErr) {
+                        console.error("Error updating notification declaration:", subsErr);
+                    }
+                }
+
+                const hideAlgoCb = document.getElementById('setting-hide-algo-recs') as HTMLInputElement | null;
+                if (hideAlgoCb && window.go.services.SocialService.UpdateContentVisibilityDeclaration) {
+                    try {
+                        await window.go.services.SocialService.UpdateContentVisibilityDeclaration(hideAlgoCb.checked);
+                    } catch (visErr) {
+                        console.error("Error updating content visibility declaration:", visErr);
                     }
                 }
 
@@ -1074,6 +1183,50 @@ export function setupSettings() {
             announceAssertive(i18n.t('sec2.contactDataRemovedSuccess'));
         } catch (err: unknown) {
             announceAssertive(String(err));
+        }
+    });
+
+    document.getElementById('btn-load-mod-inbox')?.addEventListener('click', async () => {
+        const container = document.getElementById('mod-inbox-container') as HTMLDivElement | null;
+        if (!container) return;
+        container.innerHTML = `<p>${esc(i18n.t('modals.loading'))}</p>`;
+        try {
+            const res = await window.go.services.ModerationService.GetModerationInbox("");
+            const items = res?.items || [];
+            if (items.length === 0) {
+                container.innerHTML = `<p style="font-size:0.9em; color:#aaa;">${esc(i18n.t('sec2.noModInboxItems'))}</p>`;
+                announcePolite(i18n.t('sec2.noModInboxItems'));
+                return;
+            }
+            container.innerHTML = '';
+            items.forEach((item) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'padding:8px 10px; border:1px solid #555; border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;';
+                const subjLabel = item.subjectUri || item.subjectDid || '';
+                const labelsText = (item.labels || []).join(', ');
+                const appealInfo = item.appealState ? ` • Appeal: ${item.appealState}` : '';
+                row.innerHTML = `
+                    <div>
+                        <strong>${esc(item.enforcementState || 'Action')}</strong>${labelsText ? ` (${esc(labelsText)})` : ''}${esc(appealInfo)}
+                        <small style="display:block; color:#aaa;">${esc(subjLabel)}</small>
+                        ${item.appealNote ? `<small style="display:block; color:#ccc;">${esc(item.appealNote)}</small>` : ''}
+                    </div>
+                    <button type="button" class="btn-appeal-mod-item" style="padding:4px 10px;">${esc(i18n.t('sec2.appealModBtn'))}</button>
+                `;
+                row.querySelector('.btn-appeal-mod-item')?.addEventListener('click', async () => {
+                    const reason = await promptDialog(i18n.t('sec2.appealReasonPrompt'), '', i18n.t('sec2.appealModBtn'));
+                    if (reason === null) return;
+                    try {
+                        await window.go.services.ModerationService.AppealModerationSubject(item.subjectUri || '', item.subjectCid || '', item.subjectDid || '', reason);
+                        announceAssertive(i18n.t('sec2.appealSentMsg'));
+                    } catch (err: unknown) {
+                        announceAssertive(String(err));
+                    }
+                });
+                container.appendChild(row);
+            });
+        } catch (err: unknown) {
+            container.innerHTML = `<p>${esc(String(err))}</p>`;
         }
     });
 }

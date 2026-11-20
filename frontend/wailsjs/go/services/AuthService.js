@@ -26,10 +26,6 @@ export function ListAppPasswords() {
   return window['go']['services']['AuthService']['ListAppPasswords']();
 }
 
-export function Login(arg1, arg2, arg3) {
-  return window['go']['services']['AuthService']['Login'](arg1, arg2, arg3);
-}
-
 export function LoginWithFactor(arg1, arg2, arg3, arg4) {
   return window['go']['services']['AuthService']['LoginWithFactor'](arg1, arg2, arg3, arg4);
 }

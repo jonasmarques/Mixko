@@ -212,7 +212,34 @@ export function countGraphemes(text: string): number {
     return Array.from(text).length;
 }
 
-export function getFilePathOrDataUrl(file: File): Promise<string> {
+/**
+ * Reads an image as a JPEG data URL, at most 2000px on its longest side.
+ *
+ * The browser applies the EXIF rotation while decoding. The Go re-encoder does
+ * not, and drops the tag, so a portrait phone photo would be posted sideways.
+ */
+export async function imageFileToDataUrl(file: File): Promise<string> {
+    try {
+        const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(bitmap.width * scale);
+        canvas.height = Math.round(bitmap.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no 2d context');
+        // JPEG has no transparency; without this, clear areas come out black.
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        bitmap.close();
+        return canvas.toDataURL('image/jpeg', 0.92);
+    } catch {
+        // An image the webview cannot decode still goes through untouched.
+        return getFilePathOrDataUrl(file);
+    }
+}
+
+export function getFilePathOrDataUrl(file: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
         const filePath = (file as unknown as { path?: string }).path;
         if (filePath && typeof filePath === 'string' && filePath.trim() !== '') {

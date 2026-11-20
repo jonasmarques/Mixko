@@ -179,3 +179,23 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 		t.Errorf("legacy passthrough = %q", plaintext)
 	}
 }
+
+// TestUnreadableKeyIsReplaced covers a key the store can no longer decrypt,
+// such as a DPAPI blob copied from another Windows profile. Failing here would
+// stop the app from ever starting again.
+func TestUnreadableKeyIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"session.key", "session.key.dpapi"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("garbage"), 0600); err != nil {
+			t.Fatalf("seeding %s: %v", name, err)
+		}
+	}
+
+	key, err := loadOrCreateKey(dir)
+	if err != nil {
+		t.Fatalf("loadOrCreateKey: %v", err)
+	}
+	if len(key) != keySize {
+		t.Fatalf("key size = %d, want %d", len(key), keySize)
+	}
+}

@@ -1,4 +1,4 @@
-import Hls from 'hls.js';
+import type Hls from 'hls.js';
 import { linkify, esc, escUrl, renderProfileLink } from '../utils/helpers';
 import { formatPostDate } from '../utils/format';
 import { announcePolite, announceAssertive, getPostAccessibleLabel, formatAuthor } from '../utils/a11y';
@@ -31,6 +31,15 @@ function formatAltList(alts: string[]): string {
  * at rather than for every video it has rendered.
  */
 const activePlayers = new Map<HTMLVideoElement, Hls>();
+const pendingVideos = new Set<HTMLVideoElement>();
+let hlsModulePromise: Promise<typeof import('hls.js')> | null = null;
+
+function loadHlsClass(): Promise<typeof import('hls.js')['default']> {
+  if (!hlsModulePromise) {
+    hlsModulePromise = import('hls.js');
+  }
+  return hlsModulePromise.then(mod => mod.default);
+}
 
 /**
  * Buffer ceiling per player.
@@ -96,6 +105,7 @@ function sweepDetachedVideos(): void {
 
 /** Frees whatever `video` is holding: its player, or its source. */
 function releasePlayer(video: HTMLVideoElement): void {
+  pendingVideos.delete(video);
   try {
     video.pause();
   } catch {
@@ -134,7 +144,7 @@ function releasePlayer(video: HTMLVideoElement): void {
 
 /** Builds the player for `video` and starts loading, if it has none yet. */
 function engagePlayer(video: HTMLVideoElement): void {
-  if (activePlayers.has(video)) return;
+  if (activePlayers.has(video) || pendingVideos.has(video)) return;
 
   const shouldAutoplay = video.dataset.autoplay === 'true';
 
@@ -149,24 +159,33 @@ function engagePlayer(video: HTMLVideoElement): void {
   const playlist = video.dataset.playlist;
   if (!playlist) return;
 
-  // Safari plays HLS natively and needs no player at all.
-  if (!Hls.isSupported()) {
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      if (!video.src) video.src = playlist;
-      if (shouldAutoplay) void video.play().catch(() => {});
+  pendingVideos.add(video);
+  void loadHlsClass().then(HlsClass => {
+    if (!pendingVideos.has(video) || !video.isConnected || activePlayers.has(video)) {
+      pendingVideos.delete(video);
+      return;
     }
-    return;
-  }
+    pendingVideos.delete(video);
 
-  const hls = new Hls(HLS_LIMITS);
-  hls.loadSource(playlist);
-  hls.attachMedia(video);
-  activePlayers.set(video, hls);
+    if (!HlsClass.isSupported()) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        if (!video.src) video.src = playlist;
+        if (shouldAutoplay) void video.play().catch(() => {});
+      }
+      return;
+    }
 
-  if (shouldAutoplay) {
-    // Muted autoplay is allowed; a rejection here is not worth surfacing.
-    hls.on(Hls.Events.MANIFEST_PARSED, () => void video.play().catch(() => {}));
-  }
+    const hls = new HlsClass(HLS_LIMITS);
+    hls.loadSource(playlist);
+    hls.attachMedia(video);
+    activePlayers.set(video, hls);
+
+    if (shouldAutoplay) {
+      hls.on(HlsClass.Events.MANIFEST_PARSED, () => void video.play().catch(() => {}));
+    }
+  }).catch(() => {
+    pendingVideos.delete(video);
+  });
 }
 
 function onVisibilityChange(entries: IntersectionObserverEntry[]): void {
@@ -273,6 +292,15 @@ export function createPostArticle(
   article.dataset.embeddingDisabled = post.embeddingDisabled ? "true" : "";
   
   let srMetrics = i18n.t('post.metricsReplies', { replies: (post.replyCount || 0).toString(), reposts: (post.repostCount || 0).toString(), likes: (post.likeCount || 0).toString() });
+  if (post.quoteCount && post.quoteCount > 0) {
+    srMetrics += `, ${i18n.t('sec2.quoteCountLabel', { count: post.quoteCount.toString() })}`;
+  }
+  if (post.bookmarkCount && post.bookmarkCount > 0) {
+    srMetrics += `, ${i18n.t('sec2.bookmarkCountLabel', { count: post.bookmarkCount.toString() })}`;
+  }
+  if (post.knownLikers && post.knownLikers.length > 0) {
+    srMetrics += ` (${i18n.t('sec2.knownLikersInfo', { names: post.knownLikers.join(', ') })})`;
+  }
   article.dataset.metrics = srMetrics;
   let fullText = post.text ? `${post.text}` : "";
   article.dataset.text = fullText;
@@ -287,6 +315,15 @@ export function createPostArticle(
   article.dataset.authorDid = post.authorDid;
   if (post.authorPronouns) {
     article.dataset.authorPronouns = post.authorPronouns;
+  }
+  if (post.authorIsBot) {
+    article.dataset.authorIsBot = "true";
+  }
+  if (post.opThreadPostCount && post.opThreadPostIndex && post.opThreadPostCount > 1) {
+    article.dataset.opThreadProgress = i18n.t('sec2.opThreadProgress', {
+      index: post.opThreadPostIndex.toString(),
+      count: post.opThreadPostCount.toString()
+    });
   }
   article.dataset.viewerLike = post.viewerLike || "";
   article.dataset.viewerBookmark = post.viewerBookmark || "";
@@ -437,22 +474,29 @@ export function createPostArticle(
         `;
       }
       if (post.quotePost.external) {
+        const qExtSource = post.quotePost.external.sourceTitle
+          ? `<small style="display:block; margin-top:2px; color:#888;">📄 ${esc(post.quotePost.external.sourceTitle)}</small>`
+          : "";
         quoteMediaHtml += `<div class="external-card" style="border:1px solid #ddd;padding:6px;margin-top:6px;border-radius:4px;font-size:0.85em;">
           ${post.quotePost.external.thumb ? `<img src="${escUrl(post.quotePost.external.thumb)}" alt="${esc(i18n.t('post.linkThumbAlt'))}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
           <strong><a href="#" class="app-link link-external" data-external-url="${escUrl(post.quotePost.external.uri)}">${esc(post.quotePost.external.title || post.quotePost.external.uri)}</a></strong>
           ${post.quotePost.external.description ? `<p style="margin:2px 0 0 0; color: var(--text-muted, #666);">${esc(post.quotePost.external.description)}</p>` : ""}
+          ${qExtSource}
         </div>`;
       }
 
       const detachBtn = isMyQuotedPost
         ? `<button type="button" class="btn-detach-quote" data-own-uri="${esc(post.quotePost.uri)}" data-quote-uri="${esc(post.uri)}" style="float: right; padding: 2px 8px; font-size: 0.8em;">${esc(i18n.t('sec2.detachQuoteBtn'))}</button>`
         : '';
+      const qBotBadge = post.quotePost.authorIsBot
+        ? ` <span class="bot-badge" title="${esc(i18n.t('sec2.botBadgeAria'))}" aria-label="${esc(i18n.t('sec2.botBadgeAria'))}" style="font-size:0.85em; padding:1px 5px; border-radius:4px; background:rgba(100,116,139,0.2);">${esc(i18n.t('sec2.botBadge'))}</span>`
+        : '';
 
       quoteContext = `
         <div class="quote-context" style="border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 5px;">
           <header>
             ${detachBtn}
-            <strong>${renderProfileLink(post.quotePost.authorHandle, post.quotePost.authorName || post.quotePost.authorHandle)}</strong>
+            <strong>${renderProfileLink(post.quotePost.authorHandle, post.quotePost.authorName || post.quotePost.authorHandle)}</strong>${qBotBadge}
             <span>${renderProfileLink(post.quotePost.authorHandle)}</span>
           </header>
           <div class="post-content">
@@ -495,11 +539,15 @@ export function createPostArticle(
     article.dataset.externalTitle = post.external.title || post.external.uri || "";
     article.dataset.externalDescription = post.external.description || "";
     
+    const extSourceHtml = post.external.sourceTitle
+      ? `<small style="display:block; margin-top:4px; color: var(--text-muted, #888);">📄 ${esc(post.external.sourceTitle)}</small>`
+      : '';
     externalContext = `
       <div class="external-card" style="border: 1px solid #ddd; padding: 8px; margin-top: 8px; border-radius: 4px;">
         ${post.external.thumb ? `<img src="${escUrl(post.external.thumb)}" alt="${esc(i18n.t('post.linkThumbAlt'))}" style="max-height: 120px; max-width: 100%; object-fit: cover; display: block; margin-bottom: 6px; border-radius: 4px;" />` : ''}
         <strong><a href="#" data-external-url="${escUrl(post.external.uri)}">${esc(post.external.title || post.external.uri)}</a></strong>
         ${post.external.description ? `<p style="font-size: 0.85em; margin: 4px 0 0 0; color: var(--text-muted, #666);">${esc(post.external.description)}</p>` : ''}
+        ${extSourceHtml}
       </div>
     `;
   }
@@ -538,12 +586,24 @@ export function createPostArticle(
     Boolean(post.authorHandle && post.authorHandle === state.loggedInHandle);
   
   if (!isNotification || !POSTLESS_NOTIF_REASONS.includes(notifReason)) {
+    const quotesMetricHtml = (post.quoteCount && post.quoteCount > 0)
+      ? `<div class="metric-item metric-quotes">${esc(i18n.t('sec2.quoteCountLabel', { count: post.quoteCount.toString() }))}</div>`
+      : '';
+    const bookmarksMetricHtml = (post.bookmarkCount && post.bookmarkCount > 0)
+      ? `<div class="metric-item metric-bookmarks">${esc(i18n.t('sec2.bookmarkCountLabel', { count: post.bookmarkCount.toString() }))}</div>`
+      : '';
+    const knownLikersHtml = (post.knownLikers && post.knownLikers.length > 0)
+      ? `<div class="known-likers-info" style="font-size:0.85em; color:var(--text-muted, #888); margin-top:4px;">❤️ ${esc(i18n.t('sec2.knownLikersInfo', { names: post.knownLikers.join(', ') }))}</div>`
+      : '';
     footerHtml = `
     <div class="post-metrics" aria-label="${i18n.t('post.metricsAria')}">
       <div class="metric-item metric-replies" aria-label="${i18n.t('post.repliesAria', { count: (post.replyCount || 0).toString() })}">${i18n.t('post.metricRepliesCount', { count: (post.replyCount || 0).toString() })}</div>
       <div class="metric-item metric-reposts" aria-label="${i18n.t('post.repostsAria', { count: (post.repostCount || 0).toString() })}">${i18n.t('post.metricRepostsCount', { count: (post.repostCount || 0).toString() })}</div>
       <div class="metric-item metric-likes" aria-label="${i18n.t('post.likesAria', { count: (post.likeCount || 0).toString() })}">${i18n.t('post.metricLikesCount', { count: (post.likeCount || 0).toString() })}</div>
+      ${quotesMetricHtml}
+      ${bookmarksMetricHtml}
     </div>
+    ${knownLikersHtml}
     `;
   }
   if (!isNotification || !ACTIONLESS_NOTIF_REASONS.includes(notifReason)) {
@@ -552,6 +612,9 @@ export function createPostArticle(
     const pinBtnLabel = isPinnedPost ? i18n.t('post.actionUnpin') : i18n.t('post.actionPin');
     const pinBtnAria = isPinnedPost ? i18n.t('post.unpinPostAria') : i18n.t('post.pinPostAria');
     const toggleQuotesLabel = post.embeddingDisabled ? i18n.t('sec2.toggleQuotesEnableBtn') : i18n.t('sec2.toggleQuotesDisableBtn');
+    // Only the author of a thread can hide replies in it.
+    const threadRootUri = post.rootUri || post.replyToUri || '';
+    const isOwnThread = Boolean(state.loggedInDid && threadRootUri.startsWith(`at://${state.loggedInDid}/`));
     const isCustomFeed = !isNotification && state.currentTab === 'timeline' && state.currentFeedUri !== "";
     footerHtml += `
     <footer aria-label="${i18n.t('post.actionsAria')}">
@@ -565,7 +628,7 @@ export function createPostArticle(
       <button class="btn-hide-post-for-me" aria-label="${esc(i18n.t('sec2.hidePostForMeBtn'))}">${esc(i18n.t('sec2.hidePostForMeBtn'))}</button>
       <button class="btn-report-post" aria-label="${i18n.t('post.reportPostAria')}">${i18n.t('post.actionReport')}</button>
       ${isCustomFeed ? `<button class="btn-feed-more" aria-label="${esc(i18n.t('sec2.showMoreLikeThisBtn'))}">${esc(i18n.t('sec2.showMoreLikeThisBtn'))}</button><button class="btn-feed-less" aria-label="${esc(i18n.t('sec2.showLessLikeThisBtn'))}">${esc(i18n.t('sec2.showLessLikeThisBtn'))}</button>` : ''}
-      ${post.isReply ? `<button class="btn-hide-reply" aria-label="${i18n.t('post.hideReplyAria')}">${i18n.t('post.actionHide')}</button><button class="btn-unhide-reply" aria-label="${esc(i18n.t('sec2.unhideReplyBtn'))}">${esc(i18n.t('sec2.unhideReplyBtn'))}</button>` : ''}
+      ${post.isReply && isOwnThread ? `<button class="btn-hide-reply" aria-label="${i18n.t('post.hideReplyAria')}">${i18n.t('post.actionHide')}</button><button class="btn-unhide-reply" aria-label="${esc(i18n.t('sec2.unhideReplyBtn'))}">${esc(i18n.t('sec2.unhideReplyBtn'))}</button>` : ''}
       ${isOwner ? `<button class="btn-toggle-quotes" aria-label="${esc(toggleQuotesLabel)}">${esc(toggleQuotesLabel)}</button>` : ''}
       ${isOwner ? `<button class="btn-edit-reply-gate" aria-label="${esc(i18n.t('sec2.editReplyGateBtn'))}">${esc(i18n.t('sec2.editReplyGateBtn'))}</button>` : ''}
       ${isOwner ? `<button class="btn-pin-post" aria-label="${pinBtnAria}">${pinBtnLabel}</button>` : ''}
@@ -607,8 +670,14 @@ export function createPostArticle(
   const verifiedBadgeHtml = (!state.hideVerificationBadges && post.authorVerified)
     ? ` <span class="verified-badge" title="${esc(i18n.t('sec2.verifiedBadgeAria'))}" aria-label="${esc(i18n.t('sec2.verifiedBadgeAria'))}" style="color: #3b82f6; font-weight: bold;">✓</span>`
     : '';
+  const botBadgeHtml = post.authorIsBot
+    ? ` <span class="bot-badge" title="${esc(i18n.t('sec2.botBadgeAria'))}" aria-label="${esc(i18n.t('sec2.botBadgeAria'))}" style="font-size: 0.85em; padding: 1px 6px; border-radius: 4px; background: rgba(100,116,139,0.2);">${esc(i18n.t('sec2.botBadge'))}</span>`
+    : '';
+  const opThreadBadgeHtml = article.dataset.opThreadProgress
+    ? ` <span class="op-thread-badge" style="font-size: 0.8em; padding: 1px 6px; border-radius: 4px; background: rgba(59,130,246,0.15); color: #60a5fa;">${esc(article.dataset.opThreadProgress)}</span>`
+    : '';
 
-  const postLabels = (post.labels || []).filter(l => l && !l.startsWith('!'));
+  const postLabels = (post.labels || []).filter(l => l && !l.startsWith('!') && l.toLowerCase() !== 'bot');
   const hasContentLabels = !forceWarning && !isNotification && postLabels.length > 0;
   const labelBannerHtml = hasContentLabels
     ? `<div class="post-label-warning" style="padding: 8px 12px; margin-bottom: 8px; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
@@ -622,9 +691,9 @@ export function createPostArticle(
     ${repostContext}
     ${replyContext}
     <header>
-      <strong>${renderProfileLink(post.authorHandle, authorDisplay)}</strong>${verifiedBadgeHtml}
+      <strong>${renderProfileLink(post.authorHandle, authorDisplay)}</strong>${verifiedBadgeHtml}${botBadgeHtml}
       ${showHandleSpan ? `<span>${renderProfileLink(post.authorHandle)}</span>` : ''}
-      <small>${esc(formattedTime)}</small>
+      <small>${esc(formattedTime)}</small>${opThreadBadgeHtml}
     </header>
     ${labelBannerHtml}
     <div class="post-content" ${hasContentLabels ? 'style="display:none;"' : ''}>
@@ -653,30 +722,9 @@ export function createPostArticle(
             ${innerHtmlContent}
         </div>
       `;
-      // The markup above is already in the DOM, so the button can be wired up
-      // directly.
-      article.querySelector('.btn-show-muted')?.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const contentDiv = article.querySelector('.muted-content') as HTMLElement;
-          const warningDiv = article.querySelector('.muted-warning') as HTMLElement;
-          if (contentDiv) contentDiv.style.display = 'block';
-          if (warningDiv) warningDiv.style.display = 'none';
-          article.dataset.mutedShown = "true";
-          article.setAttribute('aria-label', getPostAccessibleLabel(article));
-          announcePolite(i18n.t('post.contentShown'));
-      });
   } else {
       article.innerHTML = innerHtmlContent;
   }
-
-  article.querySelector('.btn-reveal-labeled-post')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const contentEl = article.querySelector('.post-content') as HTMLElement | null;
-    const warnEl = article.querySelector('.post-label-warning') as HTMLElement | null;
-    if (contentEl) contentEl.style.display = 'block';
-    if (warnEl) warnEl.style.display = 'none';
-    announcePolite(i18n.t('post.contentShown'));
-  });
 
   // HLS binding: registered now, loaded only once on screen.
   if (post.video?.playlist) {
@@ -689,102 +737,168 @@ export function createPostArticle(
      if (qVid) registerVideo(qVid, post.quotePost.video.playlist, post.quotePost.video.presentation === 'gif');
   }
 
-  // Interactions
-  article.querySelector('.btn-like')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-        const likeMetric = article.querySelector('.metric-likes');
-        let count = post.likeCount || 0;
-        if (article.dataset.viewerLike) {
+  articlePostMap.set(article, post);
+  ensurePostDelegation();
+
+  article.setAttribute('aria-label', getPostAccessibleLabel(article));
+  return article;
+}
+
+const articlePostMap = new WeakMap<HTMLElement, PostView>();
+let postDelegationBound = false;
+
+function ensurePostDelegation(): void {
+  if (postDelegationBound) return;
+  postDelegationBound = true;
+
+  document.addEventListener('focusin', (e: FocusEvent) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement) || !target.matches('article.post-item')) return;
+    const idx = parseInt(target.dataset.index || "-1", 10);
+    if (!isNaN(idx) && idx >= 0) {
+      state.focusedPostIndex = idx;
+    }
+  });
+
+  document.addEventListener('click', (e: MouseEvent) => {
+    const rawTarget = e.target;
+    if (!(rawTarget instanceof Element)) return;
+
+    const btn = rawTarget.closest('button') as HTMLButtonElement | null;
+    if (!btn) return;
+
+    const article = btn.closest('article.post-item') as HTMLElement | null;
+    if (!article) return;
+
+    const post = articlePostMap.get(article);
+    if (!post) return;
+
+    if (btn.classList.contains('btn-show-muted')) {
+      e.stopPropagation();
+      const contentDiv = article.querySelector('.muted-content') as HTMLElement | null;
+      const warningDiv = article.querySelector('.muted-warning') as HTMLElement | null;
+      if (contentDiv) contentDiv.style.display = 'block';
+      if (warningDiv) warningDiv.style.display = 'none';
+      article.dataset.mutedShown = "true";
+      article.setAttribute('aria-label', getPostAccessibleLabel(article));
+      announcePolite(i18n.t('post.contentShown'));
+      return;
+    }
+
+    if (btn.classList.contains('btn-reveal-labeled-post')) {
+      e.stopPropagation();
+      const contentEl = article.querySelector('.post-content') as HTMLElement | null;
+      const warnEl = article.querySelector('.post-label-warning') as HTMLElement | null;
+      if (contentEl) contentEl.style.display = 'block';
+      if (warnEl) warnEl.style.display = 'none';
+      announcePolite(i18n.t('post.contentShown'));
+      return;
+    }
+
+    if (btn.classList.contains('btn-like')) {
+      e.stopPropagation();
+      void (async () => {
+        try {
+          const likeMetric = article.querySelector('.metric-likes');
+          let count = post.likeCount || 0;
+          if (article.dataset.viewerLike) {
             await window.go.services.PostBuilderService.UnlikePost(article.dataset.viewerLike);
             announceAssertive(i18n.t('post.unlikeSuccess'));
             article.dataset.viewerLike = "";
-            const btn = article.querySelector('.btn-like');
-            if (btn) btn.textContent = i18n.t('post.likeBtn');
+            btn.textContent = i18n.t('post.likeBtn');
             count = Math.max(0, count - 1);
             post.likeCount = count;
             if (likeMetric) likeMetric.textContent = i18n.t('post.metricLikesCount', { count: count.toString() });
-        } else {
+          } else {
             const res = await window.go.services.PostBuilderService.LikePost(post.uri, post.cid);
             announceAssertive(i18n.t('post.likeSuccess'));
             article.dataset.viewerLike = res;
-            const btn = article.querySelector('.btn-like');
-            if (btn) btn.textContent = i18n.t('post.unlikeBtn');
+            btn.textContent = i18n.t('post.unlikeBtn');
             count += 1;
             post.likeCount = count;
             if (likeMetric) likeMetric.textContent = i18n.t('post.metricLikesCount', { count: count.toString() });
+          }
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-    } catch(err) { announceAssertive(i18n.t('post.error', { error: String(err) })); }
-  });
-  
-  article.querySelector('.btn-repost')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-        const repostMetric = article.querySelector('.metric-reposts');
-        let count = post.repostCount || 0;
-        if (article.dataset.viewerRepost) {
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-repost')) {
+      e.stopPropagation();
+      void (async () => {
+        try {
+          const repostMetric = article.querySelector('.metric-reposts');
+          let count = post.repostCount || 0;
+          if (article.dataset.viewerRepost) {
             announcePolite(i18n.t('post.undoingRepost'));
             await window.go.services.PostBuilderService.DeleteRepost(article.dataset.viewerRepost);
             announceAssertive(i18n.t('post.undoRepostSuccess'));
             article.dataset.viewerRepost = "";
-            const btn = article.querySelector('.btn-repost');
-            if (btn) btn.textContent = i18n.t('post.repostBtn');
+            btn.textContent = i18n.t('post.repostBtn');
             count = Math.max(0, count - 1);
             post.repostCount = count;
             if (repostMetric) repostMetric.textContent = i18n.t('post.metricRepostsCount', { count: count.toString() });
-        } else {
+          } else {
             announcePolite(i18n.t('post.reposting'));
             const res = await window.go.services.PostBuilderService.Repost(post.uri, post.cid);
             announceAssertive(i18n.t('post.repostSuccess'));
             article.dataset.viewerRepost = res || "reposted";
-            const btn = article.querySelector('.btn-repost');
-            if (btn) btn.textContent = i18n.t('post.undoRepostBtn');
+            btn.textContent = i18n.t('post.undoRepostBtn');
             count += 1;
             post.repostCount = count;
             if (repostMetric) repostMetric.textContent = i18n.t('post.metricRepostsCount', { count: count.toString() });
+          }
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-    } catch(err) { announceAssertive(i18n.t('post.error', { error: String(err) })); }
-  });
+      })();
+      return;
+    }
 
-  article.querySelector('.btn-reply')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openComposeModal('reply', {uri: post.uri, cid: post.cid, authorHandle: post.authorHandle, authorPronouns: post.authorPronouns});
-  });
+    if (btn.classList.contains('btn-reply')) {
+      e.stopPropagation();
+      openComposeModal('reply', { uri: post.uri, cid: post.cid, authorHandle: post.authorHandle, authorPronouns: post.authorPronouns });
+      return;
+    }
 
-  article.querySelector('.btn-quote')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openComposeModal('quote', {uri: post.uri, cid: post.cid, authorHandle: post.authorHandle, authorPronouns: post.authorPronouns});
-  });
+    if (btn.classList.contains('btn-quote')) {
+      e.stopPropagation();
+      openComposeModal('quote', { uri: post.uri, cid: post.cid, authorHandle: post.authorHandle, authorPronouns: post.authorPronouns });
+      return;
+    }
 
-  article.querySelector('.btn-bookmark')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-        if (article.dataset.viewerBookmark) {
+    if (btn.classList.contains('btn-bookmark')) {
+      e.stopPropagation();
+      void (async () => {
+        try {
+          if (article.dataset.viewerBookmark) {
             announcePolite(i18n.t('post.removingSaved'));
-            await (window as any).go.services.PostBuilderService.UnbookmarkPost(article.dataset.viewerBookmark, post.uri);
+            await window.go.services.PostBuilderService.UnbookmarkPost(article.dataset.viewerBookmark, post.uri);
             announceAssertive(i18n.t('post.removeSavedSuccess'));
             article.dataset.viewerBookmark = "";
-            const btn = article.querySelector('.btn-bookmark') as HTMLButtonElement;
-            if (btn) btn.textContent = i18n.t('post.saveBtn');
-        } else {
+            btn.textContent = i18n.t('post.saveBtn');
+          } else {
             announcePolite(i18n.t('post.savingPost'));
-            const res = await (window as any).go.services.PostBuilderService.BookmarkPost(post.uri, post.cid);
+            const res = await window.go.services.PostBuilderService.BookmarkPost(post.uri, post.cid);
             announceAssertive(i18n.t('post.saveSuccessPost'));
             article.dataset.viewerBookmark = res || "bookmarked";
-            const btn = article.querySelector('.btn-bookmark') as HTMLButtonElement;
-            if (btn) btn.textContent = i18n.t('post.savedBtn');
+            btn.textContent = i18n.t('post.savedBtn');
+          }
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-    } catch(err) {
-        announceAssertive(i18n.t('post.error', { error: String(err) }));
+      })();
+      return;
     }
-  });
 
-  article.querySelector('.btn-delete-post')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    confirmDialog(i18n.t('post.deleteConfirm'), i18n.t('post.deleteTitle')).then(async (confirmed) => {
-      if (confirmed) {
+    if (btn.classList.contains('btn-delete-post')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      if (!uri) return;
+      void confirmDialog(i18n.t('post.deleteConfirm'), i18n.t('post.deleteTitle')).then(async (confirmed) => {
+        if (!confirmed) return;
         announcePolite(i18n.t('post.deleting'));
         try {
           await window.go.services.PostBuilderService.DeletePost(uri);
@@ -800,274 +914,288 @@ export function createPostArticle(
               state.currentPosts[state.focusedPostIndex].focus();
             }
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-      }
-    });
-  });
+      });
+      return;
+    }
 
-  article.querySelector('.btn-mute-thread')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    const btn = article.querySelector('.btn-mute-thread') as HTMLButtonElement | null;
-    try {
-      if (article.dataset.viewerThreadMuted === "true") {
-        announcePolite(i18n.t('post.unmutingThread'));
-        await window.go.services.ModerationService.UnmuteThread(uri);
-        article.dataset.viewerThreadMuted = "";
-        post.viewerThreadMuted = false;
-        if (btn) {
-          btn.textContent = i18n.t('post.actionMute');
-          btn.setAttribute('aria-label', i18n.t('post.muteThreadAria'));
+    if (btn.classList.contains('btn-mute-thread')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      if (!uri) return;
+      void (async () => {
+        try {
+          if (article.dataset.viewerThreadMuted === "true") {
+            announcePolite(i18n.t('post.unmutingThread'));
+            await window.go.services.ModerationService.UnmuteThread(uri);
+            article.dataset.viewerThreadMuted = "";
+            post.viewerThreadMuted = false;
+            btn.textContent = i18n.t('post.actionMute');
+            btn.setAttribute('aria-label', i18n.t('post.muteThreadAria'));
+            announceAssertive(i18n.t('post.unmuteThreadSuccess'));
+          } else {
+            announcePolite(i18n.t('post.mutingThread'));
+            await window.go.services.ModerationService.MuteThread(uri);
+            article.dataset.viewerThreadMuted = "true";
+            post.viewerThreadMuted = true;
+            btn.textContent = i18n.t('post.actionUnmute');
+            btn.setAttribute('aria-label', i18n.t('post.unmuteThreadAria'));
+            announceAssertive(i18n.t('post.muteThreadSuccess'));
+          }
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-        announceAssertive(i18n.t('post.unmuteThreadSuccess'));
-      } else {
-        announcePolite(i18n.t('post.mutingThread'));
-        await window.go.services.ModerationService.MuteThread(uri);
-        article.dataset.viewerThreadMuted = "true";
-        post.viewerThreadMuted = true;
-        if (btn) {
-          btn.textContent = i18n.t('post.actionUnmute');
-          btn.setAttribute('aria-label', i18n.t('post.unmuteThreadAria'));
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-share-dm')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      const cid = article.dataset.cid;
+      if (!uri || !cid) return;
+      void (async () => {
+        const rawTarget = await promptDialog(i18n.t('extended.sharePostDmPrompt'), "", i18n.t('extended.sharePostDm'));
+        if (!rawTarget || !rawTarget.trim()) return;
+        const cleanTarget = rawTarget.trim().replace(/^@/, '');
+        const msgText = (await promptDialog(i18n.t('extended.sharePostDmTextPrompt'), "", i18n.t('extended.sharePostDm'))) || '';
+        try {
+          const avail = await window.go.services.ChatService.GetConvoAvailability(cleanTarget);
+          if (avail && !avail.canChat) {
+            announceAssertive(i18n.t('extended.cannotChatUser'));
+            return;
+          }
+          const convo = await window.go.services.ChatService.GetConvoForMembers([cleanTarget]);
+          if (convo && convo.id) {
+            await window.go.services.ChatService.SendMessageWithEmbed(convo.id, msgText.trim(), uri, cid);
+            announceAssertive(i18n.t('extended.sharePostDmSuccess'));
+          }
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-        announceAssertive(i18n.t('post.muteThreadSuccess'));
-      }
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
+      })();
+      return;
     }
-  });
 
-  article.querySelector('.btn-share-dm')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    const cid = article.dataset.cid;
-    if (!uri || !cid) return;
-    const rawTarget = await promptDialog(i18n.t('extended.sharePostDmPrompt'), "", i18n.t('extended.sharePostDm'));
-    if (!rawTarget || !rawTarget.trim()) return;
-    const cleanTarget = rawTarget.trim().replace(/^@/, '');
-    const msgText = (await promptDialog(i18n.t('extended.sharePostDmTextPrompt'), "", i18n.t('extended.sharePostDm'))) || '';
-    try {
-      const avail = await window.go.services.ChatService.GetConvoAvailability(cleanTarget);
-      if (avail && !avail.canChat) {
-        announceAssertive(i18n.t('extended.cannotChatUser'));
-        return;
-      }
-      const convo = await window.go.services.ChatService.GetConvoForMembers([cleanTarget]);
-      if (convo && convo.id) {
-        await window.go.services.ChatService.SendMessageWithEmbed(convo.id, msgText.trim(), uri, cid);
-        announceAssertive(i18n.t('extended.sharePostDmSuccess'));
-      }
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-report-post')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    const cid = article.dataset.cid;
-    if (!uri || !cid) return;
-    const details = await promptReportDetails(i18n.t('post.reportTitle'));
-    if (details) {
-      try {
-        announcePolite(i18n.t('post.reporting'));
-        await window.go.services.ModerationService.ReportPost(uri, cid, details.reasonType, details.reason);
-        announceAssertive(i18n.t('post.reportSuccess'));
-      } catch (err: unknown) {
-        announceAssertive(i18n.t('post.error', { error: String(err) }));
-      }
-    }
-  });
-
-  article.querySelector('.btn-hide-reply')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
-    try {
-      announcePolite(i18n.t('post.hidingReply'));
-      await window.go.services.PostBuilderService.HideReply(rootUri, uri);
-      announceAssertive(i18n.t('post.hideReplySuccess'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-pin-post')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    const cid = article.dataset.cid;
-    if (!uri || !cid) return;
-    const btn = article.querySelector('.btn-pin-post') as HTMLButtonElement | null;
-    try {
-      const currentlyPinned = article.dataset.pinned === "true" || state.loggedInPinnedPostUri === uri;
-      if (currentlyPinned) {
-        announcePolite(i18n.t('post.unpinning'));
-        await window.go.services.SocialService.UnpinPost();
-        article.dataset.pinned = "";
-        post.isPinned = false;
-        if (state.loggedInPinnedPostUri === uri) {
-          state.loggedInPinnedPostUri = "";
+    if (btn.classList.contains('btn-report-post')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      const cid = article.dataset.cid;
+      if (!uri || !cid) return;
+      void (async () => {
+        const details = await promptReportDetails(i18n.t('post.reportTitle'));
+        if (details) {
+          try {
+            announcePolite(i18n.t('post.reporting'));
+            await window.go.services.ModerationService.ReportPost(uri, cid, details.reasonType, details.reason);
+            announceAssertive(i18n.t('post.reportSuccess'));
+          } catch (err: unknown) {
+            announceAssertive(i18n.t('post.error', { error: String(err) }));
+          }
         }
-        if (btn) {
-          btn.textContent = i18n.t('post.actionPin');
-          btn.setAttribute('aria-label', i18n.t('post.pinPostAria'));
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-hide-reply')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      if (!uri) return;
+      const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
+      void (async () => {
+        try {
+          announcePolite(i18n.t('post.hidingReply'));
+          await window.go.services.PostBuilderService.HideReply(rootUri, uri);
+          announceAssertive(i18n.t('post.hideReplySuccess'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-        announceAssertive(i18n.t('post.unpinSuccess'));
-      } else {
-        announcePolite(i18n.t('post.pinning'));
-        await window.go.services.SocialService.PinPost(uri, cid);
-        article.dataset.pinned = "true";
-        post.isPinned = true;
-        state.loggedInPinnedPostUri = uri;
-        if (btn) {
-          btn.textContent = i18n.t('post.actionUnpin');
-          btn.setAttribute('aria-label', i18n.t('post.unpinPostAria'));
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-pin-post')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      const cid = article.dataset.cid;
+      if (!uri || !cid) return;
+      void (async () => {
+        try {
+          const currentlyPinned = article.dataset.pinned === "true" || state.loggedInPinnedPostUri === uri;
+          if (currentlyPinned) {
+            announcePolite(i18n.t('post.unpinning'));
+            await window.go.services.SocialService.UnpinPost();
+            article.dataset.pinned = "";
+            post.isPinned = false;
+            if (state.loggedInPinnedPostUri === uri) {
+              state.loggedInPinnedPostUri = "";
+            }
+            btn.textContent = i18n.t('post.actionPin');
+            btn.setAttribute('aria-label', i18n.t('post.pinPostAria'));
+            announceAssertive(i18n.t('post.unpinSuccess'));
+          } else {
+            announcePolite(i18n.t('post.pinning'));
+            await window.go.services.SocialService.PinPost(uri, cid);
+            article.dataset.pinned = "true";
+            post.isPinned = true;
+            state.loggedInPinnedPostUri = uri;
+            btn.textContent = i18n.t('post.actionUnpin');
+            btn.setAttribute('aria-label', i18n.t('post.unpinPostAria'));
+            announceAssertive(i18n.t('post.pinSuccess'));
+          }
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
         }
-        announceAssertive(i18n.t('post.pinSuccess'));
-      }
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-unhide-reply')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      if (!uri) return;
+      const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
+      void (async () => {
+        try {
+          await window.go.services.PostBuilderService.UnhideReply(rootUri, uri);
+          announceAssertive(i18n.t('sec2.unhideReplySuccess'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-hide-post-for-me')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      if (!uri) return;
+      void (async () => {
+        try {
+          await window.go.services.SocialService.HidePostForMe(uri);
+          if (!state.hiddenPostUris.includes(uri)) {
+            state.hiddenPostUris.push(uri);
+          }
+          article.remove();
+          announceAssertive(i18n.t('sec2.hidePostForMeSuccess'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-feed-more')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      const feedUri = state.currentFeedUri;
+      if (!uri || !feedUri) return;
+      void (async () => {
+        try {
+          await window.go.services.FeedService.SendFeedInteraction(feedUri, uri, 'app.bsky.feed.defs#requestMore', post.feedContext || '');
+          announceAssertive(i18n.t('sec2.feedInteractionSent'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-feed-less')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      const feedUri = state.currentFeedUri;
+      if (!uri || !feedUri) return;
+      void (async () => {
+        try {
+          await window.go.services.FeedService.SendFeedInteraction(feedUri, uri, 'app.bsky.feed.defs#requestLess', post.feedContext || '');
+          announceAssertive(i18n.t('sec2.feedInteractionSent'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-toggle-quotes')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      if (!uri) return;
+      void (async () => {
+        try {
+          const currentlyDisabled = post.embeddingDisabled === true;
+          await window.go.services.PostBuilderService.TogglePostQuotes(uri, !currentlyDisabled);
+          post.embeddingDisabled = !currentlyDisabled;
+          btn.textContent = post.embeddingDisabled ? i18n.t('sec2.enableQuotes') : i18n.t('sec2.disableQuotes');
+          announceAssertive(post.embeddingDisabled ? i18n.t('sec2.quotesDisabledSuccess') : i18n.t('sec2.quotesEnabledSuccess'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-edit-reply-gate')) {
+      e.stopPropagation();
+      const uri = article.dataset.uri;
+      if (!uri) return;
+      void (async () => {
+        const gateChoices = [
+          { value: 'everyone', label: i18n.t('compose.replyEverybody') },
+          { value: 'nobody', label: i18n.t('compose.replyNobody') },
+          { value: 'mentioned', label: i18n.t('compose.replyMentioned') },
+          { value: 'following', label: i18n.t('compose.replyFollowing') },
+          { value: 'followers', label: i18n.t('sec2.replyFollowers') },
+          { value: 'followers,mentioned', label: i18n.t('sec2.replyFollowersMentioned') },
+          { value: 'following,followers', label: i18n.t('sec2.replyFollowingFollowers') },
+        ];
+        const promptText = `${i18n.t('sec2.editReplyGatePrompt')}\n` + gateChoices.map((c, idx) => `${idx + 1}. ${c.label}`).join('\n');
+        const chosenIdxStr = await promptDialog(promptText, '1', i18n.t('sec2.editReplyGate'));
+        if (!chosenIdxStr) return;
+        const chosenIdx = parseInt(chosenIdxStr, 10) - 1;
+        const selected = gateChoices[chosenIdx]?.value || chosenIdxStr.trim();
+        if (!selected) return;
+        try {
+          await window.go.services.PostBuilderService.UpdateThreadgate(uri, selected, []);
+          announceAssertive(i18n.t('sec2.editReplyGateSuccess'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-detach-quote')) {
+      e.stopPropagation();
+      const ownUri = btn.dataset.ownUri;
+      const quoteUri = btn.dataset.quoteUri;
+      if (!ownUri || !quoteUri) return;
+      void (async () => {
+        try {
+          await window.go.services.PostBuilderService.DetachQuote(ownUri, quoteUri);
+          announceAssertive(i18n.t('sec2.detachQuoteSuccess'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
+      return;
+    }
+
+    if (btn.classList.contains('btn-reattach-quote')) {
+      e.stopPropagation();
+      const ownUri = btn.dataset.ownUri;
+      const quoteUri = btn.dataset.quoteUri;
+      if (!ownUri || !quoteUri) return;
+      void (async () => {
+        try {
+          await window.go.services.PostBuilderService.ReattachQuote(ownUri, quoteUri);
+          announceAssertive(i18n.t('sec2.reattachQuoteSuccess'));
+        } catch (err: unknown) {
+          announceAssertive(i18n.t('post.error', { error: String(err) }));
+        }
+      })();
     }
   });
-
-  article.querySelector('.btn-unhide-reply')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    const rootUri = article.dataset.rootUri || article.dataset.replyToUri || uri;
-    try {
-      await window.go.services.PostBuilderService.UnhideReply(rootUri, uri);
-      announceAssertive(i18n.t('sec2.unhideReplySuccess'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-hide-post-for-me')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    try {
-      await window.go.services.SocialService.HidePostForMe(uri);
-      if (!state.hiddenPostUris.includes(uri)) {
-        state.hiddenPostUris.push(uri);
-      }
-      article.remove();
-      announceAssertive(i18n.t('sec2.hidePostForMeSuccess'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-feed-more')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    const feedUri = state.currentFeedUri;
-    if (!uri || !feedUri) return;
-    try {
-      await window.go.services.FeedService.SendFeedInteraction(feedUri, uri, 'app.bsky.feed.defs#requestMore', post.feedContext || '');
-      announceAssertive(i18n.t('sec2.feedInteractionSent'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-feed-less')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    const feedUri = state.currentFeedUri;
-    if (!uri || !feedUri) return;
-    try {
-      await window.go.services.FeedService.SendFeedInteraction(feedUri, uri, 'app.bsky.feed.defs#requestLess', post.feedContext || '');
-      announceAssertive(i18n.t('sec2.feedInteractionSent'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-toggle-quotes')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    const btn = article.querySelector('.btn-toggle-quotes') as HTMLButtonElement | null;
-    try {
-      const currentlyDisabled = post.embeddingDisabled === true;
-      await window.go.services.PostBuilderService.TogglePostQuotes(uri, !currentlyDisabled);
-      post.embeddingDisabled = !currentlyDisabled;
-      if (btn) {
-        btn.textContent = post.embeddingDisabled ? i18n.t('sec2.enableQuotes') : i18n.t('sec2.disableQuotes');
-      }
-      announceAssertive(post.embeddingDisabled ? i18n.t('sec2.quotesDisabledSuccess') : i18n.t('sec2.quotesEnabledSuccess'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-edit-reply-gate')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const uri = article.dataset.uri;
-    if (!uri) return;
-    const gateChoices = [
-      { value: 'everyone', label: i18n.t('compose.replyEverybody') },
-      { value: 'nobody', label: i18n.t('compose.replyNobody') },
-      { value: 'mentioned', label: i18n.t('compose.replyMentioned') },
-      { value: 'following', label: i18n.t('compose.replyFollowing') },
-      { value: 'followers', label: i18n.t('sec2.replyFollowers') },
-      { value: 'followers,mentioned', label: i18n.t('sec2.replyFollowersMentioned') },
-      { value: 'following,followers', label: i18n.t('sec2.replyFollowingFollowers') },
-    ];
-    const promptText = `${i18n.t('sec2.editReplyGatePrompt')}\n` + gateChoices.map((c, idx) => `${idx + 1}. ${c.label}`).join('\n');
-    const chosenIdxStr = await promptDialog(promptText, '1', i18n.t('sec2.editReplyGate'));
-    if (!chosenIdxStr) return;
-    const chosenIdx = parseInt(chosenIdxStr, 10) - 1;
-    const selected = gateChoices[chosenIdx]?.value || chosenIdxStr.trim();
-    if (!selected) return;
-    try {
-      await window.go.services.PostBuilderService.UpdateThreadgate(uri, selected, []);
-      announceAssertive(i18n.t('sec2.editReplyGateSuccess'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-detach-quote')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const btn = e.currentTarget as HTMLButtonElement;
-    const ownUri = btn.dataset.ownUri;
-    const quoteUri = btn.dataset.quoteUri;
-    if (!ownUri || !quoteUri) return;
-    try {
-      await window.go.services.PostBuilderService.DetachQuote(ownUri, quoteUri);
-      announceAssertive(i18n.t('sec2.detachQuoteSuccess'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.querySelector('.btn-reattach-quote')?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const btn = e.currentTarget as HTMLButtonElement;
-    const ownUri = btn.dataset.ownUri;
-    const quoteUri = btn.dataset.quoteUri;
-    if (!ownUri || !quoteUri) return;
-    try {
-      await window.go.services.PostBuilderService.ReattachQuote(ownUri, quoteUri);
-      announceAssertive(i18n.t('sec2.reattachQuoteSuccess'));
-    } catch (err: unknown) {
-      announceAssertive(i18n.t('post.error', { error: String(err) }));
-    }
-  });
-
-  article.addEventListener('focus', () => {
-    const idx = parseInt(article.dataset.index || "-1", 10);
-    if (!isNaN(idx) && idx >= 0) {
-      state.focusedPostIndex = idx;
-    }
-  });
-
-  article.setAttribute('aria-label', getPostAccessibleLabel(article));
-  return article;
 }

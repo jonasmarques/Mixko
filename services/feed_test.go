@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
@@ -403,6 +404,72 @@ func TestGetPostThreadAndGetPostsFallbackToExternalPDS(t *testing.T) {
 	postsRes, err := svc.GetPosts([]string{rootURI})
 	if err != nil || len(postsRes.Posts) != 1 || postsRes.Posts[0].URI != rootURI {
 		t.Fatalf("GetPosts fallback failed: err=%v, posts=%+v", err, postsRes)
+	}
+}
+
+func TestParsePostView2026FieldsAndBotLabel(t *testing.T) {
+	bookmarked := true
+	quoteCount := int64(7)
+	bookmarkCount := int64(19)
+	likerName := "Alice"
+	pv := &bsky.FeedDefs_PostView{
+		Uri:           "at://did:plc:bot1/app.bsky.feed.post/p1",
+		Cid:           "cid1",
+		QuoteCount:    &quoteCount,
+		BookmarkCount: &bookmarkCount,
+		Author: &bsky.ActorDefs_ProfileViewBasic{
+			Did:    "did:plc:bot1",
+			Handle: "bot.bsky.social",
+			Labels: []*atproto.LabelDefs_Label{
+				{Val: "bot"},
+				{Val: "!no-unauthenticated"},
+			},
+		},
+		Viewer: &bsky.FeedDefs_ViewerState{
+			Bookmarked: &bookmarked,
+			KnownLikers: &bsky.FeedDefs_KnownLikers{
+				Count: 1,
+				Actors: []*bsky.ActorDefs_ProfileViewBasic{
+					{Did: "did:plc:alice", Handle: "alice.bsky.social", DisplayName: &likerName},
+				},
+			},
+		},
+		Embed: &bsky.FeedDefs_PostView_Embed{
+			EmbedExternal_View: &bsky.EmbedExternal_View{
+				External: &bsky.EmbedExternal_ViewExternal{
+					Uri:         "https://example.com/article",
+					Title:       "Example Article",
+					Description: "Summary",
+					Source: &bsky.EmbedExternal_ViewExternalSource{
+						Title: "Example Publication",
+						Uri:   "https://example.com",
+					},
+				},
+			},
+		},
+	}
+
+	dto := ParsePostView(pv)
+	if dto == nil {
+		t.Fatal("expected non-nil dto")
+	}
+	if !dto.AuthorIsBot {
+		t.Error("expected AuthorIsBot to be true")
+	}
+	if len(dto.Labels) != 0 {
+		t.Errorf("expected bot and !no-unauthenticated to be excluded from content warning labels, got %v", dto.Labels)
+	}
+	if dto.ViewerBookmark != "bookmarked" {
+		t.Errorf("ViewerBookmark = %q, want bookmarked", dto.ViewerBookmark)
+	}
+	if dto.QuoteCount != 7 || dto.BookmarkCount != 19 {
+		t.Errorf("QuoteCount=%d BookmarkCount=%d, want 7 and 19", dto.QuoteCount, dto.BookmarkCount)
+	}
+	if len(dto.KnownLikers) != 1 || dto.KnownLikers[0] != "Alice" {
+		t.Errorf("KnownLikers = %v, want [Alice]", dto.KnownLikers)
+	}
+	if dto.External == nil || dto.External.SourceTitle != "Example Publication" || dto.External.SourceURI != "https://example.com" {
+		t.Errorf("External = %+v, want source metadata populated", dto.External)
 	}
 }
 

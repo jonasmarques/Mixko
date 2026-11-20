@@ -13,6 +13,7 @@ import (
 	"mixko/database"
 
 	"github.com/bluesky-social/indigo/api/atproto"
+	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/bluesky-social/indigo/xrpc"
@@ -37,12 +38,16 @@ var sharedHTTPClient = &http.Client{
 	Transport: sharedTransport,
 }
 
+var sharedShortTimeoutHTTPClient = &http.Client{
+	Transport: sharedTransport,
+	Timeout:   8 * time.Second,
+}
+
+const prefsCacheTTL = 30 * time.Second
+
 // DefaultPDSHost is used when a user's own PDS cannot be resolved from their
 // DID document.
 const DefaultPDSHost = "https://bsky.social"
-
-// PublicAppViewHost is the official cached endpoint for unauthenticated queries.
-const PublicAppViewHost = "https://public.api.bsky.app"
 
 // defaultCallTimeout bounds a single API call. Without it a stalled connection
 // would hang a goroutine for the lifetime of the process.
@@ -61,11 +66,27 @@ type ATClient struct {
 
 	directory identity.Directory
 
+	// persist is false for a login made without "remember me": refreshed
+	// tokens must then stay in memory only.
+	persist bool
+
 	// refreshMu guards inflight so that concurrent 401s trigger exactly one
 	// refresh. Refresh tokens are single-use: firing two in parallel would
 	// invalidate the session.
 	refreshMu sync.Mutex
 	inflight  *refreshCall
+
+	prefsMu       sync.Mutex
+	prefsCache    *bsky.ActorGetPreferences_Output
+	prefsCacheDID string
+	prefsCacheAt  time.Time
+	prefsInflight *prefsCall
+}
+
+type prefsCall struct {
+	done chan struct{}
+	res  *bsky.ActorGetPreferences_Output
+	err  error
 }
 
 // refreshCall lets callers that arrive during an in-progress refresh wait for
@@ -127,11 +148,19 @@ func (c *ATClient) NewContextTimeout(d time.Duration) (context.Context, context.
 
 func (c *ATClient) SetClient(client *xrpc.Client) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if client != nil && client.Client == nil {
 		client.Client = sharedHTTPClient
 	}
 	c.client = client
+	c.mu.Unlock()
+	c.InvalidatePreferencesCache()
+}
+
+// SetPersist records whether the active session may be written to disk.
+func (c *ATClient) SetPersist(persist bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.persist = persist
 }
 
 func (c *ATClient) GetClient() (*xrpc.Client, error) {
@@ -150,12 +179,62 @@ func (c *ATClient) HTTPClient() *http.Client {
 	return sharedHTTPClient
 }
 
-// NewPublicClient returns an unauthenticated client targeting the public AppView.
-func (c *ATClient) NewPublicClient() *xrpc.Client {
-	return &xrpc.Client{
-		Client: sharedHTTPClient,
-		Host:   PublicAppViewHost,
+// ShortTimeoutHTTPClient returns the shared pooled HTTP client with an 8s timeout.
+func (c *ATClient) ShortTimeoutHTTPClient() *http.Client {
+	return sharedShortTimeoutHTTPClient
+}
+
+func (c *ATClient) InvalidatePreferencesCache() {
+	if c == nil {
+		return
 	}
+	c.prefsMu.Lock()
+	c.prefsCache = nil
+	c.prefsCacheDID = ""
+	c.prefsCacheAt = time.Time{}
+	c.prefsMu.Unlock()
+}
+
+func (c *ATClient) GetCachedPreferences(ctx context.Context, client *xrpc.Client) (*bsky.ActorGetPreferences_Output, error) {
+	if client == nil || client.Auth == nil {
+		return bsky.ActorGetPreferences(ctx, client)
+	}
+	did := client.Auth.Did
+
+	c.prefsMu.Lock()
+	if c.prefsCache != nil && c.prefsCacheDID == did && time.Since(c.prefsCacheAt) < prefsCacheTTL {
+		res := c.prefsCache
+		c.prefsMu.Unlock()
+		return res, nil
+	}
+	if existing := c.prefsInflight; existing != nil {
+		c.prefsMu.Unlock()
+		select {
+		case <-existing.done:
+			return existing.res, existing.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	call := &prefsCall{done: make(chan struct{})}
+	c.prefsInflight = call
+	c.prefsMu.Unlock()
+
+	res, err := bsky.ActorGetPreferences(ctx, client)
+	call.res = res
+	call.err = err
+
+	c.prefsMu.Lock()
+	if err == nil && res != nil {
+		c.prefsCache = res
+		c.prefsCacheDID = did
+		c.prefsCacheAt = time.Now()
+	}
+	c.prefsInflight = nil
+	c.prefsMu.Unlock()
+	close(call.done)
+
+	return res, err
 }
 
 // ResolvePDSHost finds the PDS that hosts the given handle or DID by reading
@@ -211,9 +290,58 @@ func ResolveAuthorPDSHost(authorDid string) string {
 	if strings.HasPrefix(authorDid, "did:plc:") && len(authorDid) != 32 {
 		return DefaultPDSHost
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
 	defer cancel()
 	return resolvePDSHostFromDirectory(ctx, defaultDirectory, authorDid)
+}
+
+func ResolveAuthorPDSHostsBatch(dids []string) {
+	if len(dids) == 0 {
+		return
+	}
+	var pending []string
+	seen := make(map[string]struct{}, len(dids))
+	for _, raw := range dids {
+		did := strings.TrimSpace(raw)
+		if did == "" {
+			continue
+		}
+		if _, dup := seen[did]; dup {
+			continue
+		}
+		seen[did] = struct{}{}
+		if host, ok := GetPDSHostForDID(did); ok && host != "" {
+			continue
+		}
+		if strings.HasPrefix(did, "did:plc:") && len(did) != 32 {
+			continue
+		}
+		pending = append(pending, did)
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+
+	const maxWorkers = 6
+	sem := make(chan struct{}, maxWorkers)
+	var wg sync.WaitGroup
+	for _, did := range pending {
+		wg.Add(1)
+		go func(d string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			resolvePDSHostFromDirectory(ctx, defaultDirectory, d)
+		}(did)
+	}
+	wg.Wait()
 }
 
 func (c *ATClient) ResolvePDSHost(ctx context.Context, identifier string) string {
@@ -277,34 +405,46 @@ func (c *ATClient) RefreshSession(ctx context.Context) error {
 }
 
 func (c *ATClient) doRefresh(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	current := c.client
+	persist := c.persist
+	c.mu.RUnlock()
 
-	if c.client == nil || c.client.Auth == nil {
+	if current == nil || current.Auth == nil {
 		return fmt.Errorf("no active session to refresh")
 	}
 
-	// refreshSession authenticates with the refresh token in the Authorization
-	// header, so it temporarily takes the place of the access token.
-	previousAccess := c.client.Auth.AccessJwt
-	c.client.Auth.AccessJwt = c.client.Auth.RefreshJwt
+	// refreshSession authenticates with the refresh token as the bearer. It
+	// goes out on a copy, and the result lands on another copy, because other
+	// goroutines are sending requests through current right now.
+	refreshClient := *current
+	refreshClient.Auth = &xrpc.AuthInfo{AccessJwt: current.Auth.RefreshJwt}
 
-	refreshOut, err := atproto.ServerRefreshSession(ctx, c.client)
+	refreshOut, err := atproto.ServerRefreshSession(ctx, &refreshClient)
 	if err != nil {
-		// Put the original token back so an unrelated failure (network blip)
-		// does not leave the client holding a refresh token as its access
-		// token.
-		c.client.Auth.AccessJwt = previousAccess
 		return fmt.Errorf("failed to refresh session: %w", err)
 	}
 
-	c.client.Auth.AccessJwt = refreshOut.AccessJwt
-	c.client.Auth.RefreshJwt = refreshOut.RefreshJwt
-	c.client.Auth.Did = refreshOut.Did
-	c.client.Auth.Handle = refreshOut.Handle
+	next := *current
+	next.Auth = &xrpc.AuthInfo{
+		AccessJwt:  refreshOut.AccessJwt,
+		RefreshJwt: refreshOut.RefreshJwt,
+		Did:        refreshOut.Did,
+		Handle:     refreshOut.Handle,
+	}
 
-	if err := c.db.SaveSession(refreshOut.Did, refreshOut.Handle, refreshOut.AccessJwt, refreshOut.RefreshJwt, c.client.Host); err != nil {
-		return fmt.Errorf("failed to save refreshed session: %w", err)
+	c.mu.Lock()
+	// The user may have switched account or logged out while we waited.
+	stillActive := c.client == current
+	if stillActive {
+		c.client = &next
+	}
+	c.mu.Unlock()
+
+	if stillActive && persist {
+		if err := c.db.SaveSession(refreshOut.Did, refreshOut.Handle, refreshOut.AccessJwt, refreshOut.RefreshJwt, next.Host); err != nil {
+			return fmt.Errorf("failed to save refreshed session: %w", err)
+		}
 	}
 
 	return nil
@@ -331,7 +471,11 @@ func (c *ATClient) WithClient(ctx context.Context, fn func(*xrpc.Client) error) 
 		return fmt.Errorf("token expired and refresh failed: %w", refreshErr)
 	}
 
-	// RefreshSession mutates client.Auth in place, so the same pointer now
-	// carries the new token.
+	// The refresh installed a new client; the old pointer still carries the
+	// expired token.
+	client, err = c.GetClient()
+	if err != nil {
+		return err
+	}
 	return fn(client)
 }
